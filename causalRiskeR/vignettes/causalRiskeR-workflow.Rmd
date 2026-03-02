@@ -20,6 +20,15 @@ knitr::opts_chunk$set(
 )
 ```
 
+## Installation
+
+```{r install, eval = !requireNamespace("causalRiskeR", quietly = TRUE)}
+if (!requireNamespace("remotes", quietly = TRUE)) {
+  install.packages("remotes")
+}
+remotes::install_github("amertens/cleanTMLE", subdir = "causalRiskeR")
+```
+
 ## Overview
 
 This vignette demonstrates how to use **causalRiskeR** for causal inference
