@@ -2,7 +2,7 @@
 # Run this script to regenerate: source("data-raw/generate_example1.R")
 
 # Source the sim_func1 function
-# (In practice, after package is built, use causalRiskeR::sim_func1)
+# (In practice, after package is built, use cleanTMLE::sim_func1)
 
 sim_func1_local <- function(n = 1000, seed = 123, max_time = 36) {
   set.seed(seed)

@@ -1,9 +1,0 @@
-.Rproj.user
-.Rhistory
-.RData
-.Ruserdata
-docs/
-inst/doc
-*.o
-*.so
-*.dll

@@ -10,7 +10,7 @@
 
 .onAttach <- function(libname, pkgname) {
   packageStartupMessage(
-    "causalRiskeR: Causal Inference for Risk Estimation\n",
+    "cleanTMLE: Causal Inference for Risk Estimation\n",
     "Use sim_func1() to generate example data, or data(example1) if available."
   )
 }
