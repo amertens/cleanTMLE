@@ -1,0 +1,365 @@
+---
+title: "Recreating causalRisk-style workflows + TMLE extensions"
+author: "causalRiskeR Authors"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Recreating causalRisk-style workflows + TMLE extensions}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 5,
+  warning = FALSE,
+  message = FALSE
+)
+```
+
+## Installation
+
+```{r install, eval = !requireNamespace("causalRiskeR", quietly = TRUE)}
+if (!requireNamespace("remotes", quietly = TRUE)) {
+  install.packages("remotes")
+}
+remotes::install_github("amertens/cleanTMLE", subdir = "causalRiskeR")
+```
+
+## Overview
+
+This vignette demonstrates how to use **causalRiskeR** for causal inference
+in time-to-event settings. We cover:
+
+1. Data simulation
+2. Model specification using the `specify_models()` + `identify_*()` DSL
+3. IPW cumulative risk estimation (overall, treatment-stratified, IPTW+IPCW)
+4. Competing risks
+5. Weight diagnostics, propensity score overlap, trimming/truncation
+6. G-computation and AIPW (doubly robust) estimators
+7. Hazard ratio estimation with `estimate_ipwhr()`
+8. TMLE extensions: point-treatment, survival, and longitudinal (LMTP)
+9. Tables and plots
+
+## 1. Simulate Data
+
+```{r simulate-data}
+library(causalRiskeR)
+
+# Generate simulated dataset
+dat <- sim_func1(n = 1000, seed = 42)
+head(dat)
+str(dat)
+
+# Summary of key variables
+table(dat$treatment)
+table(dat$event)
+table(dat$event_type)
+summary(dat$time)
+```
+
+The simulated data has:
+- **Confounders**: age, sex, biomarker, comorbidity
+- **Treatment**: binary (0/1), confounded by age, sex, biomarker
+- **Time-to-event**: with right censoring and competing risks
+- True treatment effect: protective (HR ~ 0.7)
+
+## 2. Model Specification
+
+causalRiskeR uses a pipe-friendly specification DSL. First, create a
+specification object, then progressively identify model components.
+
+```{r spec-basic}
+# Basic specification: outcome + treatment + censoring
+spec <- specify_models(data = dat) |>
+  identify_outcome(event, type = "time_to_event") |>
+  identify_treatment(treatment, formula = ~ age + sex + biomarker) |>
+  identify_censoring(censored, formula = ~ age + sex, model = "coxph") |>
+  identify_subject(id)
+
+print(spec)
+```
+
+## 3. IPW Cumulative Risk Estimation
+
+### 3.1 Overall Risk (no treatment contrast)
+
+```{r ipw-overall}
+spec_overall <- specify_models(data = dat) |>
+  identify_outcome(event, type = "time_to_event")
+
+fit_overall <- estimate_ipwrisk(spec_overall, risk_time = c(6, 12, 18, 24, 30, 36))
+print(fit_overall)
+plot(fit_overall)
+```
+
+### 3.2 Treatment-Stratified Risk (unadjusted)
+
+```{r ipw-stratified}
+spec_strat <- specify_models(data = dat) |>
+  identify_outcome(event, type = "time_to_event") |>
+  identify_treatment(treatment)  # no PS model = unweighted
+
+fit_strat <- estimate_ipwrisk(spec_strat, risk_time = c(6, 12, 18, 24, 30, 36))
+print(fit_strat)
+plot(fit_strat)
+```
+
+### 3.3 IPTW + IPCW Adjusted Risk
+
+```{r ipw-adjusted}
+fit_ipw <- estimate_ipwrisk(
+  spec,
+  risk_time = c(6, 12, 18, 24, 30, 36),
+  weight_type = "iptw",
+  nboot = 100,
+  seed = 42
+)
+print(fit_ipw)
+plot(fit_ipw)
+```
+
+### 3.4 Risk Difference and Risk Ratio
+
+```{r ipw-effects}
+# Risk Difference
+plot(fit_ipw, effect = "RD")
+
+# Risk Ratio
+plot(fit_ipw, effect = "RR")
+```
+
+### 3.5 SMR Weights (ATT targeting)
+
+```{r ipw-smr}
+fit_smr <- estimate_ipwrisk(
+  spec,
+  risk_time = c(12, 24),
+  weight_type = "smr"
+)
+print(fit_smr)
+```
+
+## 4. Competing Risks
+
+```{r competing-risks}
+spec_cr <- specify_models(data = dat) |>
+  identify_outcome(event, type = "time_to_event") |>
+  identify_treatment(treatment, formula = ~ age + sex + biomarker) |>
+  identify_censoring(censored, formula = ~ age + sex, model = "coxph") |>
+  identify_competing_risk(event_type, event_value = 1)
+
+fit_cr <- estimate_ipwrisk(spec_cr, risk_time = c(6, 12, 18, 24, 30, 36))
+print(fit_cr)
+plot(fit_cr)
+```
+
+## 5. Weight Diagnostics
+
+### 5.1 Weight Summary Table
+
+```{r wt-summary}
+make_wt_summary_table(fit_ipw)
+```
+
+### 5.2 Extreme Weights
+
+```{r extreme-wt}
+extreme_weights(fit_ipw, k = 5)
+```
+
+### 5.3 Propensity Score Overlap
+
+```{r ps-hist}
+hist(fit_ipw, type = "ps")
+```
+
+### 5.4 Weight Distribution
+
+```{r wt-hist}
+hist(fit_ipw, type = "weights")
+```
+
+### 5.5 Trimming and Truncation
+
+```{r trim-trunc}
+# Trimmed at 1st/99th percentile of PS
+fit_trim <- estimate_ipwrisk(spec, risk_time = c(12, 24), trim = 0.01)
+print(fit_trim)
+
+# Truncated weights at 99th percentile
+fit_trunc <- estimate_ipwrisk(spec, risk_time = c(12, 24), trunc = 0.99)
+print(fit_trunc)
+```
+
+## 6. Table 1: Baseline Characteristics
+
+```{r table1}
+# Unweighted Table 1
+make_table1(dat, vars = c("age", "sex", "biomarker", "comorbidity"),
+            by = "treatment", smd = TRUE)
+```
+
+```{r table1-weighted}
+# Weighted Table 1 (using IPW fit)
+make_table1(fit_ipw, vars = c("age", "sex", "biomarker", "comorbidity"),
+            weighted = TRUE, smd = TRUE)
+```
+
+## 7. Table 2: Results Summary
+
+```{r table2}
+make_table2(fit_ipw, risk_time = 24)
+```
+
+## 8. G-Computation
+
+```{r gcomp}
+spec_gc <- specify_models(data = dat) |>
+  identify_outcome(event, formula = ~ treatment + age + sex + biomarker,
+                   type = "time_to_event") |>
+  identify_treatment(treatment)
+
+fit_gc <- estimate_gcomprisk(spec_gc, risk_time = c(6, 12, 18, 24, 30, 36))
+print(fit_gc)
+plot(fit_gc)
+```
+
+## 9. AIPW (Doubly Robust)
+
+```{r aipw}
+spec_aipw <- specify_models(data = dat) |>
+  identify_outcome(event, formula = ~ treatment + age + sex + biomarker,
+                   type = "time_to_event") |>
+  identify_treatment(treatment, formula = ~ age + sex + biomarker) |>
+  identify_censoring(censored, formula = ~ age + sex, model = "coxph")
+
+fit_aipw <- estimate_aipwrisk(
+  spec_aipw,
+  risk_time = c(6, 12, 18, 24, 30, 36)
+)
+print(fit_aipw)
+plot(fit_aipw)
+```
+
+## 10. Comparing Estimators
+
+```{r compare}
+comp <- compare_fits(
+  IPW = fit_ipw,
+  GComp = fit_gc,
+  AIPW = fit_aipw,
+  risk_time = 24
+)
+print(comp)
+```
+
+## 11. Hazard Ratio Estimation
+
+```{r ipwhr}
+hr_fit <- estimate_ipwhr(spec)
+print(hr_fit)
+
+# Forest plot
+forest_plot(hr_fit)
+
+# HR data for custom processing
+hr_data(hr_fit)
+
+# Table 2 for HR
+make_table2(hr_fit)
+```
+
+## 12. TMLE Extensions
+
+### 12.1 Point-Treatment TMLE (Binary Outcome)
+
+We create a binary outcome: event by 24 months.
+
+```{r tmle-point, eval = requireNamespace("tmle", quietly = TRUE) && requireNamespace("SuperLearner", quietly = TRUE)}
+dat$event_24 <- as.integer(dat$event == 1 & dat$time <= 24)
+
+fit_tmle <- estimate_tmle_risk_point(
+  data = dat,
+  treatment = "treatment",
+  outcome = "event_24",
+  covariates = c("age", "sex", "biomarker", "comorbidity"),
+  sl_library = c("SL.glm", "SL.mean"),
+  truncate = 0.01
+)
+print(fit_tmle)
+make_table2(fit_tmle)
+```
+
+### 12.2 Survival TMLE
+
+```{r surv-tmle, eval = requireNamespace("tmle", quietly = TRUE) && requireNamespace("SuperLearner", quietly = TRUE)}
+fit_surv_tmle <- estimate_surv_tmle(
+  data = dat,
+  treatment = "treatment",
+  time = "time",
+  event = "event",
+  covariates = c("age", "sex", "biomarker"),
+  target_times = c(12, 24),
+  sl_library = c("SL.glm", "SL.mean")
+)
+print(fit_surv_tmle)
+plot(fit_surv_tmle)
+```
+
+### 12.3 Longitudinal TMLE (LMTP)
+
+```{r lmtp, eval = requireNamespace("lmtp", quietly = TRUE)}
+# Simple example with 2 time points
+set.seed(99)
+n_lmtp <- 200
+lmtp_dat <- data.frame(
+  L1 = rnorm(n_lmtp),
+  A1 = rbinom(n_lmtp, 1, 0.5),
+  L2 = rnorm(n_lmtp),
+  A2 = rbinom(n_lmtp, 1, 0.5),
+  Y = rbinom(n_lmtp, 1, 0.3)
+)
+
+fit_lmtp <- estimate_lmtp(
+  data = lmtp_dat,
+  treatment_vars = c("A1", "A2"),
+  outcome = "Y",
+  baseline = c("L1"),
+  time_varying = list(c("L2")),
+  shift_fun = function(data, trt) rep(1, nrow(data)),
+  outcome_type = "binomial"
+)
+print(fit_lmtp)
+```
+
+## 13. Summary
+
+This vignette demonstrated the core causalRiskeR workflow:
+
+| Step | Function | Description |
+|------|----------|-------------|
+| 1 | `sim_func1()` | Simulate data |
+| 2 | `specify_models()` | Create specification |
+| 3 | `identify_*()` | Declare model components |
+| 4 | `estimate_ipwrisk()` | IPW cumulative risk |
+| 5 | `estimate_gcomprisk()` | G-computation risk |
+| 6 | `estimate_aipwrisk()` | AIPW doubly robust risk |
+| 7 | `estimate_ipwhr()` | Weighted Cox HR |
+| 8 | `estimate_tmle_risk_point()` | Point TMLE |
+| 9 | `estimate_surv_tmle()` | Survival TMLE |
+| 10 | `estimate_lmtp()` | Longitudinal TMLE |
+| 11 | `make_table1()` | Baseline table |
+| 12 | `make_table2()` | Results table |
+| 13 | `make_wt_summary_table()` | Weight diagnostics |
+| 14 | `extreme_weights()` | Extreme weights |
+| 15 | `hist()` | PS/weight histograms |
+| 16 | `forest_plot()` | Forest plot for HRs |
+| 17 | `compare_fits()` | Compare estimators |
+
+```{r session-info}
+sessionInfo()
+```
