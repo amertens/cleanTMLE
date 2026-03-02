@@ -1,0 +1,64 @@
+url: https://causalrisker.github.io/causalRiskeR/
+
+template:
+  bootstrap: 5
+
+reference:
+  - title: Model Specification
+    desc: Build causal model specifications
+    contents:
+      - specify_models
+      - identify_outcome
+      - identify_censoring
+      - identify_treatment
+      - identify_competing_risk
+      - identify_subject
+      - identify_interval
+      - identify_missing
+
+  - title: Estimation
+    desc: Causal estimators for risk and hazard ratios
+    contents:
+      - estimate_ipwrisk
+      - estimate_gcomprisk
+      - estimate_aipwrisk
+      - estimate_ipwhr
+      - estimate_ipwcount
+
+  - title: TMLE Extensions
+    desc: Targeted learning wrappers
+    contents:
+      - estimate_tmle_risk_point
+      - estimate_surv_tmle
+      - estimate_lmtp
+
+  - title: Tables and Diagnostics
+    desc: Summary tables and weight diagnostics
+    contents:
+      - make_table1
+      - make_table2
+      - make_wt_summary_table
+      - extreme_weights
+      - inspect_ipw_weights
+      - compare_fits
+      - forest_plot
+      - hr_data
+
+  - title: Update and Re-estimate
+    desc: Modify and refit models
+    contents:
+      - update_treatment
+      - update_outcome
+      - update_censoring
+      - re_estimate
+
+  - title: Data
+    desc: Simulated data and generators
+    contents:
+      - example1
+      - sim_func1
+
+articles:
+  - title: Getting Started
+    contents:
+      - causalRiskeR-workflow
