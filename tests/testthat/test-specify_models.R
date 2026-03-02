@@ -89,5 +89,5 @@ test_that("print.cr_spec outputs without error", {
     identify_outcome(event, type = "time_to_event") |>
     identify_treatment(treatment, formula = ~ age)
 
-  expect_output(print(spec), "causalRiskeR Model Specification")
+  expect_output(print(spec), "cleanTMLE Model Specification")
 })

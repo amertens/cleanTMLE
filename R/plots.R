@@ -1,4 +1,4 @@
-#' Plot Methods for causalRiskeR Result Objects
+#' Plot Methods for cleanTMLE Result Objects
 #'
 #' @name plot_methods
 #' @param x A result object (cumrisk, gcomp, aipw, or hr).

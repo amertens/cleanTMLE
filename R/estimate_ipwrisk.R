@@ -48,7 +48,7 @@
 #'
 #' @examples
 #' \dontrun{
-#' data(example1, package = "causalRiskeR")
+#' data(example1, package = "cleanTMLE")
 #' fit <- specify_models(data = example1) |>
 #'   identify_outcome(event, type = "time_to_event") |>
 #'   identify_treatment(treatment, formula = ~ age + sex + biomarker) |>

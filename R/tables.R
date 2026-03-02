@@ -319,7 +319,7 @@ make_table2.tmle_fit <- function(x, ...) {
 #' @export
 make_wt_summary_table <- function(x, ...) {
   if (!inherits(x, "cr_result")) {
-    stop("`x` must be a causalRiskeR result object.", call. = FALSE)
+    stop("`x` must be a cleanTMLE result object.", call. = FALSE)
   }
 
   w <- if (!is.null(x$weights$iptw)) x$weights$iptw else
@@ -380,7 +380,7 @@ make_wt_summary_table <- function(x, ...) {
 #' @export
 extreme_weights <- function(x, k = 10, cols = NULL, ...) {
   if (!inherits(x, "cr_result")) {
-    stop("`x` must be a causalRiskeR result object.", call. = FALSE)
+    stop("`x` must be a cleanTMLE result object.", call. = FALSE)
   }
 
   w <- if (!is.null(x$weights$iptw)) x$weights$iptw else
@@ -427,7 +427,7 @@ extreme_weights <- function(x, k = 10, cols = NULL, ...) {
 #' @export
 inspect_ipw_weights <- function(x, type = c("iptw", "ipcw", "combined"), ...) {
   if (!inherits(x, "cr_result")) {
-    stop("`x` must be a causalRiskeR result object.", call. = FALSE)
+    stop("`x` must be a cleanTMLE result object.", call. = FALSE)
   }
   type <- match.arg(type)
 

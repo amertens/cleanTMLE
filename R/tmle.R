@@ -1,8 +1,8 @@
-#' TMLE Extensions for causalRiskeR
+#' TMLE Extensions for cleanTMLE
 #'
 #' These functions wrap established TMLE packages ({tmle}, {survtmle},
 #' {lmtp}) to provide targeted learning estimators that integrate with
-#' the causalRiskeR model specification workflow.
+#' the cleanTMLE model specification workflow.
 #'
 #' @name tmle_extensions
 NULL
