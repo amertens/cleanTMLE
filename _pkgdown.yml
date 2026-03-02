@@ -1,4 +1,4 @@
-url: https://causalrisker.github.io/causalRiskeR/
+url: https://amertens.github.io/cleanTMLE/
 
 template:
   bootstrap: 5
@@ -61,4 +61,4 @@ reference:
 articles:
   - title: Getting Started
     contents:
-      - causalRiskeR-workflow
+      - cleanTMLE-workflow

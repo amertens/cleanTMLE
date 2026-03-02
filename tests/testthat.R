@@ -1,5 +1,5 @@
 # This file is part of the standard testthat setup
 library(testthat)
-library(causalRiskeR)
+library(cleanTMLE)
 
-test_check("causalRiskeR")
+test_check("cleanTMLE")

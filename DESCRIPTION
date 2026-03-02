@@ -1,9 +1,9 @@
-Package: causalRiskeR
+Package: cleanTMLE
 Title: Causal Inference for Risk Estimation with IPW, G-Computation, AIPW, and TMLE
 Version: 0.1.0
 Authors@R:
-    person("causalRiskeR Authors", role = c("aut", "cre"),
-           email = "causalrisker@example.com")
+    person("cleanTMLE Authors", role = c("aut", "cre"),
+           email = "cleantmle@example.com")
 Description: Provides a tidy interface for causal inference in
     time-to-event and binary outcome settings. Supports inverse probability
     weighted (IPW) cumulative risk estimation, g-computation, augmented IPW
@@ -36,5 +36,5 @@ Suggests:
     pkgdown
 Config/testthat/edition: 3
 VignetteBuilder: knitr
-URL: https://github.com/causalRiskeR/causalRiskeR
-BugReports: https://github.com/causalRiskeR/causalRiskeR/issues
+URL: https://github.com/amertens/cleanTMLE
+BugReports: https://github.com/amertens/cleanTMLE/issues

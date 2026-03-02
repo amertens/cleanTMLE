@@ -11,7 +11,7 @@ specify_models(data, ...)
 \item{...}{Currently unused; reserved for future extensions.}
 }
 \value{
-An object of class \code{cr_spec} (causalRiskeR specification).
+An object of class \code{cr_spec} (cleanTMLE specification).
 }
 \description{
 Initializes a model specification container that stores information about

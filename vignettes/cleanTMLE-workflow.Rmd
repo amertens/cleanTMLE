@@ -1,6 +1,6 @@
 ---
 title: "Recreating causalRisk-style workflows + TMLE extensions"
-author: "causalRiskeR Authors"
+author: "cleanTMLE Authors"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 vignette: >
@@ -22,16 +22,16 @@ knitr::opts_chunk$set(
 
 ## Installation
 
-```{r install, eval = !requireNamespace("causalRiskeR", quietly = TRUE)}
+```{r install, eval = !requireNamespace("cleanTMLE", quietly = TRUE)}
 if (!requireNamespace("remotes", quietly = TRUE)) {
   install.packages("remotes")
 }
-remotes::install_github("amertens/cleanTMLE", subdir = "causalRiskeR")
+remotes::install_github("amertens/cleanTMLE")
 ```
 
 ## Overview
 
-This vignette demonstrates how to use **causalRiskeR** for causal inference
+This vignette demonstrates how to use **cleanTMLE** for causal inference
 in time-to-event settings. We cover:
 
 1. Data simulation
@@ -47,7 +47,7 @@ in time-to-event settings. We cover:
 ## 1. Simulate Data
 
 ```{r simulate-data}
-library(causalRiskeR)
+library(cleanTMLE)
 
 # Generate simulated dataset
 dat <- sim_func1(n = 1000, seed = 42)
@@ -69,7 +69,7 @@ The simulated data has:
 
 ## 2. Model Specification
 
-causalRiskeR uses a pipe-friendly specification DSL. First, create a
+cleanTMLE uses a pipe-friendly specification DSL. First, create a
 specification object, then progressively identify model components.
 
 ```{r spec-basic}
@@ -338,7 +338,7 @@ print(fit_lmtp)
 
 ## 13. Summary
 
-This vignette demonstrated the core causalRiskeR workflow:
+This vignette demonstrated the core cleanTMLE workflow:
 
 | Step | Function | Description |
 |------|----------|-------------|

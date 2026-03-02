@@ -26,7 +26,7 @@
 #' @source Simulated using [sim_func1()].
 #'
 #' @examples
-#' data(example1, package = "causalRiskeR")
+#' data(example1, package = "cleanTMLE")
 #' head(example1)
 "example1"
 

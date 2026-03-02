@@ -7,10 +7,10 @@
 #' @param data A data.frame containing the analysis dataset.
 #' @param ... Currently unused; reserved for future extensions.
 #'
-#' @return An object of class `cr_spec` (causalRiskeR specification).
+#' @return An object of class `cr_spec` (cleanTMLE specification).
 #'
 #' @details
-#' The specification object is the central data structure in causalRiskeR.
+#' The specification object is the central data structure in cleanTMLE.
 #' After creating it with `specify_models()`, use the `identify_*()` family
 #' of functions to declare outcome, treatment, censoring, and other
 #' components. Then pass the completed specification to an estimation function
@@ -47,7 +47,7 @@ specify_models <- function(data, ...) {
 
 #' @export
 print.cr_spec <- function(x, ...) {
-  cat("causalRiskeR Model Specification\n")
+  cat("cleanTMLE Model Specification\n")
   cat("================================\n")
   cat("Data:", nrow(x$data), "observations,", ncol(x$data), "variables\n")
 

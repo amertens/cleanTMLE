@@ -1,8 +1,8 @@
 #' @keywords internal
-#' @aliases causalRiskeR-package
+#' @aliases cleanTMLE-package
 "_PACKAGE"
 
-#' causalRiskeR: Causal Inference for Risk Estimation
+#' cleanTMLE: Causal Inference for Risk Estimation
 #'
 #' A tidy interface for causal inference in time-to-event and binary outcome
 #' settings. Supports inverse probability weighted (IPW) cumulative risk
