@@ -45,18 +45,50 @@ export(estimate_lmtp)
 # Data
 export(sim_func1)
 
+# Analysis lock (Stage 1)
+export(create_analysis_lock)
+export(validate_analysis_lock)
+
+# Propensity score (Stage 2a)
+export(fit_ps_superlearner)
+export(compute_ps_diagnostics)
+
+# Plasmode feasibility (Stage 2b)
+export(run_plasmode_feasibility)
+export(select_tmle_candidate)
+
+# Conventional workflows (Stage 3)
+export(run_match_workflow)
+export(run_iptw_workflow)
+
+# Modular TMLE (Stage 3)
+export(fit_tmle_treatment_mechanism)
+export(fit_tmle_outcome_mechanism)
+export(run_tmle_targeting_step)
+export(extract_tmle_estimate)
+
+# Summaries
+export(summarize_cleanroom_results)
+
 # S3 methods
+S3method(print, cleanroom_lock)
 S3method(print, cr_spec)
 S3method(print, cumrisk)
 S3method(print, gcomp)
 S3method(print, aipw)
 S3method(print, ipw)
 S3method(print, hr)
+S3method(print, match_result)
+S3method(print, iptw_result)
+S3method(print, plasmode_results)
+S3method(print, ps_diagnostics)
+S3method(print, ps_fit)
 S3method(print, tmle_fit)
 S3method(plot, cumrisk)
 S3method(plot, gcomp)
 S3method(plot, aipw)
 S3method(plot, hr)
+S3method(plot, ps_diagnostics)
 S3method(plot, tmle_fit)
 S3method(hist, ipw)
 S3method(make_table1, default)
@@ -67,7 +99,7 @@ S3method(make_table2, tmle_fit)
 
 importFrom(stats, as.formula, binomial, coef, confint, glm, model.matrix,
            predict, quantile, rbinom, rnorm, runif, sd, var, vcov, median,
-           pnorm, qnorm, weighted.mean, terms, reformulate, setNames,
+           pnorm, qnorm, qlogis, weighted.mean, terms, reformulate, setNames,
            rexp, plogis, complete.cases)
 importFrom(survival, coxph, survfit, Surv, strata)
 importFrom(ggplot2, ggplot, aes, geom_step, geom_line, geom_point,
