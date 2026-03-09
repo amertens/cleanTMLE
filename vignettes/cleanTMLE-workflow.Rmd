@@ -174,13 +174,15 @@ extreme_weights(fit_ipw, k = 5)
 ### 5.3 Propensity Score Overlap
 
 ```{r ps-hist}
-hist(fit_ipw, type = "ps")
+
+#need to make by treatment
+hist(fit_ipw$ps, type = "ps")
 ```
 
 ### 5.4 Weight Distribution
 
 ```{r wt-hist}
-hist(fit_ipw, type = "weights")
+hist(fit_ipw$weights$combined, type = "weights")
 ```
 
 ### 5.5 Trimming and Truncation
@@ -312,7 +314,8 @@ plot(fit_surv_tmle)
 
 ### 12.3 Longitudinal TMLE (LMTP)
 
-```{r lmtp, eval = requireNamespace("lmtp", quietly = TRUE)}
+```{r lmtp, eval =false}
+library(lmtp)
 # Simple example with 2 time points
 set.seed(99)
 n_lmtp <- 200
