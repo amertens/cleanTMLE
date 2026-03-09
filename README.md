@@ -1,6 +1,6 @@
 # cleanTMLE
 
-**Staged Clean-Room Causal Analysis: Propensity Score and TMLE Workflows**
+**Targeted Maximum Likelihood Estimation within the Staged Clean-Room Causal Analysis**
 
 ## Overview
 
