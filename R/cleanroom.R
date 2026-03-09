@@ -246,13 +246,70 @@ fit_ps_superlearner <- function(lock, ...) {
 
 #' @export
 print.ps_fit <- function(x, ...) {
-  cat("Propensity Score Fit (SuperLearner)\n")
+  method_label <- if (isTRUE(x$method == "glm")) "GLM" else "SuperLearner"
+  cat(sprintf("Propensity Score Fit (%s)\n", method_label))
   cat("====================================\n")
   cat("Treatment:  ", x$treatment, "\n")
   cat("Covariates: ", paste(x$covariates, collapse = ", "), "\n")
   cat(sprintf("PS range:    [%.4f, %.4f]\n", min(x$ps), max(x$ps)))
   cat(sprintf("PS mean:      %.4f\n", mean(x$ps)))
   invisible(x)
+}
+
+
+#' Fit a Logistic Regression Propensity Score Model
+#'
+#' A conventional logistic-regression alternative to [fit_ps_superlearner()]
+#' for use when `SuperLearner` is not installed or for rapid sensitivity
+#' analyses.
+#'
+#' @param lock A `cleanroom_lock` from [create_analysis_lock()].
+#' @param truncate Numeric in (0, 0.5); propensity scores are bounded to
+#'   `[truncate, 1 - truncate]` to avoid extreme weights. Default: `0.01`.
+#'
+#' @return An object of class `ps_fit` (same structure as
+#'   [fit_ps_superlearner()], but with `method = "glm"` and `glm_fit`
+#'   instead of `sl_fit`).
+#'
+#' @examples
+#' dat  <- sim_func1(n = 200, seed = 1)
+#' lock <- create_analysis_lock(
+#'   data = dat, treatment = "treatment", outcome = "event_24",
+#'   covariates = c("age", "sex", "biomarker"), seed = 1L
+#' )
+#' ps_fit <- fit_ps_glm(lock)
+#' print(ps_fit)
+#'
+#' @export
+fit_ps_glm <- function(lock, truncate = 0.01) {
+  if (!inherits(lock, "cleanroom_lock"))
+    stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
+
+  data       <- lock$data
+  treatment  <- lock$treatment
+  covariates <- lock$covariates
+  A          <- data[[treatment]]
+
+  fml     <- stats::reformulate(covariates, response = treatment)
+  glm_fit <- stats::glm(fml, data = data, family = stats::binomial())
+  ps_raw  <- as.numeric(stats::predict(glm_fit, type = "response"))
+  ps      <- pmax(pmin(ps_raw, 1 - truncate), truncate)
+
+  result <- list(
+    ps         = ps,
+    ps_raw     = ps_raw,
+    glm_fit    = glm_fit,
+    sl_fit     = NULL,
+    treatment  = treatment,
+    covariates = covariates,
+    data       = data,
+    sl_library = NULL,
+    method     = "glm",
+    truncate   = truncate,
+    call       = match.call()
+  )
+  class(result) <- c("ps_fit", "cr_result")
+  result
 }
 
 
@@ -500,11 +557,11 @@ run_plasmode_feasibility <- function(lock,
         unname(stats::coef(fluc))
       }, error = function(e) 0)
 
-      Q_a1_u <- plogis(stats::qlogis(pmax(pmin(Q_a1, 0.999), 0.001)) +
+      Q_a1_u <- stats::plogis(stats::qlogis(pmax(pmin(Q_a1, 0.999), 0.001)) +
                          epsilon * (1 / ps_hat))
-      Q_a0_u <- plogis(stats::qlogis(pmax(pmin(Q_a0, 0.999), 0.001)) +
+      Q_a0_u <- stats::plogis(stats::qlogis(pmax(pmin(Q_a0, 0.999), 0.001)) +
                          epsilon * (-1 / (1 - ps_hat)))
-      Q_aw_u <- plogis(stats::qlogis(pmax(pmin(Q_aw, 0.999), 0.001)) +
+      Q_aw_u <- stats::plogis(stats::qlogis(pmax(pmin(Q_aw, 0.999), 0.001)) +
                          epsilon * H_aw)
 
       est_tmle <- mean(Q_a1_u) - mean(Q_a0_u)
@@ -990,13 +1047,13 @@ run_tmle_targeting_step <- function(g_fit, Q_fit) {
   }, error = function(e) 0)
 
   # Updated predictions
-  Q_a1_upd <- plogis(
+  Q_a1_upd <- stats::plogis(
     stats::qlogis(pmax(pmin(Q_a1, 0.999), 0.001)) + epsilon * H_a1
   )
-  Q_a0_upd <- plogis(
+  Q_a0_upd <- stats::plogis(
     stats::qlogis(pmax(pmin(Q_a0, 0.999), 0.001)) + epsilon * H_a0
   )
-  Q_aw_upd <- plogis(
+  Q_aw_upd <- stats::plogis(
     stats::qlogis(pmax(pmin(Q_aw, 0.999), 0.001)) + epsilon * H_aw
   )
 
@@ -1146,4 +1203,125 @@ summarize_cleanroom_results <- function(fits, ...) {
   result <- do.call(rbind, rows)
   rownames(result) <- NULL
   result
+}
+
+
+#' Summarize Plasmode Results
+#'
+#' Convenience function that prints and invisibly returns the performance
+#' metrics from [run_plasmode_feasibility()].
+#'
+#' @param x A `plasmode_results` object from [run_plasmode_feasibility()].
+#' @param ... Currently unused.
+#'
+#' @return Invisibly returns `x`.
+#'
+#' @export
+summarize_plasmode_results <- function(x, ...) {
+  if (!inherits(x, "plasmode_results"))
+    stop("`x` must be a plasmode_results object.", call. = FALSE)
+  print(x)
+  invisible(x)
+}
+
+
+#' Fit All Stage 3 Workflows
+#'
+#' Convenience wrapper that runs matching, IPTW, and modular TMLE in a
+#' single call, returning a named list of all fitted workflow objects.
+#'
+#' @param lock A `cleanroom_lock` from [create_analysis_lock()].
+#' @param ps_fit A `ps_fit` object from [fit_ps_superlearner()] or
+#'   [fit_ps_glm()].
+#' @param workflows Character vector specifying which workflows to run.
+#'   Default: `c("match", "iptw", "tmle")`.
+#'
+#' @return A named list with elements named by the requested workflows.
+#'
+#' @export
+fit_final_workflows <- function(lock, ps_fit,
+                                 workflows = c("match", "iptw", "tmle")) {
+  workflows <- match.arg(workflows, choices = c("match", "iptw", "tmle"),
+                          several.ok = TRUE)
+  results <- list()
+
+  if ("match" %in% workflows) {
+    results$match <- tryCatch(
+      run_match_workflow(lock, ps_fit),
+      error = function(e) {
+        message("Matching workflow failed: ", e$message)
+        NULL
+      }
+    )
+  }
+
+  if ("iptw" %in% workflows) {
+    results$iptw <- tryCatch(
+      run_iptw_workflow(lock, ps_fit),
+      error = function(e) {
+        message("IPTW workflow failed: ", e$message)
+        NULL
+      }
+    )
+  }
+
+  if ("tmle" %in% workflows) {
+    results$tmle <- tryCatch({
+      g_fit    <- fit_tmle_treatment_mechanism(lock, ps_fit)
+      Q_fit    <- fit_tmle_outcome_mechanism(lock, g_fit)
+      tmle_upd <- run_tmle_targeting_step(g_fit, Q_fit)
+      extract_tmle_estimate(tmle_upd)
+    }, error = function(e) {
+      message("TMLE workflow failed: ", e$message)
+      NULL
+    })
+  }
+
+  results[!vapply(results, is.null, logical(1L))]
+}
+
+
+#' Fit a Set of TMLE Candidate Specifications
+#'
+#' Fits multiple TMLE specifications (e.g., varying the SuperLearner library)
+#' and returns all results for comparison with [select_tmle_candidate()].
+#'
+#' @param lock A `cleanroom_lock` from [create_analysis_lock()].
+#' @param candidates A named list of SuperLearner library vectors. Each
+#'   element defines one candidate. If `NULL`, a default set is used.
+#'
+#' @return A named list of `tmle_fit` objects (failed candidates are dropped).
+#'
+#' @export
+fit_tmle_candidate_set <- function(lock, candidates = NULL) {
+  if (!inherits(lock, "cleanroom_lock"))
+    stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
+
+  if (is.null(candidates)) {
+    candidates <- list(
+      glm_only = c("SL.glm"),
+      glm_mean = c("SL.glm", "SL.mean"),
+      full     = lock$sl_library
+    )
+  }
+
+  results <- lapply(names(candidates), function(nm) {
+    lib    <- candidates[[nm]]
+    lock_i <- lock
+    lock_i$sl_library <- lib
+    class(lock_i) <- "cleanroom_lock"
+
+    tryCatch({
+      ps_i    <- fit_ps_glm(lock_i)
+      g_i     <- fit_tmle_treatment_mechanism(lock_i, ps_i)
+      Q_i     <- fit_tmle_outcome_mechanism(lock_i, g_i)
+      upd_i   <- run_tmle_targeting_step(g_i, Q_i)
+      extract_tmle_estimate(upd_i)
+    }, error = function(e) {
+      message("Candidate '", nm, "' failed: ", e$message)
+      NULL
+    })
+  })
+  names(results) <- names(candidates)
+  results[!vapply(results, is.null, logical(1L))]
 }

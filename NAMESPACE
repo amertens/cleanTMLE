@@ -51,21 +51,25 @@ export(validate_analysis_lock)
 
 # Propensity score (Stage 2a)
 export(fit_ps_superlearner)
+export(fit_ps_glm)
 export(compute_ps_diagnostics)
 
 # Plasmode feasibility (Stage 2b)
 export(run_plasmode_feasibility)
+export(summarize_plasmode_results)
 export(select_tmle_candidate)
 
 # Conventional workflows (Stage 3)
 export(run_match_workflow)
 export(run_iptw_workflow)
+export(fit_final_workflows)
 
 # Modular TMLE (Stage 3)
 export(fit_tmle_treatment_mechanism)
 export(fit_tmle_outcome_mechanism)
 export(run_tmle_targeting_step)
 export(extract_tmle_estimate)
+export(fit_tmle_candidate_set)
 
 # Summaries
 export(summarize_cleanroom_results)

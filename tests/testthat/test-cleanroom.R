@@ -451,3 +451,79 @@ test_that("summarize_cleanroom_results warns on unsupported class", {
   )
   expect_equal(nrow(tbl), 1L)
 })
+
+
+# ── fit_ps_glm ────────────────────────────────────────────────────────────
+
+test_that("fit_ps_glm returns a ps_fit with method = 'glm'", {
+  dat  <- sim_func1(n = 200, seed = 91)
+  lock <- create_analysis_lock(
+    data = dat, treatment = "treatment",
+    outcome = "event_24", covariates = c("age", "sex", "biomarker"),
+    seed = 91L
+  )
+  ps <- fit_ps_glm(lock)
+
+  expect_s3_class(ps, "ps_fit")
+  expect_equal(ps$method, "glm")
+  expect_equal(length(ps$ps), 200L)
+  expect_true(all(ps$ps > 0 & ps$ps < 1))
+  expect_true(all(ps$ps >= 0.01 & ps$ps <= 0.99))
+})
+
+
+# ── summarize_plasmode_results ────────────────────────────────────────────
+
+test_that("summarize_plasmode_results prints and returns invisibly", {
+  dat  <- sim_func1(n = 200, seed = 92)
+  lock <- create_analysis_lock(
+    data = dat, treatment = "treatment",
+    outcome = "event_24", covariates = c("age", "sex"),
+    plasmode_reps = 5L, seed = 92L
+  )
+  sim_res <- run_plasmode_feasibility(lock, effect_sizes = c(0.05), reps = 5L)
+  expect_output(
+    result <- summarize_plasmode_results(sim_res),
+    "Plasmode"
+  )
+  expect_s3_class(result, "plasmode_results")
+})
+
+
+# ── fit_final_workflows ───────────────────────────────────────────────────
+
+test_that("fit_final_workflows runs all three workflows", {
+  dat  <- sim_func1(n = 300, seed = 93)
+  lock <- create_analysis_lock(
+    data = dat, treatment = "treatment",
+    outcome = "event_24", covariates = c("age", "sex", "biomarker"),
+    seed = 93L
+  )
+  ps_fit <- fit_ps_glm(lock)
+  result <- fit_final_workflows(lock, ps_fit)
+
+  expect_true(is.list(result))
+  expect_true("match" %in% names(result))
+  expect_true("iptw"  %in% names(result))
+  expect_true("tmle"  %in% names(result))
+  expect_s3_class(result$match, "match_result")
+  expect_s3_class(result$iptw,  "iptw_result")
+  expect_s3_class(result$tmle,  "tmle_fit")
+})
+
+
+# ── fit_tmle_candidate_set ────────────────────────────────────────────────
+
+test_that("fit_tmle_candidate_set returns a list of tmle_fit objects", {
+  dat  <- sim_func1(n = 300, seed = 94)
+  lock <- create_analysis_lock(
+    data = dat, treatment = "treatment",
+    outcome = "event_24", covariates = c("age", "sex", "biomarker"),
+    seed = 94L
+  )
+  cands <- fit_tmle_candidate_set(lock)
+
+  expect_true(is.list(cands))
+  expect_true(length(cands) > 0L)
+  expect_true(all(vapply(cands, inherits, logical(1L), "tmle_fit")))
+})
