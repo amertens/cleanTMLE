@@ -105,6 +105,12 @@ sim_func1 <- function(n = 1000, seed = 123, max_time = 36) {
   # Censored indicator
   censored <- as.integer(event_occurred == 0)
 
+  # Round observed time to match the 'time' column in the data frame
+  time <- round(obs_time, 2)
+
+  # Derived binary outcome: primary event by 24 months
+  event_24 <- as.integer(event == 1 & time <= 24)
+
   data.frame(
     id = seq_len(n),
     age = round(age, 1),
@@ -112,10 +118,11 @@ sim_func1 <- function(n = 1000, seed = 123, max_time = 36) {
     biomarker = round(biomarker, 3),
     comorbidity = comorbidity,
     treatment = treatment,
-    time = round(obs_time, 2),
+    time = time,
     event = event,
     event_type = event_type,
     censored = censored,
+    event_24 = event_24,
     stringsAsFactors = FALSE
   )
 }
