@@ -2,32 +2,68 @@
 #' @aliases cleanTMLE-package
 "_PACKAGE"
 
-#' cleanTMLE: Causal Inference for Risk Estimation
+#' cleanTMLE: Staged Clean-Room Causal Analysis with Propensity Score and TMLE Workflows
 #'
-#' A tidy interface for causal inference in time-to-event and binary outcome
-#' settings. Supports inverse probability weighted (IPW) cumulative risk
-#' estimation, g-computation, augmented IPW (AIPW / doubly robust), and
-#' weighted Cox regression for hazard ratios. Integrates with TMLE, survtmle,
-#' and lmtp packages for targeted learning extensions.
+#' Provides workflow scaffolding for staged, outcome-blinded observational
+#' causal analyses. The package distinguishes two pre-outcome feasibility paths:
+#' Stage 2a (traditional PS diagnostics using only W and A) and Stage 2b
+#' (plasmode-simulation evaluation of the full estimator pipeline). Treatment
+#' mechanism estimation, outcome mechanism estimation, and the TMLE targeting
+#' step are deliberately separated in the API so each can run at the correct
+#' clean-room stage.
 #'
-#' @section Model specification:
-#' Use [specify_models()] to create a specification object, then pipe it
-#' through [identify_outcome()], [identify_treatment()], [identify_censoring()],
-#' and other `identify_*` functions to build a complete causal model.
+#' @section Analysis lock and workflow metadata:
+#' Use [create_analysis_lock()] to construct and serialize the complete analytic
+#' specification (estimand, covariates, SuperLearner library, plasmode settings,
+#' candidate set and selection rule). Use [validate_analysis_lock()] to verify
+#' the specification before proceeding.
 #'
-#' @section Estimation:
+#' @section Treatment mechanism and propensity-score estimation (Stage 2a / 2b):
+#' * [fit_ps_superlearner()] - SuperLearner-based PS estimation (default)
+#' * [fit_ps_glm()] - logistic-regression PS estimation (conventional option)
+#' * [compute_ps_diagnostics()] - overlap, ESS, covariate balance summaries
+#'
+#' @section Conventional workflow estimators (Stage 3):
+#' * [run_match_workflow()] - 1:1 nearest-neighbor matching
+#' * [run_iptw_workflow()] - stabilized IPTW with weight diagnostics
+#'
+#' @section Plasmode simulation and feasibility evaluation (Stage 2b):
+#' * [run_plasmode_feasibility()] - generate plasmode outcomes and evaluate
+#'   the full pipeline; returns bias, RMSE, and coverage
+#' * [summarize_plasmode_results()] - tabulate and plot simulation metrics
+#' * [evaluate_tmle_candidates()] - evaluate all candidate TMLE specifications
+#'
+#' @section Modular TMLE components:
+#' These functions respect clean-room stage separation. The treatment mechanism
+#' can run in Stage 2a or 2b; the outcome mechanism runs on real data only in
+#' Stage 3; the targeting step follows only after both nuisance estimates exist.
+#' * [fit_tmle_treatment_mechanism()] - estimate g(W) from W and A only
+#' * [fit_tmle_outcome_mechanism()] - estimate Q(A,W) using the real outcome
+#' * [run_tmle_targeting_step()] - perform the fluctuation / targeting update
+#' * [extract_tmle_estimate()] - compute psi, SE, CI, and diagnostics
+#'
+#' @section Candidate TMLE comparison / selection:
+#' * [fit_tmle_candidate_set()] - fit all prespecified TMLE candidates
+#' * [select_tmle_candidate()] - apply the prespecified selection rule
+#'
+#' @section Lower-level estimation utilities:
 #' * [estimate_ipwrisk()] - IPW cumulative risk curves
 #' * [estimate_gcomprisk()] - G-computation risk curves
 #' * [estimate_aipwrisk()] - Augmented IPW (doubly robust) risk curves
 #' * [estimate_ipwhr()] - Weighted Cox model hazard ratios
-#' * [estimate_ipwcount()] - IPW cumulative count (placeholder)
+#' * [estimate_ipwcount()] - IPW cumulative count
 #'
-#' @section TMLE extensions:
+#' @section TMLE package integrations:
 #' * [estimate_tmle_risk_point()] - Point-treatment TMLE for binary outcomes
 #' * [estimate_surv_tmle()] - Survival TMLE for risk at specified times
 #' * [estimate_lmtp()] - Longitudinal TMLE for static/dynamic interventions
 #'
-#' @section Diagnostics:
+#' @section Workflow-level summaries:
+#' * [fit_final_workflows()] - run final estimation after outcome unblinding
+#' * [summarize_cleanroom_results()] - side-by-side summary across workflows
+#' * [compare_fits()] - compare estimates, CIs, and diagnostic flags
+#'
+#' @section Diagnostics and tables:
 #' * [make_table1()] - Baseline covariate table (weighted/unweighted)
 #' * [make_table2()] - Results table (N, person-time, events, risk, contrasts)
 #' * [make_wt_summary_table()] - Weight distribution summaries

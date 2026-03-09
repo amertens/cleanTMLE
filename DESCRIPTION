@@ -1,16 +1,25 @@
 Package: cleanTMLE
-Title: Causal Inference for Risk Estimation with IPW, G-Computation, AIPW, and TMLE
+Title: Staged Clean-Room Causal Analysis with Propensity Score and TMLE Workflows
 Version: 0.1.0
 Authors@R:
     person("cleanTMLE Authors", role = c("aut", "cre"),
            email = "cleantmle@example.com")
-Description: Provides a tidy interface for causal inference in
-    time-to-event and binary outcome settings. Supports inverse probability
-    weighted (IPW) cumulative risk estimation, g-computation, augmented IPW
-    (AIPW / doubly robust), and weighted Cox regression for hazard ratios.
-    Integrates with TMLE, survtmle, and lmtp packages for targeted learning
-    extensions. Includes diagnostic tools for propensity score overlap,
-    weight distributions, and standardized mean differences.
+Description: Provides workflow scaffolding for staged, outcome-blinded
+    observational causal analyses. Supports three workflow families:
+    conventional propensity-score methods (matching and IPTW),
+    fixed-specification targeted minimum loss-based estimation (TMLE),
+    and simulation-selected TMLE in which candidate nuisance strategies are
+    evaluated on plasmode simulations before real-outcome access. The package
+    implements a modular TMLE API with separate functions for fitting the
+    treatment mechanism, fitting the outcome mechanism, performing the
+    targeting step, and extracting the final estimate, so that each step can
+    be executed at the appropriate clean-room stage. SuperLearner ensemble
+    learning is the default and recommended propensity-score estimation
+    strategy; simpler regression models are also supported. Includes tools
+    for analysis lock and specification management, propensity-score overlap
+    and balance diagnostics, plasmode-simulation feasibility evaluation, and
+    workflow-level summaries. Integrates with the 'tmle', 'SuperLearner',
+    'survtmle', and 'lmtp' packages for targeted learning estimation.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
