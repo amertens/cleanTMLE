@@ -7,12 +7,14 @@
 forest_plot(x, ...)
 }
 \arguments{
-\item{x}{An \code{hr} object from \code{estimate_ipwhr()}.}
+\item{x}{An \code{hr} object from \code{\link[=estimate_ipwhr]{estimate_ipwhr()}}.}
+
 \item{...}{Additional arguments.}
 }
 \value{
 A ggplot object.
 }
 \description{
-Creates a forest plot showing hazard ratios with confidence intervals.
+Creates a forest plot showing hazard ratios with confidence intervals
+from an \code{hr} object.
 }

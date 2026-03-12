@@ -4,22 +4,77 @@
 \alias{estimate_ipwhr}
 \title{IPW Hazard Ratio Estimation via Weighted Cox Model}
 \usage{
-estimate_ipwhr(spec, covariates = NULL, trim = NULL, trunc = NULL,
-  weight_type = c("iptw", "smr"), robust = TRUE, ...)
+estimate_ipwhr(
+  spec,
+  covariates = NULL,
+  trim = NULL,
+  trunc = NULL,
+  weight_type = c("iptw", "smr"),
+  robust = TRUE,
+  ...
+)
 }
 \arguments{
 \item{spec}{A \code{cr_spec} object with outcome and treatment identified.}
-\item{covariates}{Optional character vector of additional covariates for the Cox model.}
-\item{trim}{Quantile for PS trimming.}
+
+\item{covariates}{Optional character vector of additional covariates
+to include in the outcome (Cox) model beyond treatment.}
+
+\item{trim}{Quantile for propensity score trimming.}
+
 \item{trunc}{Weight truncation.}
+
 \item{weight_type}{\code{"iptw"} or \code{"smr"}.}
-\item{robust}{Logical; use robust sandwich SEs (default TRUE).}
+
+\item{robust}{Logical; if \code{TRUE} (default), use robust (sandwich) SEs.}
+
 \item{...}{Additional arguments.}
 }
 \value{
-An object of class \code{hr}.
+An object of class \code{hr} (inherits from \code{cr_result}) containing:
+\itemize{
+\item \code{hr_table} - data.frame with HR, CI, p-value for each coefficient
+\item \code{cox_model} - the fitted weighted coxph object
+\item \code{weights} - IPTW weights used
+}
 }
 \description{
-Fits a weighted Cox PH model using IPTW weights to estimate causal
-hazard ratios with robust standard errors.
+Fits a weighted Cox proportional hazards model using IPTW weights to
+estimate the causal hazard ratio for the treatment effect. Reports
+robust (sandwich) standard errors.
+}
+\details{
+\subsection{Method}{
+\enumerate{
+\item Fit a propensity score model for treatment via logistic regression.
+\item Compute stabilized IPTW weights.
+\item Fit a weighted Cox PH model: \code{coxph(Surv(time, event) ~ treatment, weights = w, robust = TRUE)}.
+\item Extract hazard ratios with robust standard errors via the sandwich
+variance estimator.
+}
+}
+
+\subsection{Assumptions}{
+\itemize{
+\item No unmeasured confounding (conditional exchangeability given L).
+\item Correctly specified propensity score model.
+\item Proportional hazards in the weighted model.
+\item Positivity: all subjects have non-zero probability of each treatment.
+}
+}
+}
+\examples{
+\dontrun{
+hr_fit <- specify_models(data = example1) |>
+  identify_outcome(event, type = "time_to_event") |>
+  identify_treatment(treatment, formula = ~ age + sex + biomarker) |>
+  estimate_ipwhr()
+print(hr_fit)
+forest_plot(hr_fit)
+}
+
+}
+\references{
+Robins JM, Hernan MA, Brumback B (2000). Marginal structural models
+and causal inference in epidemiology. Epidemiology, 11(5):550-560.
 }

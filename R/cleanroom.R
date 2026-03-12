@@ -165,6 +165,7 @@ validate_analysis_lock <- function(lock) {
 
 #' @export
 print.cleanroom_lock <- function(x, ...) {
+
   cat("cleanTMLE Analysis Lock\n")
   cat("=======================\n")
   cat("Data:       ", nrow(x$data), "observations,", ncol(x$data),
@@ -178,6 +179,61 @@ print.cleanroom_lock <- function(x, ...) {
   if (!is.null(x$locked_at))
     cat("Locked at:  ", format(x$locked_at, "%Y-%m-%d %H:%M:%S"), "\n")
   cat("Hash:       ", x$lock_hash, "\n")
+
+  # Estimand
+  if (!is.null(x$estimand)) {
+    cat("\nEstimand\n")
+    cat("--------\n")
+    if (!is.null(x$estimand$description))
+      cat("Question:    ", x$estimand$description, "\n")
+    if (!is.null(x$estimand$population))
+      cat("Population:  ", x$estimand$population, "\n")
+    if (!is.null(x$estimand$treatment_strategies))
+      cat("Contrast:    ", paste(x$estimand$treatment_strategies,
+                                 collapse = " vs. "), "\n")
+    if (!is.null(x$estimand$outcome_label))
+      cat("Outcome:     ", x$estimand$outcome_label, "\n")
+    if (!is.null(x$estimand$followup))
+      cat("Follow-up:   ", x$estimand$followup, "\n")
+    cat("Estimand:    ", x$estimand$contrast, "\n")
+    if (!is.null(x$estimand$statistical_estimand))
+      cat("Statistical: ", x$estimand$statistical_estimand, "\n")
+  }
+
+  # Sensitivity plans
+  if (!is.null(x$sensitivity_plans) && length(x$sensitivity_plans) > 0L) {
+    cat("\nSensitivity Plans\n")
+    cat("-----------------\n")
+    for (sp in x$sensitivity_plans) {
+      cat(sprintf("  - %s: %s\n", sp$label,
+                  if (!is.null(sp$description)) sp$description else ""))
+    }
+  }
+
+  # Negative controls
+  if (!is.null(x$negative_controls) && length(x$negative_controls) > 0L) {
+    cat("\nNegative Controls\n")
+    cat("-----------------\n")
+    for (nc in x$negative_controls) {
+      cat(sprintf("  - %s (%s)\n", nc$variable, nc$type))
+    }
+  }
+
+  # Primary TMLE specification
+  if (!is.null(x$primary_tmle_spec)) {
+    spec <- x$primary_tmle_spec
+    cat("\nPrimary TMLE Specification\n")
+    cat("--------------------------\n")
+    cat("Candidate:  ", spec$candidate_id, "\n")
+    cat("Label:      ", spec$label, "\n")
+    cat("Truncation: ", spec$truncation, "\n")
+    cat("G-library:  ", paste(spec$g_library, collapse = ", "), "\n")
+    if (!is.null(spec$q_library))
+      cat("Q-library:  ", paste(spec$q_library, collapse = ", "), "\n")
+    if (!is.null(spec$selection_rule))
+      cat("Selected by:", spec$selection_rule, "\n")
+  }
+
   invisible(x)
 }
 
@@ -225,6 +281,7 @@ fit_ps_superlearner <- function(lock, ...) {
     X          = W,
     family     = binomial(),
     SL.library = lock$sl_library,
+    env        = asNamespace("SuperLearner"),
     ...
   )
 
@@ -449,18 +506,159 @@ plot.ps_diagnostics <- function(x, ...) {
 }
 
 
+# ── TMLE Candidate Specifications ─────────────────────────────────────────
+
+#' Create a TMLE Candidate Specification
+#'
+#' Defines a single fully-specified TMLE candidate for use in Stage 2b
+#' plasmode evaluation. Each candidate specifies the nuisance-learner
+#' libraries and PS truncation threshold.
+#'
+#' @section Clean-room stage: Stage 1a / 2b (pre-outcome).
+#'
+#' @param candidate_id Character; unique identifier for this candidate.
+#' @param label Character; human-readable description.
+#' @param g_library Character vector; SuperLearner library for the
+#'   treatment mechanism (g-model). Falls back to GLM internally.
+#' @param q_library Character vector; SuperLearner library for the
+#'   outcome mechanism (Q-model). If \code{NULL}, defaults to
+#'   \code{g_library}.
+#' @param truncation Numeric; PS truncation threshold in (0, 0.5).
+#'   Default: 0.01.
+#'
+#' @return A list of class \code{tmle_candidate_spec}.
+#'
+#' @examples
+#' tmle_candidate("glm_t01", "GLM, trunc=0.01",
+#'                g_library = "SL.glm", truncation = 0.01)
+#'
+#' @export
+tmle_candidate <- function(candidate_id, label = candidate_id,
+                           g_library  = c("SL.glm"),
+                           q_library  = NULL,
+                           truncation = 0.01) {
+  if (!is.character(candidate_id) || length(candidate_id) != 1L)
+    stop("`candidate_id` must be a single character string.", call. = FALSE)
+  if (is.null(q_library)) q_library <- g_library
+
+  obj <- list(
+    candidate_id = candidate_id,
+    label        = label,
+    g_library    = g_library,
+    q_library    = q_library,
+    truncation   = truncation
+  )
+  class(obj) <- "tmle_candidate_spec"
+  obj
+}
+
+
+#' @export
+print.tmle_candidate_spec <- function(x, ...) {
+  cat(sprintf("TMLE Candidate: %s\n", x$candidate_id))
+  cat(sprintf("  Label:      %s\n", x$label))
+  cat(sprintf("  g-library:  %s\n", paste(x$g_library, collapse = ", ")))
+  cat(sprintf("  Q-library:  %s\n", paste(x$q_library, collapse = ", ")))
+  cat(sprintf("  Truncation: %s\n", x$truncation))
+  invisible(x)
+}
+
+
+#' Validate a List of TMLE Candidate Specifications
+#'
+#' Checks that all candidates are \code{tmle_candidate_spec} objects with
+#' unique IDs and valid settings.
+#'
+#' @param candidates A list of \code{tmle_candidate_spec} objects.
+#'
+#' @return Invisibly returns \code{candidates} if valid; errors otherwise.
+#'
+#' @export
+validate_tmle_candidates <- function(candidates) {
+  if (!is.list(candidates) || length(candidates) == 0L)
+    stop("`candidates` must be a non-empty list.", call. = FALSE)
+
+  for (i in seq_along(candidates)) {
+    if (!inherits(candidates[[i]], "tmle_candidate_spec"))
+      stop(sprintf("Element %d is not a tmle_candidate_spec.", i),
+           call. = FALSE)
+  }
+
+  ids <- vapply(candidates, function(x) x$candidate_id, character(1))
+  if (anyDuplicated(ids))
+    stop("Duplicate candidate IDs: ",
+         paste(ids[duplicated(ids)], collapse = ", "), call. = FALSE)
+
+  invisible(candidates)
+}
+
+
+#' Generate a Default TMLE Candidate Grid
+#'
+#' Creates a compact grid of TMLE candidates varying the SuperLearner
+#' library and PS truncation level. Useful as a default when the user
+#' does not supply a custom candidate list.
+#'
+#' @param truncations Numeric vector of truncation thresholds.
+#'   Default: \code{c(0.01, 0.05)}.
+#' @param libraries A named list of SuperLearner library vectors.
+#'   Default includes GLM-only and GLM+mean.
+#'
+#' @return A list of \code{tmle_candidate_spec} objects.
+#'
+#' @examples
+#' grid <- expand_tmle_candidate_grid()
+#' length(grid)
+#' grid[[1]]
+#'
+#' @export
+expand_tmle_candidate_grid <- function(
+    truncations = c(0.01, 0.05),
+    libraries   = list(
+      glm      = c("SL.glm"),
+      glm_mean = c("SL.glm", "SL.mean")
+    )) {
+
+  candidates <- list()
+  for (lib_name in names(libraries)) {
+    for (trunc in truncations) {
+      trunc_label <- sub("\\.", "", sprintf("t%s", trunc))
+      cand_id <- paste0("tmle_", lib_name, "_", trunc_label)
+      label   <- sprintf("TMLE: %s, trunc=%.3g",
+                          paste(libraries[[lib_name]], collapse = "+"),
+                          trunc)
+      candidates[[cand_id]] <- tmle_candidate(
+        candidate_id = cand_id,
+        label        = label,
+        g_library    = libraries[[lib_name]],
+        q_library    = libraries[[lib_name]],
+        truncation   = trunc
+      )
+    }
+  }
+  candidates
+}
+
+
 # ── Stage 2b: Plasmode Feasibility ────────────────────────────────────────
 
 #' Run Plasmode-Simulation Feasibility Evaluation
 #'
-#' Evaluates the performance of candidate analysis workflows (IPTW, TMLE)
-#' using plasmode-simulation: synthetic binary outcomes are generated from
+#' Evaluates the performance of prespecified TMLE candidate specifications
+#' using plasmode simulation.  Synthetic binary outcomes are generated from
 #' a parametric baseline-risk model fit on the real covariates, augmented
-#' with a specified additive treatment effect. Each workflow is run on every
-#' replicate and performance metrics (bias, RMSE, coverage) are computed
-#' against the known true effect.
+#' with a specified additive treatment effect.  Each TMLE candidate is fit
+#' on every replicate and performance metrics (bias, RMSE, coverage,
+#' empirical SD, mean SE) are computed against the known true effect.
+#'
+#' @section Clean-room stage: Stage 2b (pre-outcome).  The real
+#'   treatment--outcome association is never used; only simulated
+#'   outcomes are generated.
 #'
 #' @param lock A `cleanroom_lock` from [create_analysis_lock()].
+#' @param tmle_candidates A list of \code{\link{tmle_candidate}} objects.
+#'   If \code{NULL}, a default grid is generated via
+#'   \code{\link{expand_tmle_candidate_grid}}.
 #' @param effect_sizes Numeric vector of true risk differences to simulate.
 #'   Default: `c(0.05, 0.10)`.
 #' @param reps Integer; number of plasmode replicates per effect size.
@@ -468,16 +666,35 @@ plot.ps_diagnostics <- function(x, ...) {
 #' @param verbose Logical; if `TRUE`, print progress messages. Default: `FALSE`.
 #'
 #' @return An object of class `plasmode_results` containing:
-#'   * `metrics` - data.frame with bias, RMSE, and coverage by method and effect size
-#'   * `results` - raw per-replicate estimates (list)
+#'   * `metrics` - data.frame with one row per candidate per effect size
+#'   * `results` - raw per-replicate estimates (nested list)
+#'   * `tmle_candidates` - the candidate list used
+#'
+#' @examples
+#' \dontrun{
+#' dat  <- sim_func1(n = 500, seed = 1)
+#' lock <- create_analysis_lock(dat, "treatment", "event_24",
+#'                              c("age", "sex", "biomarker"),
+#'                              plasmode_reps = 20L, seed = 1)
+#' plas <- run_plasmode_feasibility(lock, reps = 20L)
+#' print(plas)
+#' }
 #'
 #' @export
 run_plasmode_feasibility <- function(lock,
-                                      effect_sizes = c(0.05, 0.10),
-                                      reps         = lock$plasmode_reps,
-                                      verbose      = FALSE) {
+                                      tmle_candidates = NULL,
+                                      effect_sizes    = c(0.05, 0.10),
+                                      reps            = lock$plasmode_reps,
+                                      verbose         = FALSE) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
+
+  # Default candidate grid if not supplied
+
+  if (is.null(tmle_candidates)) {
+    tmle_candidates <- expand_tmle_candidate_grid()
+  }
+  validate_tmle_candidates(tmle_candidates)
 
   data       <- lock$data
   treatment  <- lock$treatment
@@ -488,16 +705,13 @@ run_plasmode_feasibility <- function(lock,
   Y <- data[[outcome]]
   n <- nrow(data)
 
-  # Fit baseline outcome model (covariates only; no treatment, no outcome peek)
+  # Fit baseline outcome model (covariates only; outcome-blind in the
+  # sense that the treatment--outcome association is not used)
   Q0_fml <- stats::reformulate(covariates, response = outcome)
   Q0_fit <- stats::glm(Q0_fml, data = data, family = stats::binomial())
   p_base <- as.numeric(stats::predict(Q0_fit, type = "response"))
 
-  # Fit PS model once (GLM) for all replicates
-  ps_fml <- stats::reformulate(covariates, response = treatment)
-  ps_mod <- stats::glm(ps_fml, data = data, family = stats::binomial())
-  ps_hat <- as.numeric(stats::predict(ps_mod, type = "response"))
-  ps_hat <- pmax(pmin(ps_hat, 0.99), 0.01)
+  cand_ids <- vapply(tmle_candidates, function(x) x$candidate_id, character(1))
 
   all_results <- vector("list", length(effect_sizes))
   names(all_results) <- as.character(effect_sizes)
@@ -518,100 +732,117 @@ run_plasmode_feasibility <- function(lock,
       Y_sim  <- stats::rbinom(n, 1L, p_obs)
       truth  <- mean(p1_sim) - mean(p0_sim)
 
-      # IPTW (Hajek) estimate
-      w_iptw <- ifelse(A == 1, 1 / ps_hat, 1 / (1 - ps_hat))
-      r1_iptw <- stats::weighted.mean(Y_sim[A == 1], w_iptw[A == 1])
-      r0_iptw <- stats::weighted.mean(Y_sim[A == 0], w_iptw[A == 0])
-      est_iptw <- r1_iptw - r0_iptw
-      se_sq_1 <- sum(w_iptw[A == 1]^2 * (Y_sim[A == 1] - r1_iptw)^2) /
-        sum(w_iptw[A == 1])^2
-      se_sq_0 <- sum(w_iptw[A == 0]^2 * (Y_sim[A == 0] - r0_iptw)^2) /
-        sum(w_iptw[A == 0])^2
-      se_iptw <- sqrt(se_sq_1 + se_sq_0)
+      cand_results <- list()
 
-      # TMLE (one-step) estimate
-      ds <- data
-      ds[[".Y_sim."]] <- Y_sim
-      Q_fml  <- stats::reformulate(c(treatment, covariates),
-                                   response = ".Y_sim.")
-      Q_fit_s <- stats::glm(Q_fml, data = ds, family = stats::binomial())
+      for (cand in tmle_candidates) {
+        cand_result <- tryCatch({
+          # Fit PS with candidate truncation
+          ps_fml <- stats::reformulate(covariates, response = treatment)
+          ps_mod <- stats::glm(ps_fml, data = data, family = stats::binomial())
+          ps_hat <- as.numeric(stats::predict(ps_mod, type = "response"))
+          ps_hat <- pmax(pmin(ps_hat, 1 - cand$truncation), cand$truncation)
 
-      ds_a1 <- ds; ds_a1[[treatment]] <- 1L
-      ds_a0 <- ds; ds_a0[[treatment]] <- 0L
-      Q_a1  <- as.numeric(stats::predict(Q_fit_s, newdata = ds_a1,
-                                          type = "response"))
-      Q_a0  <- as.numeric(stats::predict(Q_fit_s, newdata = ds_a0,
-                                          type = "response"))
-      Q_aw  <- as.numeric(stats::predict(Q_fit_s, type = "response"))
+          # Fit Q-model on simulated outcome
+          ds <- data
+          ds[[".Y_sim."]] <- Y_sim
+          Q_fml  <- stats::reformulate(c(treatment, covariates),
+                                       response = ".Y_sim.")
+          Q_fit_s <- stats::glm(Q_fml, data = ds, family = stats::binomial())
 
-      H_a1 <- A / ps_hat
-      H_a0 <- (1 - A) / (1 - ps_hat)
-      H_aw <- ifelse(A == 1, H_a1, -H_a0)
+          ds_a1 <- ds; ds_a1[[treatment]] <- 1L
+          ds_a0 <- ds; ds_a0[[treatment]] <- 0L
+          Q_a1  <- as.numeric(stats::predict(Q_fit_s, newdata = ds_a1,
+                                              type = "response"))
+          Q_a0  <- as.numeric(stats::predict(Q_fit_s, newdata = ds_a0,
+                                              type = "response"))
+          Q_aw  <- as.numeric(stats::predict(Q_fit_s, type = "response"))
 
-      epsilon <- tryCatch({
-        Q_logit <- stats::qlogis(pmax(pmin(Q_aw, 0.999), 0.001))
-        fluc    <- stats::glm(
-          Y_sim ~ -1 + H_aw + offset(Q_logit),
-          family = stats::binomial()
-        )
-        unname(stats::coef(fluc))
-      }, error = function(e) 0)
+          # TMLE targeting step
+          H_a1 <- 1 / ps_hat
+          H_a0 <- -1 / (1 - ps_hat)
+          H_aw <- ifelse(A == 1, H_a1, H_a0)
 
-      Q_a1_u <- stats::plogis(stats::qlogis(pmax(pmin(Q_a1, 0.999), 0.001)) +
-                         epsilon * (1 / ps_hat))
-      Q_a0_u <- stats::plogis(stats::qlogis(pmax(pmin(Q_a0, 0.999), 0.001)) +
-                         epsilon * (-1 / (1 - ps_hat)))
-      Q_aw_u <- stats::plogis(stats::qlogis(pmax(pmin(Q_aw, 0.999), 0.001)) +
-                         epsilon * H_aw)
+          epsilon <- tryCatch({
+            Q_logit <- stats::qlogis(pmax(pmin(Q_aw, 0.999), 0.001))
+            fluc <- stats::glm(
+              Y_sim ~ -1 + H_aw + offset(Q_logit),
+              family = stats::binomial()
+            )
+            unname(stats::coef(fluc))
+          }, error = function(e) 0)
 
-      est_tmle <- mean(Q_a1_u) - mean(Q_a0_u)
-      ic_tmle  <- H_aw * (Y_sim - Q_aw_u) +
-        (Q_a1_u - Q_a0_u) - est_tmle
-      se_tmle  <- sqrt(var(ic_tmle) / n)
+          Q_a1_u <- stats::plogis(
+            stats::qlogis(pmax(pmin(Q_a1, 0.999), 0.001)) + epsilon * H_a1)
+          Q_a0_u <- stats::plogis(
+            stats::qlogis(pmax(pmin(Q_a0, 0.999), 0.001)) + epsilon * H_a0)
+          Q_aw_u <- stats::plogis(
+            stats::qlogis(pmax(pmin(Q_aw, 0.999), 0.001)) + epsilon * H_aw)
 
-      rep_results[[rep_i]] <- list(
-        iptw  = list(est      = est_iptw,
-                     se       = se_iptw,
-                     ci_lower = est_iptw - 1.96 * se_iptw,
-                     ci_upper = est_iptw + 1.96 * se_iptw),
-        tmle  = list(est      = est_tmle,
-                     se       = se_tmle,
-                     ci_lower = est_tmle - 1.96 * se_tmle,
-                     ci_upper = est_tmle + 1.96 * se_tmle),
-        truth = truth
-      )
+          est  <- mean(Q_a1_u) - mean(Q_a0_u)
+          eic  <- H_aw * (Y_sim - Q_aw_u) + (Q_a1_u - Q_a0_u) - est
+          se   <- sqrt(var(eic) / n)
+
+          list(est      = est,
+               se       = se,
+               ci_lower = est - 1.96 * se,
+               ci_upper = est + 1.96 * se)
+        }, error = function(e) {
+          list(est = NA_real_, se = NA_real_,
+               ci_lower = NA_real_, ci_upper = NA_real_)
+        })
+
+        cand_results[[cand$candidate_id]] <- cand_result
+      }
+
+      rep_results[[rep_i]] <- c(cand_results, list(.truth = truth))
     }
 
     all_results[[as.character(es)]] <- rep_results
   }
 
-  # Aggregate performance metrics
+  # Aggregate performance metrics per candidate
   metrics_rows <- lapply(effect_sizes, function(es) {
     rr <- all_results[[as.character(es)]]
-    truth_v <- vapply(rr, function(x) x$truth, numeric(1L))
-    lapply(c("iptw", "tmle"), function(meth) {
-      ests   <- vapply(rr, function(x) x[[meth]]$est,      numeric(1L))
-      ci_los <- vapply(rr, function(x) x[[meth]]$ci_lower, numeric(1L))
-      ci_his <- vapply(rr, function(x) x[[meth]]$ci_upper, numeric(1L))
+    truth_v <- vapply(rr, function(x) x$.truth, numeric(1L))
+
+    lapply(cand_ids, function(cid) {
+      ests   <- vapply(rr, function(x) x[[cid]]$est,      numeric(1L))
+      ses    <- vapply(rr, function(x) x[[cid]]$se,        numeric(1L))
+      ci_los <- vapply(rr, function(x) x[[cid]]$ci_lower, numeric(1L))
+      ci_his <- vapply(rr, function(x) x[[cid]]$ci_upper, numeric(1L))
+
+      valid  <- !is.na(ests)
+      ests_v <- ests[valid]; ses_v <- ses[valid]
+      ci_lo_v <- ci_los[valid]; ci_hi_v <- ci_his[valid]
+      truth_vv <- truth_v[valid]
+
       data.frame(
         effect_size = es,
-        method      = meth,
-        bias        = round(mean(ests - truth_v), 5L),
-        rmse        = round(sqrt(mean((ests - truth_v)^2)), 5L),
-        coverage    = round(mean(ci_los <= truth_v & truth_v <= ci_his), 3L),
+        candidate   = cid,
+        bias        = round(mean(ests_v - truth_vv), 5L),
+        rmse        = round(sqrt(mean((ests_v - truth_vv)^2)), 5L),
+        coverage    = round(mean(ci_lo_v <= truth_vv & truth_vv <= ci_hi_v), 3L),
+        emp_sd      = round(sd(ests_v), 5L),
+        mean_se     = round(mean(ses_v), 5L),
+        n_converged = sum(valid),
         stringsAsFactors = FALSE
       )
     })
   })
   metrics <- do.call(rbind, unlist(metrics_rows, recursive = FALSE))
 
+  # Add SE calibration ratio
+  metrics$se_cal <- round(
+    ifelse(metrics$emp_sd > 0, metrics$mean_se / metrics$emp_sd, NA_real_), 3L)
+
   result <- list(
-    results      = all_results,
-    metrics      = metrics,
-    lock         = lock,
-    effect_sizes = effect_sizes,
-    reps         = reps,
-    call         = match.call()
+    results         = all_results,
+    metrics         = metrics,
+    tmle_candidates = tmle_candidates,
+    lock            = lock,
+    effect_sizes    = effect_sizes,
+    reps            = reps,
+    call            = match.call()
   )
   class(result) <- "plasmode_results"
   result
@@ -622,6 +853,8 @@ run_plasmode_feasibility <- function(lock,
 print.plasmode_results <- function(x, ...) {
   cat("Plasmode-Simulation Feasibility Evaluation\n")
   cat("============================================\n")
+  n_cands <- length(x$tmle_candidates)
+  cat(sprintf("TMLE candidates: %d\n", n_cands))
   cat("Effect sizes evaluated:", paste(x$effect_sizes, collapse = ", "), "\n")
   cat("Replicates per effect size:", x$reps, "\n\n")
   cat("Performance Metrics:\n")
@@ -632,47 +865,136 @@ print.plasmode_results <- function(x, ...) {
 
 #' Select Best TMLE Candidate Specification
 #'
-#' Applies the pre-specified selection rule to plasmode-simulation performance
-#' metrics to choose the best analysis specification.
+#' Applies a prespecified selection rule to plasmode-simulation performance
+#' metrics to choose the best TMLE candidate specification.  Candidates
+#' are prespecified TMLE implementations varying in truncation threshold
+#' and/or nuisance-learner library.
+#'
+#' @section Clean-room stage: Stage 2b (pre-outcome).
 #'
 #' @param sim_results A `plasmode_results` object from
 #'   [run_plasmode_feasibility()].
-#' @param rule Character; selection criterion. One of `"min_rmse"` (default),
-#'   `"min_bias"`, or `"max_coverage"`.
+#' @param rule Character; selection criterion.  Default: \code{"min_rmse"}.
+#'   Also supports \code{"min_bias"} and \code{"max_coverage"}.
+#' @param thresholds Optional named list with \code{max_abs_bias},
+#'   \code{min_coverage} for pre-filtering.  Candidates failing these
+#'   thresholds are excluded before the selection rule is applied.
+#'   If all candidates fail, the least-bad candidate is returned with
+#'   a warning.
 #'
-#' @return A character string naming the selected best method/specification.
+#' @return An object of class \code{tmle_selected_spec} containing the
+#'   full candidate specification, the selection rule, and the metrics
+#'   at selection.  Also inherits from \code{tmle_candidate_spec}.
+#'   The \code{candidate_id} field can be extracted with
+#'   \code{as.character()}.
+#'
+#' @examples
+#' \dontrun{
+#' plas <- run_plasmode_feasibility(lock, reps = 20L)
+#' best <- select_tmle_candidate(plas, rule = "min_rmse")
+#' print(best)
+#' as.character(best)
+#' }
 #'
 #' @export
 select_tmle_candidate <- function(sim_results,
                                    rule = c("min_rmse", "min_bias",
-                                            "max_coverage")) {
+                                            "max_coverage"),
+                                   thresholds = NULL) {
   if (!inherits(sim_results, "plasmode_results"))
     stop("`sim_results` must be a plasmode_results object.", call. = FALSE)
   rule <- match.arg(rule)
 
   m <- sim_results$metrics
+  cands <- sim_results$tmle_candidates
 
-  # Average metrics across effect sizes per method
-  methods <- unique(m$method)
-  summary_m <- do.call(rbind, lapply(methods, function(meth) {
-    sub <- m[m$method == meth, ]
+  # Average metrics across effect sizes per candidate
+  cand_ids <- unique(m$candidate)
+  summary_m <- do.call(rbind, lapply(cand_ids, function(cid) {
+    sub <- m[m$candidate == cid, ]
     data.frame(
-      method   = meth,
-      bias     = mean(abs(sub$bias)),
-      rmse     = mean(sub$rmse),
-      coverage = mean(sub$coverage),
+      candidate = cid,
+      bias      = mean(abs(sub$bias)),
+      rmse      = mean(sub$rmse),
+      coverage  = mean(sub$coverage),
+      emp_sd    = mean(sub$emp_sd),
+      mean_se   = mean(sub$mean_se),
       stringsAsFactors = FALSE
     )
   }))
 
-  best <- switch(rule,
-    min_rmse     = summary_m$method[which.min(summary_m$rmse)],
-    min_bias     = summary_m$method[which.min(summary_m$bias)],
-    max_coverage = summary_m$method[which.max(summary_m$coverage)]
-  )
+  # Pre-filter by thresholds if supplied
+  eligible <- rep(TRUE, nrow(summary_m))
+  if (!is.null(thresholds)) {
+    if (!is.null(thresholds$max_abs_bias))
+      eligible <- eligible & summary_m$bias <= thresholds$max_abs_bias
+    if (!is.null(thresholds$min_coverage))
+      eligible <- eligible & summary_m$coverage >= thresholds$min_coverage
+  }
 
-  message("Selected specification: '", best, "' (rule = '", rule, "')")
-  best
+  all_failed <- !any(eligible)
+  if (all_failed) {
+    warning("No candidates passed thresholds; selecting least-bad candidate.",
+            call. = FALSE)
+    eligible <- rep(TRUE, nrow(summary_m))
+  }
+
+  pool <- summary_m[eligible, , drop = FALSE]
+
+  # Apply selection rule
+  best_idx <- switch(rule,
+    min_rmse     = which.min(pool$rmse),
+    min_bias     = which.min(pool$bias),
+    max_coverage = which.max(pool$coverage)
+  )
+  best_id <- pool$candidate[best_idx]
+
+  # Build selected-spec object from the matching candidate
+  cand_match <- NULL
+  for (c in cands) {
+    if (c$candidate_id == best_id) { cand_match <- c; break }
+  }
+  if (is.null(cand_match))
+    stop("Internal error: selected candidate not found in list.", call. = FALSE)
+
+  best_metrics <- pool[best_idx, , drop = FALSE]
+
+  result <- c(cand_match,
+    list(
+      selection_rule   = rule,
+      metrics          = best_metrics,
+      thresholds_used  = thresholds,
+      all_failed       = all_failed,
+      lock_hash        = if (!is.null(sim_results$lock))
+                           sim_results$lock$lock_hash else NA_character_
+    )
+  )
+  class(result) <- c("tmle_selected_spec", "tmle_candidate_spec")
+  message("Selected TMLE candidate: '", best_id, "' (rule = '", rule, "')")
+  result
+}
+
+
+#' @export
+print.tmle_selected_spec <- function(x, ...) {
+  cat(sprintf("Selected TMLE Candidate: %s\n", x$candidate_id))
+  cat(sprintf("  Label:      %s\n", x$label))
+  cat(sprintf("  g-library:  %s\n", paste(x$g_library, collapse = ", ")))
+  cat(sprintf("  Q-library:  %s\n", paste(x$q_library, collapse = ", ")))
+  cat(sprintf("  Truncation: %s\n", x$truncation))
+  cat(sprintf("  Rule:       %s\n", x$selection_rule))
+  if (!is.null(x$metrics)) {
+    cat(sprintf("  RMSE:       %.5f\n", x$metrics$rmse))
+    cat(sprintf("  Bias:       %.5f\n", x$metrics$bias))
+    cat(sprintf("  Coverage:   %.3f\n", x$metrics$coverage))
+  }
+  invisible(x)
+}
+
+
+#' @export
+as.character.tmle_selected_spec <- function(x, ...) {
+  x$candidate_id
 }
 
 
@@ -880,16 +1202,33 @@ print.iptw_result <- function(x, ...) {
 #' provided; otherwise re-estimates via SuperLearner. The outcome is never
 #' accessed, making this step safe at any stage.
 #'
+#' If the lock contains a locked primary TMLE specification (from
+#' [lock_primary_tmle_spec()]), the PS truncation threshold from that
+#' specification is applied automatically.
+#'
+#' @section Clean-room stage: Stage 2 / 4 (pre-outcome; does not access
+#'   the outcome).
+#'
 #' @param lock A `cleanroom_lock` from [create_analysis_lock()].
 #' @param ps_fit Optional `ps_fit` from [fit_ps_superlearner()]. If provided,
 #'   the already-estimated propensity scores are reused.
+#' @param truncation Numeric; PS truncation threshold.  If \code{NULL}
+#'   (default), uses the locked primary TMLE spec truncation if available,
+#'   otherwise 0.01.
 #'
 #' @return An object of class `tmle_mechanism` with `type = "treatment"`.
 #'
 #' @export
-fit_tmle_treatment_mechanism <- function(lock, ps_fit = NULL) {
+fit_tmle_treatment_mechanism <- function(lock, ps_fit = NULL,
+                                          truncation = NULL) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
+
+  # Resolve truncation from locked spec
+  primary_spec <- lock$primary_tmle_spec
+  if (is.null(truncation)) {
+    truncation <- if (!is.null(primary_spec)) primary_spec$truncation else 0.01
+  }
 
   if (!is.null(ps_fit)) {
     if (!inherits(ps_fit, "ps_fit"))
@@ -902,6 +1241,9 @@ fit_tmle_treatment_mechanism <- function(lock, ps_fit = NULL) {
     g_mod <- temp$sl_fit
   }
 
+  # Apply truncation from locked spec
+  ps <- pmax(pmin(ps, 1 - truncation), truncation)
+
   result <- list(
     type       = "treatment",
     ps         = ps,
@@ -910,6 +1252,7 @@ fit_tmle_treatment_mechanism <- function(lock, ps_fit = NULL) {
     covariates = lock$covariates,
     data       = lock$data,
     lock       = lock,
+    truncation = truncation,
     call       = match.call()
   )
   class(result) <- "tmle_mechanism"
@@ -919,15 +1262,22 @@ fit_tmle_treatment_mechanism <- function(lock, ps_fit = NULL) {
 
 #' Fit TMLE Outcome Mechanism
 #'
-#' Fits the outcome mechanism Q(A,W) = E[Y|A,W] using SuperLearner (or
+#' Fits the outcome mechanism Q(A,W) = E\[Y|A,W\] using SuperLearner (or
 #' logistic regression as a fallback). This step accesses the outcome and
-#' **must only be called in Stage 3** (after outcome unblinding).
+#' **must only be called in Stage 4** (after outcome unblinding).
+#'
+#' If the lock contains a locked primary TMLE specification (from
+#' [lock_primary_tmle_spec()]), the Q-library from that specification is
+#' used by default.
+#'
+#' @section Clean-room stage: Stage 4 (accesses the real outcome).
 #'
 #' @param lock A `cleanroom_lock` from [create_analysis_lock()].
 #' @param g_fit A `tmle_mechanism` object with `type = "treatment"` from
 #'   [fit_tmle_treatment_mechanism()].
-#' @param sl_library Optional SuperLearner library override. Defaults to
-#'   `lock$sl_library`.
+#' @param sl_library Optional SuperLearner library override. If \code{NULL},
+#'   uses the locked primary TMLE spec Q-library if available, then falls
+#'   back to `lock$sl_library`.
 #'
 #' @return An object of class `tmle_mechanism` with `type = "outcome"`
 #'   containing initial outcome predictions `Q_a1`, `Q_a0`, and `Q_aw`.
@@ -940,7 +1290,15 @@ fit_tmle_outcome_mechanism <- function(lock, g_fit, sl_library = NULL) {
     stop("`g_fit` must be a tmle_mechanism of type 'treatment'.",
          call. = FALSE)
 
-  if (is.null(sl_library)) sl_library <- lock$sl_library
+  # Resolve Q-library from locked spec
+  primary_spec <- lock$primary_tmle_spec
+  if (is.null(sl_library)) {
+    if (!is.null(primary_spec)) {
+      sl_library <- primary_spec$q_library
+    } else {
+      sl_library <- lock$sl_library
+    }
+  }
 
   data       <- lock$data
   treatment  <- lock$treatment
@@ -955,7 +1313,8 @@ fit_tmle_outcome_mechanism <- function(lock, g_fit, sl_library = NULL) {
       Y          = Y,
       X          = AW,
       family     = binomial(),
-      SL.library = sl_library
+      SL.library = sl_library,
+      env        = asNamespace("SuperLearner")
     )
     AW_a1   <- AW; AW_a1[[treatment]] <- 1L
     AW_a0   <- AW; AW_a0[[treatment]] <- 0L
@@ -1234,7 +1593,9 @@ summarize_plasmode_results <- function(x, ...) {
 #' @param ps_fit A `ps_fit` object from [fit_ps_superlearner()] or
 #'   [fit_ps_glm()].
 #' @param workflows Character vector specifying which workflows to run.
-#'   Default: `c("match", "iptw", "tmle")`.
+#'   Default: `c("match", "iptw", "tmle")`.  Matching and IPTW serve as
+#'   secondary comparators; the primary TMLE uses the locked specification
+#'   from [lock_primary_tmle_spec()] when available.
 #'
 #' @return A named list with elements named by the requested workflows.
 #'
@@ -1267,6 +1628,9 @@ fit_final_workflows <- function(lock, ps_fit,
 
   if ("tmle" %in% workflows) {
     results$tmle <- tryCatch({
+      # fit_tmle_treatment_mechanism and fit_tmle_outcome_mechanism
+      # automatically resolve truncation and Q-library from the locked
+      # primary TMLE spec when present.
       g_fit    <- fit_tmle_treatment_mechanism(lock, ps_fit)
       Q_fit    <- fit_tmle_outcome_mechanism(lock, g_fit)
       tmle_upd <- run_tmle_targeting_step(g_fit, Q_fit)
@@ -1281,47 +1645,235 @@ fit_final_workflows <- function(lock, ps_fit,
 }
 
 
-#' Fit a Set of TMLE Candidate Specifications
+#' Fit a Set of TMLE Candidate Specifications on Real Data
 #'
-#' Fits multiple TMLE specifications (e.g., varying the SuperLearner library)
-#' and returns all results for comparison with [select_tmle_candidate()].
+#' Fits multiple TMLE candidate specifications on the real outcome data
+#' (Stage 4) and returns all results.
 #'
 #' @param lock A `cleanroom_lock` from [create_analysis_lock()].
-#' @param candidates A named list of SuperLearner library vectors. Each
-#'   element defines one candidate. If `NULL`, a default set is used.
+#' @param candidates A list of [tmle_candidate()] objects, or a named list
+#'   of SuperLearner library vectors (legacy API). If `NULL`, uses
+#'   [expand_tmle_candidate_grid()] defaults.
+#' @param ps_fit Optional `ps_fit` object; reused across candidates to
+#'   avoid redundant PS estimation.
 #'
-#' @return A named list of `tmle_fit` objects (failed candidates are dropped).
+#' @return A named list of TMLE estimate objects (failed candidates dropped).
+#'
+#' @section Clean-room stage: Stage 4 (accesses the real outcome).
 #'
 #' @export
-fit_tmle_candidate_set <- function(lock, candidates = NULL) {
+fit_tmle_candidate_set <- function(lock, candidates = NULL, ps_fit = NULL) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
 
+  # Default: use grid expansion
+
   if (is.null(candidates)) {
-    candidates <- list(
-      glm_only = c("SL.glm"),
-      glm_mean = c("SL.glm", "SL.mean"),
-      full     = lock$sl_library
-    )
+    candidates <- expand_tmle_candidate_grid()
   }
 
-  results <- lapply(names(candidates), function(nm) {
-    lib    <- candidates[[nm]]
-    lock_i <- lock
-    lock_i$sl_library <- lib
-    class(lock_i) <- "cleanroom_lock"
+  # Accept either tmle_candidate_spec list or legacy named-library list
+  use_specs <- all(vapply(candidates, function(x)
+    inherits(x, "tmle_candidate_spec"), logical(1)))
 
-    tryCatch({
-      ps_i    <- fit_ps_glm(lock_i)
-      g_i     <- fit_tmle_treatment_mechanism(lock_i, ps_i)
-      Q_i     <- fit_tmle_outcome_mechanism(lock_i, g_i)
-      upd_i   <- run_tmle_targeting_step(g_i, Q_i)
-      extract_tmle_estimate(upd_i)
-    }, error = function(e) {
-      message("Candidate '", nm, "' failed: ", e$message)
-      NULL
+  if (use_specs) {
+    cand_ids <- vapply(candidates, function(x) x$candidate_id, character(1))
+    results <- lapply(seq_along(candidates), function(i) {
+      cand <- candidates[[i]]
+      lock_i <- lock
+      lock_i$primary_tmle_spec <- cand
+      class(lock_i) <- "cleanroom_lock"
+
+      tryCatch({
+        ps_i <- if (!is.null(ps_fit)) ps_fit else fit_ps_glm(lock_i)
+        g_i     <- fit_tmle_treatment_mechanism(lock_i, ps_i)
+        Q_i     <- fit_tmle_outcome_mechanism(lock_i, g_i)
+        upd_i   <- run_tmle_targeting_step(g_i, Q_i)
+        extract_tmle_estimate(upd_i)
+      }, error = function(e) {
+        message("Candidate '", cand$candidate_id, "' failed: ", e$message)
+        NULL
+      })
     })
-  })
-  names(results) <- names(candidates)
+    names(results) <- cand_ids
+  } else {
+    # Legacy: named list of SL library vectors
+    results <- lapply(names(candidates), function(nm) {
+      lib    <- candidates[[nm]]
+      lock_i <- lock
+      lock_i$sl_library <- lib
+      class(lock_i) <- "cleanroom_lock"
+
+      tryCatch({
+        ps_i <- if (!is.null(ps_fit)) ps_fit else fit_ps_glm(lock_i)
+        g_i     <- fit_tmle_treatment_mechanism(lock_i, ps_i)
+        Q_i     <- fit_tmle_outcome_mechanism(lock_i, g_i)
+        upd_i   <- run_tmle_targeting_step(g_i, Q_i)
+        extract_tmle_estimate(upd_i)
+      }, error = function(e) {
+        message("Candidate '", nm, "' failed: ", e$message)
+        NULL
+      })
+    })
+    names(results) <- names(candidates)
+  }
+
   results[!vapply(results, is.null, logical(1L))]
+}
+
+
+# ── Gate Decision ─────────────────────────────────────────────────────────
+
+#' Evaluate a Plasmode-Simulation Gate (GO / FLAG / STOP)
+#'
+#' Compares performance metrics from a plasmode-simulation replicate set
+#' against pre-specified targets and returns a structured GO / FLAG / STOP
+#' decision. This implements the checkpoint logic described in the
+#' clean-room staged workflow: if bias, coverage, and SE-calibration all
+#' pass, the decision is **GO**; if bias and coverage pass but
+#' SE-calibration fails, the decision is **FLAG** (proceed with caution);
+#' otherwise the decision is **STOP**.
+#'
+#' @param metrics A data.frame with at least columns `bias`, `coverage`,
+#'   `emp_sd`, and `mean_se`, plus a `candidate` column (from the updated
+#'   plasmode API) or a `method` column (legacy API).
+#' @param scenario_name Character label for the scenario (used in output).
+#' @param targets A list with elements `max_abs_bias` (maximum tolerable
+#'   absolute bias), `min_coverage` (minimum acceptable 95 percent CI
+#'   coverage), `se_sd_low` (lower bound for SE / empirical-SD ratio), and
+#'   `se_sd_high` (upper bound for SE / empirical-SD ratio).
+#' @param method Character; which row to evaluate.
+#'   Matched against the `candidate` column if it exists, otherwise the
+#'   `method` column. Default: `"TMLE"`.
+#'
+#' @return A list with elements `decision` (one of `"GO"`, `"FLAG"`, or
+#'   `"STOP"`), `table` (a one-row data.frame summarising the evaluation),
+#'   and `scenario` (the `scenario_name` used).
+#'
+#' @examples
+#' metrics <- data.frame(
+#'   candidate = c("glm_t01", "glm_t05"),
+#'   bias      = c(0.002, 0.005),
+#'   coverage  = c(0.95,  0.93),
+#'   emp_sd    = c(0.03,  0.04),
+#'   mean_se   = c(0.031, 0.041),
+#'   stringsAsFactors = FALSE
+#' )
+#' targets <- list(
+#'   max_abs_bias = 0.01,
+#'   min_coverage = 0.90,
+#'   se_sd_low    = 0.8,
+#'   se_sd_high   = 1.2
+#' )
+#' gate_check(metrics, "Example", targets, method = "glm_t01")
+#'
+#' @export
+gate_check <- function(metrics, scenario_name, targets,
+                       method = "TMLE") {
+  if (!is.data.frame(metrics))
+    stop("`metrics` must be a data.frame.", call. = FALSE)
+
+  # Support both new "candidate" column and legacy "method" column
+  id_col <- if ("candidate" %in% names(metrics)) "candidate" else "method"
+
+  if (!method %in% metrics[[id_col]])
+    stop("'", method, "' not found in metrics$", id_col, ".", call. = FALSE)
+
+  row <- metrics[metrics[[id_col]] == method, , drop = FALSE]
+  if (nrow(row) == 0L)
+    stop("No rows matched for method '", method, "'.", call. = FALSE)
+  row <- row[1L, , drop = FALSE]
+
+  bias_ok <- abs(row$bias) < targets$max_abs_bias
+  cov_ok  <- row$coverage >= targets$min_coverage
+
+  se_sd_ratio <- if ("mean_se" %in% names(row) && "emp_sd" %in% names(row) &&
+                      !is.na(row$emp_sd) && row$emp_sd > 0) {
+    row$mean_se / row$emp_sd
+  } else {
+    NA_real_
+  }
+  se_cal <- if (!is.na(se_sd_ratio)) {
+    se_sd_ratio >= targets$se_sd_low && se_sd_ratio <= targets$se_sd_high
+  } else {
+    FALSE
+  }
+
+  decision <- if (bias_ok && cov_ok && se_cal) {
+    "GO"
+  } else if (bias_ok && cov_ok) {
+    "FLAG"
+  } else {
+    "STOP"
+  }
+
+  tbl <- data.frame(
+    scenario    = scenario_name,
+    method      = method,
+    bias        = round(row$bias, 5),
+    coverage    = round(row$coverage, 3),
+    se_sd_ratio = if (!is.na(se_sd_ratio)) round(se_sd_ratio, 3) else NA_real_,
+    bias_ok     = bias_ok,
+    cov_ok      = cov_ok,
+    se_cal      = se_cal,
+    decision    = decision,
+    stringsAsFactors = FALSE
+  )
+
+  list(decision = decision, table = tbl, scenario = scenario_name)
+}
+
+
+# ── Crude Workflow ────────────────────────────────────────────────────────
+
+#' Run Crude (Unadjusted) Risk Difference Workflow
+#'
+#' Computes the unadjusted risk difference between treatment groups
+#' without any propensity-score or covariate adjustment. Intended as
+#' a benchmark comparator for the adjusted workflows.
+#'
+#' @param lock A `cleanroom_lock` from [create_analysis_lock()].
+#'
+#' @return A list with elements `estimate`, `se`, `ci_lower`, `ci_upper`,
+#'   `p_value`, `r1` (risk in treated), and `r0` (risk in control).
+#'
+#' @examples
+#' dat  <- sim_func1(n = 500, seed = 1)
+#' lock <- create_analysis_lock(
+#'   data = dat, treatment = "treatment", outcome = "event_24",
+#'   covariates = c("age", "sex", "biomarker"), seed = 1
+#' )
+#' run_crude_workflow(lock)
+#'
+#' @export
+run_crude_workflow <- function(lock) {
+  if (!inherits(lock, "cleanroom_lock"))
+    stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
+
+  data <- lock$data
+  A    <- data[[lock$treatment]]
+  Y    <- data[[lock$outcome]]
+
+  r1 <- mean(Y[A == 1])
+  r0 <- mean(Y[A == 0])
+  rd <- r1 - r0
+
+  se <- sqrt(var(Y[A == 1]) / sum(A == 1) +
+               var(Y[A == 0]) / sum(A == 0))
+  ci_lo   <- rd - 1.96 * se
+  ci_hi   <- rd + 1.96 * se
+  p_value <- 2 * pnorm(-abs(rd / se))
+
+  list(
+    estimate = rd,
+    se       = se,
+    ci_lower = ci_lo,
+    ci_upper = ci_hi,
+    p_value  = p_value,
+    r1       = r1,
+    r0       = r0,
+    n        = nrow(data),
+    treatment = lock$treatment,
+    outcome   = lock$outcome
+  )
 }

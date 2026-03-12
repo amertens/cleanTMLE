@@ -2,12 +2,22 @@
 % Please edit documentation in R/cleanTMLE-package.R
 \docType{package}
 \name{cleanTMLE-package}
+\alias{cleanTMLE}
 \alias{cleanTMLE-package}
-\title{cleanTMLE: Causal Inference for Risk Estimation}
+\title{cleanTMLE: Staged Clean-Room Causal Analysis with Propensity Score and TMLE Workflows}
 \description{
-A tidy interface for causal inference in time-to-event and binary outcome
-settings. Supports inverse probability weighted (IPW) cumulative risk
-estimation, g-computation, augmented IPW (AIPW / doubly robust), and
-weighted Cox regression for hazard ratios. Integrates with TMLE, survtmle,
-and lmtp packages for targeted learning extensions.
+Provides workflow scaffolding for staged, outcome-blinded observational causal analyses. Supports three workflow families: conventional propensity-score methods (matching and IPTW), fixed-specification targeted minimum loss-based estimation (TMLE), and simulation-selected TMLE in which candidate nuisance strategies are evaluated on plasmode simulations before real-outcome access. The package implements a modular TMLE API with separate functions for fitting the treatment mechanism, fitting the outcome mechanism, performing the targeting step, and extracting the final estimate, so that each step can be executed at the appropriate clean-room stage. SuperLearner ensemble learning is the default and recommended propensity-score estimation strategy; simpler regression models are also supported. Includes tools for analysis lock and specification management, propensity-score overlap and balance diagnostics, plasmode-simulation feasibility evaluation, and workflow-level summaries. Integrates with the 'tmle', 'SuperLearner', 'survtmle', and 'lmtp' packages for targeted learning estimation.
 }
+\seealso{
+Useful links:
+\itemize{
+  \item \url{https://github.com/amertens/cleanTMLE}
+  \item Report bugs at \url{https://github.com/amertens/cleanTMLE/issues}
+}
+
+}
+\author{
+\strong{Maintainer}: cleanTMLE Authors \email{cleantmle@example.com}
+
+}
+\keyword{internal}

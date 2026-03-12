@@ -1,0 +1,347 @@
+---
+title: "cleanTMLE Function Reference"
+subtitle: "API Patterns and Quick Examples"
+author: "cleanTMLE Authors"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    code-fold: false
+    self-contained: true
+vignette: >
+  %\VignetteIndexEntry{cleanTMLE Function Reference}
+  %\VignetteEngine{quarto::html}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse  = TRUE,
+  comment   = "#>",
+  fig.width = 7,
+  fig.height = 4.5,
+  warning   = FALSE,
+  message   = FALSE
+)
+```
+
+This article is a compact index of every exported function in
+**cleanTMLE**, organised by clean-room stage.
+For a narrative worked example, see the companion vignette
+*A Staged Clean-Room TMLE Analysis*.
+
+```{r load}
+library(cleanTMLE)
+dat <- sim_func1(n = 400, seed = 42)
+```
+
+---
+
+## Function Index
+
+The table below lists every exported function, its clean-room stage,
+and whether it accesses the real outcome.
+
+| Stage | Function | Outcome? | Purpose |
+|-------|----------|:--------:|---------|
+| Util | `expit()`, `logit()` | -- | Inverse-logit / logit transforms |
+| Data | `sim_func1()` | -- | Simulate causal-inference data |
+| 1a | `create_analysis_lock()` | No | Lock analytic specification |
+| 1a | `validate_analysis_lock()` | No | Verify lock integrity |
+| 1a | `attach_estimand()` | No | Attach estimand metadata |
+| 1a | `declare_sensitivity_plan()` | No | Declare a sensitivity plan |
+| 1a | `define_negative_control()` | No | Register a negative control variable |
+| 1b | `checkpoint_cohort_adequacy()` | Yes* | Check Point 1: sample size / events |
+| 2 | `fit_ps_glm()` | No | Logistic regression PS |
+| 2 | `fit_ps_superlearner()` | No | SuperLearner PS |
+| 2 | `compute_ps_diagnostics()` | No | Overlap, ESS, SMDs |
+| 2 | `checkpoint_balance()` | No | Check Point 2: balance decision |
+| 2b | `tmle_candidate()` | No | Define a TMLE candidate specification |
+| 2b | `expand_tmle_candidate_grid()` | No | Generate candidate grid |
+| 2b | `validate_tmle_candidates()` | No | Validate candidate list |
+| 2b | `run_plasmode_feasibility()` | No† | Plasmode simulation evaluation |
+| 2b | `summarize_plasmode_results()` | No | Print plasmode metrics |
+| 2b | `select_tmle_candidate()` | No | Select best TMLE specification |
+| 2b | `lock_primary_tmle_spec()` | No | Lock selected spec in the lock |
+| 2b | `get_primary_tmle_spec()` | No | Retrieve locked spec |
+| 2b | `gate_check()` | No | GO / FLAG / STOP for plasmode |
+| 3 | `run_negative_control()` | Yes‡ | Negative control analysis |
+| 3 | `checkpoint_residual_bias()` | No | Check Point 3: residual bias |
+| 4 | `run_crude_workflow()` | **Yes** | Unadjusted risk difference |
+| 4 | `run_match_workflow()` | **Yes** | PS matching |
+| 4 | `run_iptw_workflow()` | **Yes** | Stabilised IPTW |
+| 4 | `fit_tmle_treatment_mechanism()` | No | TMLE g-step (re-uses PS) |
+| 4 | `fit_tmle_outcome_mechanism()` | **Yes** | TMLE Q-step |
+| 4 | `run_tmle_targeting_step()` | **Yes** | TMLE targeting / fluctuation |
+| 4 | `extract_tmle_estimate()` | **Yes** | Final TMLE estimate |
+| 4 | `fit_tmle_candidate_set()` | **Yes** | Fit multiple TMLE specs |
+| 4 | `fit_final_workflows()` | **Yes** | Run all Stage 4 workflows |
+| 4 | `sensitivity_truncation()` | **Yes** | Truncation sensitivity |
+| -- | `compute_evalue()` | No | E-value for unmeasured confounding |
+| -- | `summarize_cleanroom_results()` | No | Cross-workflow comparison table |
+| -- | `create_audit_log()` | No | Initialise audit trail |
+| -- | `record_stage()` | No | Append stage entry |
+| -- | `record_checkpoint()` | No | Append checkpoint entry |
+| -- | `export_audit_trail()` | No | Export trail as data frame |
+| -- | `build_stage_manifest()` | No | Print stage path summary |
+
+\* Accesses event counts only.
+† Generates simulated outcomes; does not use the real outcome association.
+‡ Accesses the negative control outcome, not the primary outcome.
+
+---
+
+## Utilities
+
+```{r utils}
+expit(0)            # 0.5
+logit(0.5)          # 0
+expit(logit(0.73))  # 0.73
+```
+
+---
+
+## Stage 1a: Lock, Estimand, Plans
+
+```{r lock}
+lock <- create_analysis_lock(
+  data       = dat,
+  treatment  = "treatment",
+  outcome    = "event_24",
+  covariates = c("age", "sex", "biomarker", "comorbidity"),
+  sl_library = c("SL.glm", "SL.mean"),
+  plasmode_reps = 40L,
+  seed       = 42L
+)
+
+lock <- attach_estimand(lock,
+  description          = "Treatment effect on 24-month event risk",
+  contrast             = "risk_difference",
+  statistical_estimand = "E_W[E(Y|A=1,W) - E(Y|A=0,W)]"
+)
+
+lock <- declare_sensitivity_plan(lock, "truncation",
+  description = "Vary PS truncation",
+  settings    = list(thresholds = c(0.01, 0.05, 0.10)))
+
+lock <- define_negative_control(lock, "nc_outcome")
+
+validate_analysis_lock(lock)
+print(lock)
+```
+
+---
+
+## Stage 1b: Cohort Adequacy (Check Point 1)
+
+```{r cp1}
+cp1 <- checkpoint_cohort_adequacy(lock)
+print(cp1)
+```
+
+---
+
+## Stage 2: Propensity Score and Balance (Check Point 2)
+
+```{r ps}
+ps_fit <- fit_ps_glm(lock, truncate = 0.01)
+diag   <- compute_ps_diagnostics(ps_fit)
+print(diag)
+```
+
+```{r overlap, fig.cap = "PS overlap."}
+plot(diag)
+```
+
+```{r cp2}
+cp2 <- checkpoint_balance(diag, lock_hash = lock$lock_hash)
+print(cp2)
+```
+
+---
+
+## Stage 2b: TMLE Candidate Selection via Plasmode
+
+```{r candidates}
+# Define TMLE candidate specifications
+candidates <- list(
+  tmle_candidate("glm_t01", "GLM trunc=0.01",
+                 g_library = c("SL.glm"), truncation = 0.01),
+  tmle_candidate("glm_t05", "GLM trunc=0.05",
+                 g_library = c("SL.glm"), truncation = 0.05)
+)
+# Or use the default grid:
+# candidates <- expand_tmle_candidate_grid()
+```
+
+```{r plasmode, cache = TRUE}
+plas <- run_plasmode_feasibility(lock, tmle_candidates = candidates,
+                                 effect_sizes = c(0.05, 0.10),
+                                 reps = 40L)
+print(plas)
+```
+
+```{r select}
+selected <- select_tmle_candidate(plas, rule = "min_rmse")
+lock <- lock_primary_tmle_spec(lock, selected)
+print(selected)
+```
+
+---
+
+## Stage 3: Negative Control (Check Point 3)
+
+```{r nc}
+nc  <- run_negative_control(lock, "nc_outcome", ps_fit)
+cp3 <- checkpoint_residual_bias(nc, lock_hash = lock$lock_hash)
+print(nc)
+print(cp3)
+```
+
+---
+
+## Stage 4: Estimation
+
+```{r crude}
+run_crude_workflow(lock)
+```
+
+```{r matching}
+match_fit <- run_match_workflow(lock, ps_fit)
+print(match_fit)
+```
+
+```{r iptw}
+iptw_fit <- run_iptw_workflow(lock, ps_fit)
+print(iptw_fit)
+```
+
+```{r tmle}
+g_fit    <- fit_tmle_treatment_mechanism(lock, ps_fit)
+Q_fit    <- fit_tmle_outcome_mechanism(lock, g_fit)
+tmle_upd <- run_tmle_targeting_step(g_fit, Q_fit)
+tmle_fit <- extract_tmle_estimate(tmle_upd)
+print(tmle_fit)
+```
+
+```{r compare}
+summarize_cleanroom_results(
+  list(Matching = match_fit, IPTW = iptw_fit, TMLE = tmle_fit)
+)
+```
+
+---
+
+## Sensitivity and Diagnostics
+
+```{r trunc-sens}
+sensitivity_truncation(lock, thresholds = c(0.01, 0.05, 0.10))
+```
+
+```{r evalue}
+compute_evalue(1.3, ci_bound = 1.05)
+```
+
+---
+
+## Model Specification DSL
+
+The `specify_models()` + `identify_*()` API provides a pipe-friendly
+interface for time-to-event estimation functions.
+
+```{r spec}
+spec <- specify_models(data = dat) |>
+  identify_outcome(event, type = "time_to_event") |>
+  identify_treatment(treatment, formula = ~ age + sex + biomarker) |>
+  identify_censoring(censored, formula = ~ age + sex, model = "coxph") |>
+  identify_subject(id)
+print(spec)
+```
+
+---
+
+## Time-to-Event Estimation
+
+```{r ipwrisk, cache = TRUE}
+fit_ipw <- estimate_ipwrisk(spec, risk_time = c(12, 24),
+                             weight_type = "iptw", nboot = 20, seed = 42)
+print(fit_ipw)
+```
+
+```{r ipwrisk-plot, fig.cap = "IPTW risk curves."}
+plot(fit_ipw)
+```
+
+```{r gcomp}
+spec_gc <- specify_models(data = dat) |>
+  identify_outcome(event, formula = ~ treatment + age + sex + biomarker,
+                   type = "time_to_event") |>
+  identify_treatment(treatment)
+
+fit_gc <- estimate_gcomprisk(spec_gc, risk_time = c(12, 24))
+print(fit_gc)
+```
+
+```{r aipw}
+spec_aipw <- specify_models(data = dat) |>
+  identify_outcome(event, formula = ~ treatment + age + sex + biomarker,
+                   type = "time_to_event") |>
+  identify_treatment(treatment, formula = ~ age + sex + biomarker) |>
+  identify_censoring(censored, formula = ~ age + sex, model = "coxph")
+
+fit_aipw <- estimate_aipwrisk(spec_aipw, risk_time = c(12, 24))
+print(fit_aipw)
+```
+
+```{r ipwhr}
+hr_fit <- estimate_ipwhr(spec)
+print(hr_fit)
+```
+
+```{r compare-tte}
+compare_fits(IPW = fit_ipw, GComp = fit_gc, AIPW = fit_aipw, risk_time = 24)
+```
+
+---
+
+## Tables and Weight Diagnostics
+
+```{r table1}
+make_table1(dat, vars = c("age", "sex", "biomarker", "comorbidity"),
+            by = "treatment", smd = TRUE)
+```
+
+```{r table2}
+make_table2(fit_ipw, risk_time = 24)
+```
+
+```{r wt-summary}
+make_wt_summary_table(fit_ipw)
+```
+
+```{r extreme}
+extreme_weights(fit_ipw, k = 5)
+```
+
+---
+
+## Audit Trail
+
+```{r audit}
+audit <- create_audit_log(lock)
+audit <- record_stage(audit, "Stage 1a", "Lock created")
+audit <- record_checkpoint(audit, cp1)
+audit <- record_checkpoint(audit, cp2)
+audit <- record_checkpoint(audit, cp3)
+audit <- record_stage(audit, "Stage 4", "Final estimation complete")
+export_audit_trail(audit)
+```
+
+```{r manifest}
+build_stage_manifest(audit)
+```
+
+```{r session-info}
+sessionInfo()
+```

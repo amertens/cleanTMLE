@@ -8,6 +8,7 @@ specify_models(data, ...)
 }
 \arguments{
 \item{data}{A data.frame containing the analysis dataset.}
+
 \item{...}{Currently unused; reserved for future extensions.}
 }
 \value{
@@ -18,6 +19,13 @@ Initializes a model specification container that stores information about
 the outcome, treatment, censoring, competing risks, and other model
 components needed for causal risk estimation.
 }
+\details{
+The specification object is the central data structure in cleanTMLE.
+After creating it with \code{specify_models()}, use the \verb{identify_*()} family
+of functions to declare outcome, treatment, censoring, and other
+components. Then pass the completed specification to an estimation function
+such as \code{\link[=estimate_ipwrisk]{estimate_ipwrisk()}} or \code{\link[=estimate_ipwhr]{estimate_ipwhr()}}.
+}
 \examples{
 \dontrun{
 spec <- specify_models(data = example1) |>
@@ -25,4 +33,5 @@ spec <- specify_models(data = example1) |>
   identify_treatment(treatment, formula = ~ age + sex) |>
   identify_censoring(censored, formula = ~ age + sex)
 }
+
 }

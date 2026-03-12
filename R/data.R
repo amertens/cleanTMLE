@@ -21,6 +21,9 @@
 #'     0 = censored.}
 #'   \item{censored}{Censoring indicator: 1 = administratively censored,
 #'     0 = not censored (event occurred).}
+#'   \item{nc_outcome}{Negative control outcome (binary). Generated from
+#'     covariates only (no treatment effect), so any estimated treatment
+#'     association indicates residual confounding.}
 #' }
 #'
 #' @source Simulated using [sim_func1()].
@@ -54,6 +57,9 @@
 #'    Treatment has a protective effect (HR ~ 0.7).
 #' 4. Censoring time: exponential with rate depending on age.
 #' 5. Competing event: with probability 0.1, the event is a competing risk.
+#' 6. Negative control outcome: binary, generated from age, sex, and
+#'    comorbidity only (no treatment effect).  Useful for Stage 3
+#'    residual-bias assessment.
 #'
 #' @examples
 #' dat <- sim_func1(n = 500, seed = 42)
@@ -111,6 +117,14 @@ sim_func1 <- function(n = 1000, seed = 123, max_time = 36) {
   # Derived binary outcome: primary event by 24 months
   event_24 <- as.integer(event == 1 & time <= 24)
 
+  # Negative control outcome: driven by covariates only, not treatment.
+
+  # By design P(nc_outcome | covariates, treatment) does not depend on
+  # treatment, so any estimated treatment association indicates residual
+  # confounding.
+  lp_nc <- -2 + 0.015 * age + 0.2 * sex + 0.1 * comorbidity
+  nc_outcome <- rbinom(n, 1, plogis(lp_nc))
+
   data.frame(
     id = seq_len(n),
     age = round(age, 1),
@@ -123,6 +137,7 @@ sim_func1 <- function(n = 1000, seed = 123, max_time = 36) {
     event_type = event_type,
     censored = censored,
     event_24 = event_24,
+    nc_outcome = nc_outcome,
     stringsAsFactors = FALSE
   )
 }

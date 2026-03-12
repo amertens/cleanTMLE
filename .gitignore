@@ -2,11 +2,13 @@
 .Rhistory
 .RData
 .Ruserdata
-<<<<<<< HEAD
-=======
 docs/
 inst/doc
 *.o
 *.so
 *.dll
->>>>>>> e6d4ca4c98718b633188d9ff38e55b044cd1d283
+
+# Rendered vignettes
+vignettes/*.html
+vignettes/*_cache/
+vignettes/*_files/

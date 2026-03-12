@@ -1,7 +1,7 @@
 #' TMLE Extensions for cleanTMLE
 #'
-#' These functions wrap established TMLE packages ({tmle}, {survtmle},
-#' {lmtp}) to provide targeted learning estimators that integrate with
+#' These functions wrap established TMLE packages (tmle, survtmle,
+#' lmtp) to provide targeted learning estimators that integrate with
 #' the cleanTMLE model specification workflow.
 #'
 #' @name tmle_extensions
@@ -11,8 +11,8 @@ NULL
 #' Point-Treatment TMLE for Binary Outcomes
 #'
 #' Estimates the average treatment effect (ATE) and optionally the risk
-#' ratio (RR) for a binary outcome using the {tmle} package with
-#' {SuperLearner} for nuisance parameter estimation.
+#' ratio (RR) for a binary outcome using the \pkg{tmle} package with
+#' \pkg{SuperLearner} for nuisance parameter estimation.
 #'
 #' @param data A data.frame.
 #' @param treatment Character; name of the binary treatment variable.
@@ -23,7 +23,7 @@ NULL
 #'   Default: `c("SL.glm", "SL.mean")`. Use `"SL.glmnet"`, `"SL.ranger"`,
 #'   etc. if those packages are installed.
 #' @param truncate Truncation level for propensity scores (default 0.01,
-#'   meaning PS is bounded to [0.01, 0.99]).
+#'   meaning PS is bounded to the interval 0.01 to 0.99).
 #' @param spec Optional `cr_spec` object. If provided, extracts
 #'   treatment/outcome/covariate info from it.
 #' @param ... Additional arguments passed to `tmle::tmle()`.
@@ -31,13 +31,13 @@ NULL
 #' @return An object of class `tmle_fit` (inherits from `cr_result`)
 #'   containing:
 #'   * `estimates` - list with ATE (RD) and RR estimates, SEs, CIs
-#'   * `tmle_obj` - the raw tmle object from the {tmle} package
+#'   * `tmle_obj` - the raw tmle object from the \pkg{tmle} package
 #'   * `influence_curve` - the efficient influence curve values
 #'
 #' @details
-#' This function requires the {tmle} and {SuperLearner} packages.
+#' This function requires the \pkg{tmle} and \pkg{SuperLearner} packages.
 #' It uses the TMLE framework to estimate the causal risk difference
-#' (ATE = E[Y(1)] - E[Y(0)]) with influence-curve based standard errors
+#' (ATE = E\[Y(1)\] - E\[Y(0)\]) with influence-curve based standard errors
 #' and confidence intervals.
 #'
 #' ## SuperLearner
@@ -158,7 +158,7 @@ estimate_tmle_risk_point <- function(data, treatment = NULL, outcome = NULL,
 #' Survival TMLE for Risk at Specified Times
 #'
 #' Estimates treatment-specific cumulative risk at user-specified time
-#' points using the {survtmle} package or a manual implementation.
+#' points using the \pkg{survtmle} package or a manual implementation.
 #'
 #' @param data A data.frame with time-to-event data.
 #' @param treatment Character; name of binary treatment variable.
@@ -172,7 +172,7 @@ estimate_tmle_risk_point <- function(data, treatment = NULL, outcome = NULL,
 #' @return An object of class `tmle_fit`.
 #'
 #' @details
-#' This function attempts to use the {survtmle} package. If unavailable,
+#' This function attempts to use the \pkg{survtmle} package. If unavailable,
 #' falls back to a simplified manual implementation that discretizes
 #' time and applies iterative TMLE at each time point.
 #'
@@ -372,10 +372,10 @@ estimate_surv_tmle <- function(data, treatment = "treatment",
 }
 
 
-#' Longitudinal TMLE via {lmtp}
+#' Longitudinal TMLE via \pkg{lmtp}
 #'
 #' Estimates the mean potential outcome under static, dynamic, or
-#' stochastic treatment interventions using the {lmtp} package.
+#' stochastic treatment interventions using the \pkg{lmtp} package.
 #'
 #' @param data A data.frame in long or wide format.
 #' @param treatment_vars Character vector of treatment variable names at
@@ -397,7 +397,7 @@ estimate_surv_tmle <- function(data, treatment = "treatment",
 #' @return An object of class `tmle_fit`.
 #'
 #' @details
-#' This function requires the {lmtp} package. It implements the
+#' This function requires the \pkg{lmtp} package. It implements the
 #' longitudinal modified treatment policy (LMTP) framework for
 #' causal inference with time-varying treatments.
 #'

@@ -4,6 +4,12 @@ template:
   bootstrap: 5
 
 reference:
+  - title: Utilities
+    desc: Helper functions
+    contents:
+      - expit
+      - logit
+
   - title: Model Specification
     desc: Build causal model specifications
     contents:
@@ -16,14 +22,51 @@ reference:
       - identify_interval
       - identify_missing
 
-  - title: Estimation
+  - title: Analysis Lock (Stage 1)
+    desc: Pre-specify and lock analytic decisions
+    contents:
+      - create_analysis_lock
+      - validate_analysis_lock
+
+  - title: Propensity Score (Stage 2a)
+    desc: Treatment mechanism estimation and diagnostics
+    contents:
+      - fit_ps_glm
+      - fit_ps_superlearner
+      - compute_ps_diagnostics
+
+  - title: Plasmode Feasibility (Stage 2b)
+    desc: Simulation-based feasibility evaluation
+    contents:
+      - run_plasmode_feasibility
+      - summarize_plasmode_results
+      - select_tmle_candidate
+      - gate_check
+
+  - title: Estimation Workflows (Stage 3)
+    desc: Final causal estimation on real outcomes
+    contents:
+      - run_crude_workflow
+      - run_match_workflow
+      - run_iptw_workflow
+      - fit_final_workflows
+
+  - title: Modular TMLE (Stage 3)
+    desc: Step-by-step TMLE components
+    contents:
+      - fit_tmle_treatment_mechanism
+      - fit_tmle_outcome_mechanism
+      - run_tmle_targeting_step
+      - extract_tmle_estimate
+      - fit_tmle_candidate_set
+
+  - title: Risk and Hazard Estimation
     desc: Causal estimators for risk and hazard ratios
     contents:
       - estimate_ipwrisk
       - estimate_gcomprisk
       - estimate_aipwrisk
       - estimate_ipwhr
-      - estimate_ipwcount
 
   - title: TMLE Extensions
     desc: Targeted learning wrappers
@@ -31,6 +74,12 @@ reference:
       - estimate_tmle_risk_point
       - estimate_surv_tmle
       - estimate_lmtp
+
+  - title: Summaries and Comparison
+    desc: Cross-workflow summaries
+    contents:
+      - summarize_cleanroom_results
+      - compare_fits
 
   - title: Tables and Diagnostics
     desc: Summary tables and weight diagnostics
@@ -40,7 +89,6 @@ reference:
       - make_wt_summary_table
       - extreme_weights
       - inspect_ipw_weights
-      - compare_fits
       - forest_plot
       - hr_data
 
@@ -62,3 +110,6 @@ articles:
   - title: Getting Started
     contents:
       - cleanTMLE-workflow
+  - title: Function Reference
+    contents:
+      - cleanTMLE-functions

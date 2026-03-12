@@ -4,26 +4,91 @@
 \alias{estimate_ipwrisk}
 \title{Estimate IPW Cumulative Risk Curves}
 \usage{
-estimate_ipwrisk(spec, risk_time = NULL, trim = NULL, trunc = NULL,
-  weight_type = c("iptw", "smr"), nboot = 0, seed = 42, ...)
+estimate_ipwrisk(
+  spec,
+  risk_time = NULL,
+  trim = NULL,
+  trunc = NULL,
+  weight_type = c("iptw", "smr"),
+  nboot = 0,
+  seed = 42,
+  ...
+)
 }
 \arguments{
 \item{spec}{A \code{cr_spec} object with outcome, and optionally treatment,
-  censoring, and competing risk components identified.}
+censoring, and competing risk components identified.}
+
 \item{risk_time}{Optional numeric vector of times at which to report
-  cumulative risk.}
-\item{trim}{Quantile for propensity score trimming.}
-\item{trunc}{Truncation for weights.}
-\item{weight_type}{\code{"iptw"} for ATE weights or \code{"smr"} for ATT/SMR weights.}
-\item{nboot}{Number of bootstrap replicates for CIs.}
-\item{seed}{Random seed for bootstrap.}
-\item{...}{Additional arguments.}
+cumulative risk. If \code{NULL}, uses all unique event times.}
+
+\item{trim}{Quantile for propensity score trimming (e.g., \code{0.01} trims
+at 1st and 99th percentiles). \code{NULL} for no trimming.}
+
+\item{trunc}{Truncation for weights. If <= 1, interpreted as a quantile;
+if > 1, as an absolute cap. \code{NULL} for no truncation.}
+
+\item{weight_type}{\code{"iptw"} for ATE-targeting weights (default) or
+\code{"smr"} for ATT-targeting (SMR) weights.}
+
+\item{nboot}{Number of bootstrap replicates for CIs. \code{0} for no bootstrap.}
+
+\item{seed}{Random seed for bootstrap reproducibility.}
+
+\item{...}{Additional arguments (currently unused).}
 }
 \value{
-An object of class \code{cumrisk} containing risk estimates, weights,
-and PS model information.
+An object of class \code{cumrisk} containing:
+\itemize{
+\item \code{risk} - data.frame of cumulative risk estimates by time (and treatment group)
+\item \code{spec} - the input specification
+\item \code{weights} - the IPTW and IPCW weights
+\item \code{ps_model} - the propensity score model (if applicable)
+\item \code{boot_results} - bootstrap estimates (if \code{nboot > 0})
+}
 }
 \description{
-Computes inverse probability weighted (IPW) cumulative risk curves,
-adjusting for confounding via IPTW and for right-censoring via IPCW.
+Computes inverse probability weighted (IPW) cumulative risk (cumulative
+incidence) curves, adjusting for confounding via IPTW and for
+right-censoring via IPCW. Supports competing risks, weight trimming,
+truncation, and bootstrap confidence intervals.
+}
+\details{
+\subsection{Method}{
+
+For each treatment group (or overall if no treatment is specified), the
+weighted Kaplan-Meier estimator is used:
+
+\deqn{\hat{S}^w(t) = \prod_{t_j \le t} \left(1 - \frac{\sum_{i \in R_j} w_i d_i}{\sum_{i \in R_j} w_i}\right)}
+
+where \eqn{w_i} is the combined IPTW x IPCW weight, \eqn{d_i} is the
+event indicator, and \eqn{R_j} is the risk set at time \eqn{t_j}.
+Cumulative risk is \eqn{\hat{F}(t) = 1 - \hat{S}(t)}.
+}
+
+\subsection{Stabilized weights}{
+
+By default, stabilized IPTW weights are used:
+\eqn{w_i^{IPTW} = P(A = a_i) / P(A = a_i | L_i)}.
+}
+
+\subsection{Competing risks}{
+
+When a competing risk is identified, the cause-specific cumulative
+incidence is estimated using the weighted Aalen-Johansen estimator
+in discrete time.
+}
+}
+\examples{
+\dontrun{
+data(example1, package = "cleanTMLE")
+fit <- specify_models(data = example1) |>
+  identify_outcome(event, type = "time_to_event") |>
+  identify_treatment(treatment, formula = ~ age + sex + biomarker) |>
+  identify_censoring(censored, formula = ~ age + sex, model = "coxph") |>
+  estimate_ipwrisk(risk_time = c(6, 12, 24), nboot = 200)
+plot(fit)
+make_table2(fit, risk_time = 24)
+}
+
 }

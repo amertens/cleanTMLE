@@ -158,7 +158,7 @@ test_that("compute_ps_diagnostics works with mock ps_fit", {
 
 # ── run_plasmode_feasibility ──────────────────────────────────────────────
 
-test_that("run_plasmode_feasibility returns plasmode_results", {
+test_that("run_plasmode_feasibility returns plasmode_results with candidates", {
   dat  <- sim_func1(n = 300, seed = 89)
   lock <- create_analysis_lock(
     data = dat, treatment = "treatment",
@@ -166,17 +166,23 @@ test_that("run_plasmode_feasibility returns plasmode_results", {
     plasmode_reps = 5L, seed = 89L
   )
 
+  candidates <- list(
+    tmle_candidate("glm_t01", "GLM 0.01", g_library = "SL.glm", truncation = 0.01),
+    tmle_candidate("glm_t05", "GLM 0.05", g_library = "SL.glm", truncation = 0.05)
+  )
+
   sim_res <- run_plasmode_feasibility(
-    lock         = lock,
-    effect_sizes = c(0.05),
-    reps         = 5L
+    lock            = lock,
+    tmle_candidates = candidates,
+    effect_sizes    = c(0.05),
+    reps            = 5L
   )
 
   expect_s3_class(sim_res, "plasmode_results")
   expect_true(is.data.frame(sim_res$metrics))
-  expect_true(all(c("effect_size", "method", "bias", "rmse", "coverage") %in%
+  expect_true(all(c("effect_size", "candidate", "bias", "rmse", "coverage") %in%
                     names(sim_res$metrics)))
-  # Two methods: iptw and tmle
+  # 2 candidates x 1 effect size
   expect_equal(nrow(sim_res$metrics), 2L)
   expect_output(print(sim_res), "Plasmode")
 })
@@ -189,39 +195,55 @@ test_that("run_plasmode_feasibility with multiple effect sizes", {
     plasmode_reps = 3L, seed = 90L
   )
 
-  sim_res <- run_plasmode_feasibility(
-    lock         = lock,
-    effect_sizes = c(0.03, 0.07),
-    reps         = 3L
+  candidates <- list(
+    tmle_candidate("glm_t01", g_library = "SL.glm", truncation = 0.01),
+    tmle_candidate("glm_t05", g_library = "SL.glm", truncation = 0.05)
   )
 
-  expect_equal(nrow(sim_res$metrics), 4L)   # 2 effects x 2 methods
+  sim_res <- run_plasmode_feasibility(
+    lock            = lock,
+    tmle_candidates = candidates,
+    effect_sizes    = c(0.03, 0.07),
+    reps            = 3L
+  )
+
+  expect_equal(nrow(sim_res$metrics), 4L)   # 2 effects x 2 candidates
 })
 
 
 # ── select_tmle_candidate ─────────────────────────────────────────────────
 
 test_that("select_tmle_candidate works with all rules", {
-  # Build a mock plasmode_results
+  # Build a mock plasmode_results with candidate specs
+  cand_a <- tmle_candidate("cand_a", g_library = "SL.glm", truncation = 0.01)
+  cand_b <- tmle_candidate("cand_b", g_library = "SL.glm", truncation = 0.05)
+
   mock_metrics <- data.frame(
     effect_size = c(0.05, 0.05, 0.10, 0.10),
-    method      = c("iptw", "tmle", "iptw", "tmle"),
+    candidate   = c("cand_a", "cand_b", "cand_a", "cand_b"),
     bias        = c(0.02, 0.01, 0.03, 0.01),
     rmse        = c(0.05, 0.04, 0.06, 0.03),
     coverage    = c(0.90, 0.93, 0.88, 0.94),
+    emp_sd      = c(0.04, 0.03, 0.05, 0.03),
+    mean_se     = c(0.04, 0.031, 0.05, 0.031),
     stringsAsFactors = FALSE
   )
   mock_res <- list(metrics = mock_metrics, effect_sizes = c(0.05, 0.10),
-                   reps = 5L)
+                   reps = 5L, tmle_candidates = list(cand_a, cand_b))
   class(mock_res) <- "plasmode_results"
 
   best_rmse     <- select_tmle_candidate(mock_res, rule = "min_rmse")
   best_bias     <- select_tmle_candidate(mock_res, rule = "min_bias")
   best_coverage <- select_tmle_candidate(mock_res, rule = "max_coverage")
 
-  expect_equal(best_rmse,     "tmle")
-  expect_equal(best_bias,     "tmle")
-  expect_equal(best_coverage, "tmle")
+  expect_s3_class(best_rmse, "tmle_selected_spec")
+  expect_s3_class(best_bias, "tmle_selected_spec")
+  expect_s3_class(best_coverage, "tmle_selected_spec")
+
+  # cand_b has lower rmse, lower bias, higher coverage
+ expect_equal(best_rmse$candidate_id, "cand_b")
+  expect_equal(best_bias$candidate_id, "cand_b")
+  expect_equal(best_coverage$candidate_id, "cand_b")
 })
 
 
@@ -514,16 +536,22 @@ test_that("fit_final_workflows runs all three workflows", {
 
 # ── fit_tmle_candidate_set ────────────────────────────────────────────────
 
-test_that("fit_tmle_candidate_set returns a list of tmle_fit objects", {
+test_that("fit_tmle_candidate_set returns results with candidate specs", {
   dat  <- sim_func1(n = 300, seed = 94)
   lock <- create_analysis_lock(
     data = dat, treatment = "treatment",
     outcome = "event_24", covariates = c("age", "sex", "biomarker"),
     seed = 94L
   )
-  cands <- fit_tmle_candidate_set(lock)
+
+  candidates <- list(
+    tmle_candidate("glm_t01", g_library = "SL.glm", truncation = 0.01),
+    tmle_candidate("glm_t05", g_library = "SL.glm", truncation = 0.05)
+  )
+  cands <- fit_tmle_candidate_set(lock, candidates = candidates)
 
   expect_true(is.list(cands))
   expect_true(length(cands) > 0L)
   expect_true(all(vapply(cands, inherits, logical(1L), "tmle_fit")))
+  expect_true(all(c("glm_t01", "glm_t05") %in% names(cands)))
 })

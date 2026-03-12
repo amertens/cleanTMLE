@@ -1,0 +1,276 @@
+# Tests for staged workflow infrastructure (R/stages.R)
+
+test_that("attach_estimand adds estimand to lock", {
+  dat  <- sim_func1(n = 100, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 1)
+  lock2 <- attach_estimand(lock,
+    description = "Test question",
+    population  = "Test pop",
+    contrast    = "risk_difference"
+  )
+  expect_true(!is.null(lock2$estimand))
+  expect_equal(lock2$estimand$contrast, "risk_difference")
+  expect_equal(lock2$estimand$description, "Test question")
+  # Hash should be unchanged
+
+  expect_equal(lock2$lock_hash, lock$lock_hash)
+})
+
+test_that("declare_sensitivity_plan appends plans", {
+  dat  <- sim_func1(n = 100, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 1)
+  lock <- declare_sensitivity_plan(lock, "plan1", "First plan")
+  lock <- declare_sensitivity_plan(lock, "plan2", "Second plan")
+  expect_length(lock$sensitivity_plans, 2)
+  expect_equal(lock$sensitivity_plans$plan1$label, "plan1")
+  expect_equal(lock$sensitivity_plans$plan2$label, "plan2")
+})
+
+test_that("define_negative_control registers variable", {
+  dat  <- sim_func1(n = 100, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 1)
+  lock <- define_negative_control(lock, "nc_outcome", description = "test")
+  expect_true("nc_outcome" %in% names(lock$negative_controls))
+  expect_equal(lock$negative_controls$nc_outcome$type, "outcome")
+})
+
+test_that("define_negative_control errors on missing variable", {
+  dat  <- sim_func1(n = 100, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 1)
+  expect_error(
+    define_negative_control(lock, "nonexistent"),
+    "not found"
+  )
+})
+
+test_that("checkpoint_cohort_adequacy returns GO for adequate data", {
+  dat  <- sim_func1(n = 500, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex", "biomarker"), seed = 1)
+  cp <- checkpoint_cohort_adequacy(lock)
+  expect_s3_class(cp, "cleantmle_checkpoint")
+  expect_equal(cp$stage, "Check Point 1: Cohort Adequacy")
+  expect_true(cp$decision %in% c("GO", "FLAG", "STOP"))
+})
+
+test_that("checkpoint_cohort_adequacy returns STOP for tiny data", {
+  dat  <- sim_func1(n = 30, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 1)
+  cp <- checkpoint_cohort_adequacy(lock, min_n_per_arm = 50, min_events = 100)
+  expect_equal(cp$decision, "STOP")
+})
+
+test_that("checkpoint_balance works with ps_diagnostics", {
+  dat  <- sim_func1(n = 300, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex", "biomarker"), seed = 1)
+  ps   <- fit_ps_glm(lock)
+  diag <- compute_ps_diagnostics(ps)
+  cp   <- checkpoint_balance(diag, lock_hash = lock$lock_hash)
+  expect_s3_class(cp, "cleantmle_checkpoint")
+  expect_true(cp$decision %in% c("GO", "FLAG", "STOP"))
+  expect_equal(cp$lock_hash, lock$lock_hash)
+})
+
+test_that("run_negative_control returns structured result", {
+  dat  <- sim_func1(n = 300, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex", "biomarker"), seed = 1)
+  lock <- define_negative_control(lock, "nc_outcome")
+  ps   <- fit_ps_glm(lock)
+  nc   <- run_negative_control(lock, "nc_outcome", ps)
+  expect_s3_class(nc, "cleantmle_nc_result")
+  expect_true(is.numeric(nc$estimate))
+  expect_true(is.numeric(nc$p_value))
+  expect_true(nchar(nc$interpretation) > 0)
+})
+
+test_that("checkpoint_residual_bias handles single and multiple NC results", {
+  dat  <- sim_func1(n = 300, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex", "biomarker"), seed = 1)
+  lock <- define_negative_control(lock, "nc_outcome")
+  ps   <- fit_ps_glm(lock)
+  nc   <- run_negative_control(lock, "nc_outcome", ps)
+
+  # Single result
+  cp <- checkpoint_residual_bias(nc)
+  expect_s3_class(cp, "cleantmle_checkpoint")
+
+  # List of results
+  cp2 <- checkpoint_residual_bias(list(nc))
+  expect_s3_class(cp2, "cleantmle_checkpoint")
+})
+
+test_that("audit log records and exports correctly", {
+  dat  <- sim_func1(n = 100, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 1)
+  audit <- create_audit_log(lock)
+  expect_s3_class(audit, "cleantmle_audit")
+  expect_equal(audit$lock_hash, lock$lock_hash)
+  expect_length(audit$entries, 0)
+
+  audit <- record_stage(audit, "Stage 1a", "Lock created")
+  expect_length(audit$entries, 1)
+
+  trail <- export_audit_trail(audit)
+  expect_true(is.data.frame(trail))
+  expect_equal(nrow(trail), 1)
+  expect_true("stage" %in% names(trail))
+})
+
+test_that("record_checkpoint adds checkpoint to audit", {
+  dat  <- sim_func1(n = 300, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex", "biomarker"), seed = 1)
+  audit <- create_audit_log(lock)
+  cp1   <- checkpoint_cohort_adequacy(lock)
+  audit <- record_checkpoint(audit, cp1)
+  expect_length(audit$entries, 1)
+  expect_equal(audit$entries[[1]]$decision, cp1$decision)
+})
+
+test_that("build_stage_manifest produces output", {
+  dat  <- sim_func1(n = 100, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 1)
+  audit <- create_audit_log(lock)
+  audit <- record_stage(audit, "Stage 1a", "Lock created")
+
+  out <- capture.output(build_stage_manifest(audit))
+  expect_true(length(out) > 0)
+  expect_true(any(grepl("Stage 1a", out)))
+})
+
+test_that("as.data.frame.cleantmle_checkpoint works", {
+  dat  <- sim_func1(n = 300, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex", "biomarker"), seed = 1)
+  cp <- checkpoint_cohort_adequacy(lock)
+  df <- as.data.frame(cp)
+  expect_true(is.data.frame(df))
+  expect_equal(nrow(df), 1)
+  expect_true("decision" %in% names(df))
+})
+
+test_that("sensitivity_truncation returns data.frame", {
+  dat  <- sim_func1(n = 200, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex", "biomarker"), seed = 1)
+  sens <- sensitivity_truncation(lock, thresholds = c(0.01, 0.05))
+  expect_true(is.data.frame(sens))
+  expect_equal(nrow(sens), 2)
+  expect_true("truncation" %in% names(sens))
+  expect_true("estimate" %in% names(sens))
+})
+
+test_that("compute_evalue returns correct structure", {
+  ev <- compute_evalue(2.0)
+  expect_true("e_value" %in% names(ev))
+  expect_true(ev["e_value"] > 2)
+
+  ev2 <- compute_evalue(2.0, ci_bound = 1.5)
+  expect_true("e_value_ci" %in% names(ev2))
+
+  # RR = 1 should give e_value = 1
+  ev3 <- compute_evalue(1.0)
+  expect_equal(unname(ev3["e_value"]), 1)
+})
+
+test_that("sim_func1 includes nc_outcome column", {
+  dat <- sim_func1(n = 100, seed = 1)
+  expect_true("nc_outcome" %in% names(dat))
+  expect_true(all(dat$nc_outcome %in% c(0L, 1L)))
+})
+
+test_that("print methods do not error", {
+  dat  <- sim_func1(n = 200, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex", "biomarker"), seed = 1)
+  lock <- attach_estimand(lock, description = "Test", contrast = "risk_difference")
+  lock <- declare_sensitivity_plan(lock, "sp1", "Test plan")
+  lock <- define_negative_control(lock, "nc_outcome")
+
+  expect_output(print(lock), "Estimand")
+  expect_output(print(lock), "Sensitivity Plans")
+  expect_output(print(lock), "Negative Controls")
+
+  cp <- checkpoint_cohort_adequacy(lock)
+  expect_output(print(cp), "Check Point 1")
+
+  audit <- create_audit_log(lock)
+  audit <- record_stage(audit, "Stage 1", "Test")
+  expect_output(print(audit), "Audit Log")
+})
+
+# ── tmle_candidate infrastructure ────────────────────────────────────────
+
+test_that("tmle_candidate creates a tmle_candidate_spec", {
+  cand <- tmle_candidate("test_cand", "Test Candidate",
+                         g_library = c("SL.glm"), truncation = 0.05)
+  expect_s3_class(cand, "tmle_candidate_spec")
+  expect_equal(cand$candidate_id, "test_cand")
+  expect_equal(cand$label, "Test Candidate")
+  expect_equal(cand$truncation, 0.05)
+  expect_equal(cand$g_library, c("SL.glm"))
+})
+
+test_that("validate_tmle_candidates rejects non-specs", {
+  cands <- list(
+    tmle_candidate("a", g_library = "SL.glm"),
+    list(not_a_spec = TRUE)
+  )
+  expect_error(validate_tmle_candidates(cands), "not a tmle_candidate_spec")
+})
+
+test_that("validate_tmle_candidates rejects duplicates", {
+  cands <- list(
+    tmle_candidate("dup_id", g_library = "SL.glm"),
+    tmle_candidate("dup_id", g_library = "SL.glm", truncation = 0.05)
+  )
+  expect_error(validate_tmle_candidates(cands), "Duplicate")
+})
+
+test_that("expand_tmle_candidate_grid creates grid", {
+  grid <- expand_tmle_candidate_grid(
+    libraries   = list(glm = "SL.glm"),
+    truncations = c(0.01, 0.05)
+  )
+  expect_true(is.list(grid))
+  expect_equal(length(grid), 2L)
+  expect_true(all(vapply(grid, inherits, logical(1), "tmle_candidate_spec")))
+})
+
+test_that("lock_primary_tmle_spec and get_primary_tmle_spec work", {
+  dat  <- sim_func1(n = 100, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 1)
+
+  expect_null(get_primary_tmle_spec(lock))
+
+  cand <- tmle_candidate("test_lock", g_library = "SL.glm", truncation = 0.02)
+  lock <- lock_primary_tmle_spec(lock, cand)
+
+  spec <- get_primary_tmle_spec(lock)
+  expect_s3_class(spec, "tmle_candidate_spec")
+  expect_equal(spec$candidate_id, "test_lock")
+  expect_equal(spec$truncation, 0.02)
+})
+
+test_that("print.cleanroom_lock shows primary TMLE spec", {
+  dat  <- sim_func1(n = 100, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 1)
+  cand <- tmle_candidate("show_spec", "Display Spec",
+                         g_library = "SL.glm", truncation = 0.03)
+  lock <- lock_primary_tmle_spec(lock, cand)
+
+  expect_output(print(lock), "Primary TMLE Specification")
+  expect_output(print(lock), "show_spec")
+})

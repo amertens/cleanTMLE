@@ -4,22 +4,53 @@
 \alias{estimate_aipwrisk}
 \title{Augmented IPW (Doubly Robust) Estimator for Cumulative Risk}
 \usage{
-estimate_aipwrisk(spec, risk_time = NULL, trim = NULL, trunc = NULL,
-  nboot = 0, seed = 42, ...)
+estimate_aipwrisk(
+  spec,
+  risk_time = NULL,
+  trim = NULL,
+  trunc = NULL,
+  nboot = 0,
+  seed = 42,
+  ...
+)
 }
 \arguments{
-\item{spec}{A \code{cr_spec} object with outcome and treatment identified.}
-\item{risk_time}{Numeric vector of evaluation times.}
-\item{trim}{Quantile for PS trimming.}
+\item{spec}{A \code{cr_spec} object with outcome, treatment, and optionally
+censoring components identified. The outcome should have a formula.}
+
+\item{risk_time}{Numeric vector of times at which to evaluate risk.}
+
+\item{trim}{Quantile for propensity score trimming.}
+
 \item{trunc}{Weight truncation.}
+
 \item{nboot}{Number of bootstrap replicates.}
+
 \item{seed}{Random seed.}
+
 \item{...}{Additional arguments.}
 }
 \value{
-An object of class \code{aipw}.
+An object of class \code{aipw} (inherits from \code{cr_result}).
 }
 \description{
-AIPW estimator combining IPW and g-computation for doubly robust
-cumulative risk estimation.
+Estimates cumulative risk curves using the augmented inverse probability
+weighted (AIPW) estimator, which is doubly robust: consistent if either
+the treatment/censoring model or the outcome model is correctly specified.
+}
+\details{
+\subsection{Method}{
+
+The AIPW estimator combines the IPW and g-computation approaches:
+
+\deqn{\hat{\psi}_{AIPW}(t) = \frac{1}{n} \sum_{i=1}^{n}
+  \left[\frac{I(A_i = a)}{P(A_i = a | L_i)} (Y_i(t) - \hat{m}(t, a, L_i))
+  + \hat{m}(t, a, L_i)\right]}
+
+where \eqn{\hat{m}(t, a, L_i)} is the outcome model prediction.
+
+For time-to-event data, we use a discrete-time approximation:
+at each evaluation time, define a binary outcome I(T <= t, event),
+and apply the standard AIPW formula.
+}
 }

@@ -67,8 +67,6 @@ re_estimate <- function(x, ...) {
     return(estimate_aipwrisk(x$spec, ...))
   } else if (inherits(x, "hr")) {
     return(estimate_ipwhr(x$spec, ...))
-  } else if (inherits(x, "ipw")) {
-    return(estimate_ipwcount(x$spec, ...))
   } else {
     stop("Unknown result class for re-estimation.", call. = FALSE)
   }
@@ -100,20 +98,18 @@ compare_fits <- function(..., risk_time = NULL) {
       if (!is.null(risk_time)) {
         risk_df <- risk_df[risk_df$time == risk_time, ]
       }
+      has_ci <- "ci_lower" %in% names(risk_df)
       for (i in seq_len(nrow(risk_df))) {
-        row <- data.frame(
-          fit_name = nm,
+        rows <- c(rows, list(data.frame(
+          fit_name  = nm,
           estimator = class(fit)[1],
-          group = risk_df$group[i],
-          time = risk_df$time[i],
-          risk = risk_df$risk[i],
+          group     = risk_df$group[i],
+          time      = risk_df$time[i],
+          risk      = risk_df$risk[i],
+          ci_lower  = if (has_ci) risk_df$ci_lower[i] else NA_real_,
+          ci_upper  = if (has_ci) risk_df$ci_upper[i] else NA_real_,
           stringsAsFactors = FALSE
-        )
-        if ("ci_lower" %in% names(risk_df)) {
-          row$ci_lower <- risk_df$ci_lower[i]
-          row$ci_upper <- risk_df$ci_upper[i]
-        }
-        rows <- c(rows, list(row))
+        )))
       }
     } else if (inherits(fit, "hr")) {
       ht <- fit$hr_table

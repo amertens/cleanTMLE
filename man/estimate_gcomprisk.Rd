@@ -4,21 +4,58 @@
 \alias{estimate_gcomprisk}
 \title{G-Computation Estimator for Cumulative Risk Curves}
 \usage{
-estimate_gcomprisk(spec, risk_time = NULL, outcome_formula = NULL,
-  nboot = 0, seed = 42, ...)
+estimate_gcomprisk(
+  spec,
+  risk_time = NULL,
+  outcome_formula = NULL,
+  nboot = 0,
+  seed = 42,
+  ...
+)
 }
 \arguments{
-\item{spec}{A \code{cr_spec} object.}
-\item{risk_time}{Numeric vector of evaluation times.}
-\item{outcome_formula}{Optional formula override.}
-\item{nboot}{Number of bootstrap replicates.}
+\item{spec}{A \code{cr_spec} object with at least outcome and treatment
+identified. The outcome should have a formula for model fitting.}
+
+\item{risk_time}{Numeric vector of times at which to evaluate risk.}
+
+\item{outcome_formula}{Optional formula override for the outcome model.
+If \code{NULL}, uses the formula from \code{identify_outcome()}.}
+
+\item{nboot}{Number of bootstrap replicates for CIs.}
+
 \item{seed}{Random seed.}
+
 \item{...}{Additional arguments.}
 }
 \value{
-An object of class \code{gcomp}.
+An object of class \code{gcomp} (inherits from \code{cr_result}).
 }
 \description{
-Estimates cumulative risk using g-computation via Cox PH outcome model
-and plug-in prediction.
+Estimates cumulative risk curves using the g-computation (parametric
+g-formula) approach. Fits an outcome model (Cox PH by default) and
+generates predicted cumulative incidence under each treatment regime
+via plug-in prediction.
+}
+\details{
+\subsection{Method}{
+\enumerate{
+\item Fit a Cox PH model for the outcome, including treatment and covariates.
+\item For each treatment level \code{a}, create a counterfactual dataset where
+all subjects receive treatment \code{a}.
+\item Predict the baseline survival and compute mean cumulative incidence
+across all subjects in the counterfactual data.
+\item The g-computation estimate is the average predicted risk at each time.
+}
+}
+}
+\examples{
+\dontrun{
+fit_gc <- specify_models(data = example1) |>
+  identify_outcome(event, formula = ~ treatment + age + sex,
+                   type = "time_to_event") |>
+  identify_treatment(treatment) |>
+  estimate_gcomprisk(risk_time = c(6, 12, 24))
+}
+
 }

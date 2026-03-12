@@ -24,6 +24,7 @@
 #' * [compute_ps_diagnostics()] - overlap, ESS, covariate balance summaries
 #'
 #' @section Conventional workflow estimators (Stage 3):
+#' * [run_crude_workflow()] - unadjusted risk difference (benchmark)
 #' * [run_match_workflow()] - 1:1 nearest-neighbor matching
 #' * [run_iptw_workflow()] - stabilized IPTW with weight diagnostics
 #'
@@ -31,7 +32,8 @@
 #' * [run_plasmode_feasibility()] - generate plasmode outcomes and evaluate
 #'   the full pipeline; returns bias, RMSE, and coverage
 #' * [summarize_plasmode_results()] - tabulate and plot simulation metrics
-#' * [evaluate_tmle_candidates()] - evaluate all candidate TMLE specifications
+#' * [select_tmle_candidate()] - apply the prespecified selection rule
+#' * [gate_check()] - GO / FLAG / STOP checkpoint decision
 #'
 #' @section Modular TMLE components:
 #' These functions respect clean-room stage separation. The treatment mechanism
@@ -51,7 +53,6 @@
 #' * [estimate_gcomprisk()] - G-computation risk curves
 #' * [estimate_aipwrisk()] - Augmented IPW (doubly robust) risk curves
 #' * [estimate_ipwhr()] - Weighted Cox model hazard ratios
-#' * [estimate_ipwcount()] - IPW cumulative count
 #'
 #' @section TMLE package integrations:
 #' * [estimate_tmle_risk_point()] - Point-treatment TMLE for binary outcomes
@@ -70,9 +71,9 @@
 #' * [extreme_weights()] - Identify extreme weight observations
 #' * [inspect_ipw_weights()] - Extract and inspect IPW weights
 #'
-#' @importFrom stats as.formula binomial coef confint glm model.matrix
+#' @importFrom stats as.formula approx binomial coef confint glm model.matrix
 #'   predict quantile rbinom rnorm runif sd var vcov median
-#'   pnorm qnorm weighted.mean terms reformulate setNames
+#'   pnorm qnorm qlogis weighted.mean terms reformulate setNames
 #'   rexp plogis complete.cases
 #' @importFrom survival coxph survfit Surv strata
 #' @importFrom ggplot2 ggplot aes geom_step geom_line geom_point

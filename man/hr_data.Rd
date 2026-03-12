@@ -8,11 +8,12 @@ hr_data(x, ...)
 }
 \arguments{
 \item{x}{An object of class \code{hr}.}
+
 \item{...}{Additional arguments (unused).}
 }
 \value{
 A data.frame with columns: term, log_hr, hr, se, ci_lower,
-  ci_upper, p_value.
+ci_upper, p_value.
 }
 \description{
 Returns the data.frame backing the hazard ratio results, suitable for
