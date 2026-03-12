@@ -9,6 +9,38 @@
 NULL
 
 
+# ── Internal: Clean-Room Outcome Guard ──────────────────────────────────
+
+#' Check whether the lock allows outcome access
+#'
+#' @description Internal helper used by Stage 4 functions to enforce
+#'   the clean-room gate.  Checks for outcome masking and optionally
+#'   for an \code{audit} attribute carrying authorization status.
+#'
+#' @param lock A \code{cleanroom_lock}.
+#' @param override_clean_room Logical; if \code{TRUE} the check is skipped.
+#' @param caller Character; name of the calling function (for error messages).
+#'
+#' @return \code{invisible(TRUE)} if access is permitted.
+#' @keywords internal
+.check_outcome_access <- function(lock, override_clean_room = FALSE,
+                                  caller = "Stage 4 function") {
+  if (isTRUE(override_clean_room)) return(invisible(TRUE))
+
+  # Check outcome masking
+
+  if (isTRUE(lock$.outcome_masked)) {
+    stop(
+      caller, ": Outcome is masked. ",
+      "Use unmask_outcome() first, or set override_clean_room = TRUE.",
+      call. = FALSE
+    )
+  }
+
+  invisible(TRUE)
+}
+
+
 # ── Stage 1: Analysis Lock ────────────────────────────────────────────────
 
 #' Create an Analysis Lock
@@ -1010,16 +1042,20 @@ as.character.tmle_selected_spec <- function(x, ...) {
 #' @param ps_fit A `ps_fit` object from [fit_ps_superlearner()].
 #' @param caliper Numeric; maximum PS distance (logit scale) allowed for a
 #'   match. Default: `0.2 * sd(logit(ps))`.
+#' @param override_clean_room Logical; if \code{TRUE}, skips the outcome-access check.  Default \code{FALSE}.
 #'
 #' @return An object of class `match_result` containing the causal risk
 #'   difference estimate, SE, 95% CI, p-value, and the matched dataset.
 #'
 #' @export
-run_match_workflow <- function(lock, ps_fit, caliper = NULL) {
+run_match_workflow <- function(lock, ps_fit, caliper = NULL,
+                               override_clean_room = FALSE) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
   if (!inherits(ps_fit, "ps_fit"))
     stop("`ps_fit` must be a ps_fit object.", call. = FALSE)
+  .check_outcome_access(lock, override_clean_room,
+                        caller = "run_match_workflow")
 
   data      <- lock$data
   treatment <- lock$treatment
@@ -1116,16 +1152,20 @@ print.match_result <- function(x, ...) {
 #' @param ps_fit A `ps_fit` object from [fit_ps_superlearner()].
 #' @param trim Quantile for weight trimming (e.g., `0.01` trims at 1st and
 #'   99th percentile). Default: `NULL` (no trimming).
+#' @param override_clean_room Logical; if \code{TRUE}, skips the outcome-access check.  Default \code{FALSE}.
 #'
 #' @return An object of class `iptw_result` containing the estimated risk
 #'   difference, SE, 95% CI, p-value, and IPTW weights.
 #'
 #' @export
-run_iptw_workflow <- function(lock, ps_fit, trim = NULL) {
+run_iptw_workflow <- function(lock, ps_fit, trim = NULL,
+                              override_clean_room = FALSE) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
   if (!inherits(ps_fit, "ps_fit"))
     stop("`ps_fit` must be a ps_fit object.", call. = FALSE)
+  .check_outcome_access(lock, override_clean_room,
+                        caller = "run_iptw_workflow")
 
   data      <- lock$data
   treatment <- lock$treatment
@@ -1278,17 +1318,22 @@ fit_tmle_treatment_mechanism <- function(lock, ps_fit = NULL,
 #' @param sl_library Optional SuperLearner library override. If \code{NULL},
 #'   uses the locked primary TMLE spec Q-library if available, then falls
 #'   back to `lock$sl_library`.
+#' @param override_clean_room Logical; if \code{TRUE}, skips the outcome-
+#'   access check.  Default \code{FALSE}.
 #'
 #' @return An object of class `tmle_mechanism` with `type = "outcome"`
 #'   containing initial outcome predictions `Q_a1`, `Q_a0`, and `Q_aw`.
 #'
 #' @export
-fit_tmle_outcome_mechanism <- function(lock, g_fit, sl_library = NULL) {
+fit_tmle_outcome_mechanism <- function(lock, g_fit, sl_library = NULL,
+                                       override_clean_room = FALSE) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
   if (!inherits(g_fit, "tmle_mechanism") || g_fit$type != "treatment")
     stop("`g_fit` must be a tmle_mechanism of type 'treatment'.",
          call. = FALSE)
+  .check_outcome_access(lock, override_clean_room,
+                        caller = "fit_tmle_outcome_mechanism")
 
   # Resolve Q-library from locked spec
   primary_spec <- lock$primary_tmle_spec
@@ -1596,12 +1641,17 @@ summarize_plasmode_results <- function(x, ...) {
 #'   Default: `c("match", "iptw", "tmle")`.  Matching and IPTW serve as
 #'   secondary comparators; the primary TMLE uses the locked specification
 #'   from [lock_primary_tmle_spec()] when available.
+#' @param override_clean_room Logical; if \code{TRUE}, skips the outcome-
+#'   access check.  Default \code{FALSE}.
 #'
 #' @return A named list with elements named by the requested workflows.
 #'
 #' @export
 fit_final_workflows <- function(lock, ps_fit,
-                                 workflows = c("match", "iptw", "tmle")) {
+                                 workflows = c("match", "iptw", "tmle"),
+                                 override_clean_room = FALSE) {
+  .check_outcome_access(lock, override_clean_room,
+                        caller = "fit_final_workflows")
   workflows <- match.arg(workflows, choices = c("match", "iptw", "tmle"),
                           several.ok = TRUE)
   results <- list()
@@ -1656,15 +1706,19 @@ fit_final_workflows <- function(lock, ps_fit,
 #'   [expand_tmle_candidate_grid()] defaults.
 #' @param ps_fit Optional `ps_fit` object; reused across candidates to
 #'   avoid redundant PS estimation.
+#' @param override_clean_room Logical; if \code{TRUE}, skips the outcome-access check.  Default \code{FALSE}.
 #'
 #' @return A named list of TMLE estimate objects (failed candidates dropped).
 #'
 #' @section Clean-room stage: Stage 4 (accesses the real outcome).
 #'
 #' @export
-fit_tmle_candidate_set <- function(lock, candidates = NULL, ps_fit = NULL) {
+fit_tmle_candidate_set <- function(lock, candidates = NULL, ps_fit = NULL,
+                                    override_clean_room = FALSE) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
+  .check_outcome_access(lock, override_clean_room,
+                        caller = "fit_tmle_candidate_set")
 
   # Default: use grid expansion
 
@@ -1833,6 +1887,7 @@ gate_check <- function(metrics, scenario_name, targets,
 #' a benchmark comparator for the adjusted workflows.
 #'
 #' @param lock A `cleanroom_lock` from [create_analysis_lock()].
+#' @param override_clean_room Logical; if \code{TRUE}, skips the outcome-access check.  Default \code{FALSE}.
 #'
 #' @return A list with elements `estimate`, `se`, `ci_lower`, `ci_upper`,
 #'   `p_value`, `r1` (risk in treated), and `r0` (risk in control).
@@ -1846,9 +1901,11 @@ gate_check <- function(metrics, scenario_name, targets,
 #' run_crude_workflow(lock)
 #'
 #' @export
-run_crude_workflow <- function(lock) {
+run_crude_workflow <- function(lock, override_clean_room = FALSE) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
+  .check_outcome_access(lock, override_clean_room,
+                        caller = "run_crude_workflow")
 
   data <- lock$data
   A    <- data[[lock$treatment]]

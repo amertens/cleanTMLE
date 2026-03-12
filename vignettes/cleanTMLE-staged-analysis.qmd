@@ -52,6 +52,7 @@ Stage 1a  Specify the analytic plan and lock it
 Stage 1b  Assess cohort adequacy                   (Check Point 1)
 Stage 2   Assess treatment-arm comparability via PS (Check Point 2)
 Stage 3   Assess residual bias via negative controls(Check Point 3)
+Gate      Pre-outcome authorization                 (Go / No-Go)
 Stage 4   Conduct the comparative analysis
 ```
 
@@ -123,6 +124,18 @@ lock <- create_analysis_lock(
 )
 ```
 
+::: {.callout-tip}
+## Optional: outcome masking
+
+For analyses that require stricter blinding, `mask_outcome()` can
+replace the real outcome column with `NA` values inside the lock,
+preventing any code from accessing the outcome before Stage 4.
+Call `unmask_outcome(lock, original_lock)` when the pre-outcome
+gates have been passed and the outcome is needed.
+In this vignette we proceed without masking for clarity, but the
+functions are available for production workflows.
+:::
+
 We enrich the lock with the estimand, sensitivity plan, and a negative
 control declaration.
 These metadata do not alter the reproducibility hash (which depends only
@@ -169,6 +182,18 @@ audit <- record_stage(audit, "Stage 1a",
                       "Analysis lock created and estimand attached")
 ```
 
+We also begin populating the decision log, which records the
+rationale behind key analytic choices.
+
+```{r dlog-lock}
+audit <- record_decision_log_entry(audit,
+  stage         = "Stage 1a",
+  decision_type = "specification",
+  description   = "Analysis lock created with GLM + Mean SL library and 40 plasmode reps",
+  rationale     = "Minimal library chosen for vignette reproducibility"
+)
+```
+
 ---
 
 ## Stage 1b / Check Point 1: Cohort adequacy
@@ -190,6 +215,26 @@ audit <- record_checkpoint(audit, cp1)
 
 The decision is **`r cp1$decision`**.
 With `r nrow(dat)` subjects and adequate events in both arms, we proceed.
+
+### Design-stage diagnostics
+
+Before moving to propensity-score modelling we run two additional
+design-stage diagnostics.
+`estimate_design_precision()` reports the detectable effect size
+given the locked sample and event counts, optionally compared against
+a target minimum detectable difference (MDD).
+`summarize_event_support()` tabulates event counts by treatment arm
+and covariate strata, flagging any cells with sparse support.
+
+```{r design-precision}
+dp <- estimate_design_precision(lock, target_mdd = 0.05)
+print(dp)
+```
+
+```{r event-support}
+es <- summarize_event_support(lock)
+print(es)
+```
 
 ---
 
@@ -304,6 +349,15 @@ audit <- record_stage(audit, "Stage 2b",
         selected$candidate_id))
 ```
 
+```{r dlog-tmle-select}
+audit <- record_decision_log_entry(audit,
+  stage         = "Stage 2b",
+  decision_type = "estimator_selection",
+  description   = paste("Selected TMLE candidate:", selected$candidate_id),
+  rationale     = "Minimum RMSE rule applied to plasmode simulation results"
+)
+```
+
 ---
 
 ## Stage 3 / Check Point 3: Residual bias assessment
@@ -319,20 +373,50 @@ The negative control outcome `nc_outcome` was generated from
 covariates only, with no treatment effect, so any estimated association
 is attributable to residual confounding.
 
-```{r neg-control}
-nc_result <- run_negative_control(lock, "nc_outcome", ps_fit)
-print(nc_result)
-```
+The `run_residual_confounding_stage()` wrapper runs the negative control
+analysis and generates the checkpoint in a single call, reducing
+boilerplate and ensuring the two steps stay paired.
 
-```{r cp3}
-cp3 <- checkpoint_residual_bias(nc_result, lock_hash = lock$lock_hash)
-print(cp3)
+```{r stage3}
+stage3 <- run_residual_confounding_stage(lock, ps_fit)
+print(stage3)
+cp3 <- stage3$checkpoint
 audit <- record_checkpoint(audit, cp3)
 ```
 
 The decision is **`r cp3$decision`**.
 No significant association with the negative control was detected, so
-we proceed to the final comparative analysis.
+we proceed to the pre-outcome authorization gate.
+
+---
+
+## Pre-outcome authorization gate
+
+Before any code touches the real outcome we run a formal go/no-go
+check.
+`authorize_outcome_analysis()` inspects the audit trail and verifies
+that every required checkpoint has been recorded with a GO (or, if
+`allow_flag = TRUE`, a FLAG) decision.
+If any checkpoint is missing or returned STOP, the gate refuses to
+authorize and the analysis cannot proceed to Stage 4.
+
+```{r gate}
+gate <- authorize_outcome_analysis(audit)
+print(gate)
+audit <- record_checkpoint(audit, gate)
+```
+
+```{r dlog-gate}
+audit <- record_decision_log_entry(audit,
+  stage         = "Pre-outcome gate",
+  decision_type = "authorization",
+  description   = paste("Outcome analysis authorized:", gate$decision),
+  rationale     = "All preceding checkpoints passed; gate opened automatically"
+)
+```
+
+The gate decision is **`r gate$decision`** --- outcome data may now
+be accessed.
 
 ---
 
@@ -483,6 +567,29 @@ trail_df <- export_audit_trail(audit)
 knitr::kable(trail_df, caption = "Audit trail for the staged analysis.")
 ```
 
+### Stage path narrative
+
+`summarize_stage_path()` produces a human-readable narrative of the
+stages traversed, their decisions, and the overall outcome.
+This is useful for inclusion in study reports or supplementary
+materials.
+
+```{r stage-path}
+summarize_stage_path(audit)
+```
+
+### Decision log
+
+The decision log collects the rationale behind key analytic choices
+made throughout the staged workflow.
+`export_decision_log()` returns these entries as a data frame suitable
+for archival or tabular display.
+
+```{r decision-log}
+dlog_df <- export_decision_log(audit)
+knitr::kable(dlog_df, caption = "Decision log for the staged analysis.")
+```
+
 ---
 
 ## Summary
@@ -495,12 +602,17 @@ clean-room analysis:
 3. Cohort adequacy, treatment comparability, and residual bias were
    assessed through structured checkpoints with prespecified
    decision thresholds.
-4. The primary estimator (TMLE) was selected via outcome-blind
+4. Design precision and event support diagnostics confirmed the
+   study was adequately powered.
+5. The primary estimator (TMLE) was selected via outcome-blind
    plasmode simulation.
-5. The final comparative analysis was conducted only after all
-   checkpoints passed.
-6. Sensitivity analysis and an E-value were computed as prespecified.
-7. An audit trail documents the full stage path.
+6. A formal pre-outcome authorization gate verified that all
+   checkpoints passed before outcome data were accessed.
+7. The final comparative analysis was conducted only after the gate
+   opened.
+8. Sensitivity analysis and an E-value were computed as prespecified.
+9. An audit trail, stage path narrative, and decision log document
+   the full analytic path and the rationale behind key choices.
 
 The package does not enforce institutional governance (role separation,
 independent review boards, blinded data managers); those are

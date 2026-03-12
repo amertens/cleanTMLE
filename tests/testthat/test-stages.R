@@ -274,3 +274,202 @@ test_that("print.cleanroom_lock shows primary TMLE spec", {
   expect_output(print(lock), "Primary TMLE Specification")
   expect_output(print(lock), "show_spec")
 })
+
+
+# ── New Phase 2 Tests: Design Precision ──────────────────────────────────
+
+test_that("estimate_design_precision returns correct structure", {
+  dat  <- sim_func1(n = 300, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex", "biomarker"), seed = 1)
+  dp <- estimate_design_precision(lock)
+  expect_s3_class(dp, "design_precision")
+  expect_true(dp$n_total == 300)
+  expect_true(dp$n_treated + dp$n_control == dp$n_total)
+  expect_true(is.numeric(dp$se_proxy))
+  expect_true(is.numeric(dp$mdd_80))
+  expect_null(dp$target_mdd)
+  expect_output(print(dp), "Design-Stage Precision")
+})
+
+test_that("estimate_design_precision compares against target MDD", {
+  dat  <- sim_func1(n = 300, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex", "biomarker"), seed = 1)
+  dp <- estimate_design_precision(lock, target_mdd = 0.50)
+  expect_true(isTRUE(dp$mdd_feasible))
+  dp2 <- estimate_design_precision(lock, target_mdd = 0.001)
+  expect_false(dp2$mdd_feasible)
+})
+
+test_that("summarize_event_support returns data.frame", {
+  dat  <- sim_func1(n = 300, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex", "biomarker"), seed = 1)
+  es <- summarize_event_support(lock)
+  expect_true(is.data.frame(es))
+  expect_equal(nrow(es), 3)
+  expect_true(all(c("arm", "n", "events", "event_rate") %in% names(es)))
+  expect_equal(es$arm, c("Treated", "Control", "Total"))
+})
+
+
+# ── New Phase 2 Tests: Residual Confounding Stage ────────────────────────
+
+test_that("run_residual_confounding_stage works", {
+  dat  <- sim_func1(n = 300, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex", "biomarker"), seed = 1)
+  lock <- define_negative_control(lock, "nc_outcome")
+  ps   <- fit_ps_glm(lock)
+  stage3 <- run_residual_confounding_stage(lock, ps)
+  expect_s3_class(stage3, "residual_confounding_stage")
+  expect_true(is.data.frame(stage3$summary_table))
+  expect_s3_class(stage3$checkpoint, "cleantmle_checkpoint")
+  expect_true(stage3$n_controls == 1)
+  expect_output(print(stage3), "Stage 3")
+})
+
+test_that("run_residual_confounding_stage errors without NCs", {
+  dat  <- sim_func1(n = 100, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 1)
+  ps <- fit_ps_glm(lock)
+  expect_error(run_residual_confounding_stage(lock, ps),
+               "No negative controls")
+})
+
+
+# ── New Phase 2 Tests: Pre-Outcome Gate ──────────────────────────────────
+
+test_that("authorize_outcome_analysis returns GO when all checkpoints pass", {
+  dat  <- sim_func1(n = 300, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex", "biomarker"), seed = 1)
+  lock <- define_negative_control(lock, "nc_outcome")
+  audit <- create_audit_log(lock)
+
+  cp1 <- checkpoint_cohort_adequacy(lock)
+  audit <- record_checkpoint(audit, cp1)
+
+  ps   <- fit_ps_glm(lock)
+  diag <- compute_ps_diagnostics(ps)
+  cp2  <- checkpoint_balance(diag, lock_hash = lock$lock_hash)
+  audit <- record_checkpoint(audit, cp2)
+
+  nc  <- run_negative_control(lock, "nc_outcome", ps)
+  cp3 <- checkpoint_residual_bias(nc, lock_hash = lock$lock_hash)
+  audit <- record_checkpoint(audit, cp3)
+
+  gate <- authorize_outcome_analysis(audit)
+  expect_s3_class(gate, "pre_outcome_gate")
+  expect_s3_class(gate, "cleantmle_checkpoint")
+  expect_true(gate$authorized)
+  expect_equal(gate$decision, "GO")
+})
+
+test_that("authorize_outcome_analysis returns STOP when checkpoints missing", {
+  dat  <- sim_func1(n = 100, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 1)
+  audit <- create_audit_log(lock)
+  # No checkpoints recorded
+  gate <- authorize_outcome_analysis(audit)
+  expect_false(gate$authorized)
+  expect_equal(gate$decision, "STOP")
+})
+
+test_that("assert_outcome_authorized errors when not authorized", {
+  dat  <- sim_func1(n = 100, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 1)
+  audit <- create_audit_log(lock)
+  expect_error(assert_outcome_authorized(audit), "NOT authorised")
+})
+
+
+# ── New Phase 2 Tests: Decision Log ─────────────────────────────────────
+
+test_that("record_decision_log_entry and export_decision_log work", {
+  dat  <- sim_func1(n = 100, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 1)
+  audit <- create_audit_log(lock)
+  audit <- record_decision_log_entry(
+    audit, "Stage 2", "model_specification",
+    "Selected GLM PS model",
+    rationale = "Pre-specified in SAP"
+  )
+  audit <- record_decision_log_entry(
+    audit, "Stage 2b", "override",
+    "Accepted FLAG for ESS"
+  )
+  dl <- export_decision_log(audit)
+  expect_true(is.data.frame(dl))
+  expect_equal(nrow(dl), 2)
+  expect_true(all(c("stage", "decision_type", "description") %in% names(dl)))
+})
+
+test_that("export_decision_log returns empty df when no entries", {
+  dat  <- sim_func1(n = 100, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 1)
+  audit <- create_audit_log(lock)
+  dl <- export_decision_log(audit)
+  expect_true(is.data.frame(dl))
+  expect_equal(nrow(dl), 0)
+})
+
+
+# ── New Phase 2 Tests: Stage Path Narrative ──────────────────────────────
+
+test_that("summarize_stage_path produces narrative", {
+  dat  <- sim_func1(n = 100, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 1)
+  audit <- create_audit_log(lock)
+  audit <- record_stage(audit, "Stage 1a", "Lock created", decision = NA)
+  audit <- record_stage(audit, "Check Point 1", "Evaluated", decision = "GO")
+  out <- capture.output(summarize_stage_path(audit))
+  expect_true(any(grepl("Stage 1a", out)))
+  expect_true(any(grepl("GO", out)))
+})
+
+
+# ── New Phase 2 Tests: Outcome Masking ───────────────────────────────────
+
+test_that("mask_outcome sets outcome to NA", {
+  dat  <- sim_func1(n = 100, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 1)
+  masked <- mask_outcome(lock)
+  expect_true(all(is.na(masked$data[["event_24"]])))
+  expect_true(isTRUE(masked$.outcome_masked))
+})
+
+test_that("unmask_outcome restores outcome", {
+  dat  <- sim_func1(n = 100, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 1)
+  masked   <- mask_outcome(lock)
+  unmasked <- unmask_outcome(masked, lock)
+  expect_identical(unmasked$data[["event_24"]], lock$data[["event_24"]])
+  expect_false(isTRUE(unmasked$.outcome_masked))
+})
+
+test_that("Stage 4 functions reject masked outcome", {
+  dat  <- sim_func1(n = 200, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 1)
+  masked <- mask_outcome(lock)
+  expect_error(run_crude_workflow(masked), "Outcome is masked")
+})
+
+test_that("Stage 4 functions allow override_clean_room", {
+  dat  <- sim_func1(n = 200, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 1)
+  # Non-masked lock should work fine without override
+  result <- run_crude_workflow(lock)
+  expect_true(is.numeric(result$estimate))
+})

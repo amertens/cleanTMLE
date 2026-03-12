@@ -4,7 +4,12 @@
 \alias{fit_tmle_candidate_set}
 \title{Fit a Set of TMLE Candidate Specifications on Real Data}
 \usage{
-fit_tmle_candidate_set(lock, candidates = NULL, ps_fit = NULL)
+fit_tmle_candidate_set(
+  lock,
+  candidates = NULL,
+  ps_fit = NULL,
+  override_clean_room = FALSE
+)
 }
 \arguments{
 \item{lock}{A \code{cleanroom_lock} from \code{\link[=create_analysis_lock]{create_analysis_lock()}}.}
@@ -15,6 +20,8 @@ of SuperLearner library vectors (legacy API). If \code{NULL}, uses
 
 \item{ps_fit}{Optional \code{ps_fit} object; reused across candidates to
 avoid redundant PS estimation.}
+
+\item{override_clean_room}{Logical; if \code{TRUE}, skips the outcome-access check.  Default \code{FALSE}.}
 }
 \value{
 A named list of TMLE estimate objects (failed candidates dropped).

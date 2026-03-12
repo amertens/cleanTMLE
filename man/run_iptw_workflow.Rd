@@ -4,7 +4,7 @@
 \alias{run_iptw_workflow}
 \title{Run IPTW Workflow}
 \usage{
-run_iptw_workflow(lock, ps_fit, trim = NULL)
+run_iptw_workflow(lock, ps_fit, trim = NULL, override_clean_room = FALSE)
 }
 \arguments{
 \item{lock}{A \code{cleanroom_lock} from \code{\link[=create_analysis_lock]{create_analysis_lock()}}.}
@@ -13,6 +13,8 @@ run_iptw_workflow(lock, ps_fit, trim = NULL)
 
 \item{trim}{Quantile for weight trimming (e.g., \code{0.01} trims at 1st and
 99th percentile). Default: \code{NULL} (no trimming).}
+
+\item{override_clean_room}{Logical; if \code{TRUE}, skips the outcome-access check.  Default \code{FALSE}.}
 }
 \value{
 An object of class \code{iptw_result} containing the estimated risk

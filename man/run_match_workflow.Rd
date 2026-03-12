@@ -4,7 +4,7 @@
 \alias{run_match_workflow}
 \title{Run Propensity-Score Matching Workflow}
 \usage{
-run_match_workflow(lock, ps_fit, caliper = NULL)
+run_match_workflow(lock, ps_fit, caliper = NULL, override_clean_room = FALSE)
 }
 \arguments{
 \item{lock}{A \code{cleanroom_lock} from \code{\link[=create_analysis_lock]{create_analysis_lock()}}.}
@@ -13,6 +13,8 @@ run_match_workflow(lock, ps_fit, caliper = NULL)
 
 \item{caliper}{Numeric; maximum PS distance (logit scale) allowed for a
 match. Default: \code{0.2 * sd(logit(ps))}.}
+
+\item{override_clean_room}{Logical; if \code{TRUE}, skips the outcome-access check.  Default \code{FALSE}.}
 }
 \value{
 An object of class \code{match_result} containing the causal risk

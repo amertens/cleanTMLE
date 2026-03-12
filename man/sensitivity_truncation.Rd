@@ -4,13 +4,19 @@
 \alias{sensitivity_truncation}
 \title{Run Truncation Sensitivity Analysis}
 \usage{
-sensitivity_truncation(lock, thresholds = c(0.01, 0.025, 0.05, 0.1))
+sensitivity_truncation(
+  lock,
+  thresholds = c(0.01, 0.025, 0.05, 0.1),
+  override_clean_room = FALSE
+)
 }
 \arguments{
 \item{lock}{A \code{cleanroom_lock}.}
 
 \item{thresholds}{Numeric vector of truncation thresholds to evaluate.
 Default: \code{c(0.01, 0.025, 0.05, 0.10)}.}
+
+\item{override_clean_room}{Logical; if \code{TRUE}, skips the outcome-access check.  Default \code{FALSE}.}
 }
 \value{
 A data.frame with columns \code{truncation}, \code{estimate},

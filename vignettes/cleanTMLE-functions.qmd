@@ -53,6 +53,8 @@ and whether it accesses the real outcome.
 | 1a | `declare_sensitivity_plan()` | No | Declare a sensitivity plan |
 | 1a | `define_negative_control()` | No | Register a negative control variable |
 | 1b | `checkpoint_cohort_adequacy()` | Yes* | Check Point 1: sample size / events |
+| 1b | `estimate_design_precision()` | Yes* | Design-stage precision/MDD |
+| 1b | `summarize_event_support()` | Yes* | Event counts by arm |
 | 2 | `fit_ps_glm()` | No | Logistic regression PS |
 | 2 | `fit_ps_superlearner()` | No | SuperLearner PS |
 | 2 | `compute_ps_diagnostics()` | No | Overlap, ESS, SMDs |
@@ -67,7 +69,10 @@ and whether it accesses the real outcome.
 | 2b | `get_primary_tmle_spec()` | No | Retrieve locked spec |
 | 2b | `gate_check()` | No | GO / FLAG / STOP for plasmode |
 | 3 | `run_negative_control()` | Yes‡ | Negative control analysis |
+| 3 | `run_residual_confounding_stage()` | Yes‡ | Stage 3 wrapper |
 | 3 | `checkpoint_residual_bias()` | No | Check Point 3: residual bias |
+| Gate | `authorize_outcome_analysis()` | No | Pre-outcome GO/STOP gate |
+| Gate | `assert_outcome_authorized()` | No | Gate assertion (errors if not GO) |
 | 4 | `run_crude_workflow()` | **Yes** | Unadjusted risk difference |
 | 4 | `run_match_workflow()` | **Yes** | PS matching |
 | 4 | `run_iptw_workflow()` | **Yes** | Stabilised IPTW |
@@ -80,11 +85,16 @@ and whether it accesses the real outcome.
 | 4 | `sensitivity_truncation()` | **Yes** | Truncation sensitivity |
 | -- | `compute_evalue()` | No | E-value for unmeasured confounding |
 | -- | `summarize_cleanroom_results()` | No | Cross-workflow comparison table |
+| -- | `record_decision_log_entry()` | No | Add structured decision log entry |
+| -- | `export_decision_log()` | No | Export decision log as data frame |
+| -- | `summarize_stage_path()` | No | Compact stage narrative |
 | -- | `create_audit_log()` | No | Initialise audit trail |
 | -- | `record_stage()` | No | Append stage entry |
 | -- | `record_checkpoint()` | No | Append checkpoint entry |
 | -- | `export_audit_trail()` | No | Export trail as data frame |
 | -- | `build_stage_manifest()` | No | Print stage path summary |
+| Util | `mask_outcome()` | No | Mask outcome column with NA |
+| Util | `unmask_outcome()` | No | Restore masked outcome |
 
 \* Accesses event counts only.
 † Generates simulated outcomes; does not use the real outcome association.
@@ -98,6 +108,14 @@ and whether it accesses the real outcome.
 expit(0)            # 0.5
 logit(0.5)          # 0
 expit(logit(0.73))  # 0.73
+```
+
+### Outcome Masking
+
+```{r masking}
+masked <- mask_outcome(lock)
+all(is.na(masked$data[["event_24"]]))
+unmasked <- unmask_outcome(masked, lock)
 ```
 
 ---
@@ -138,6 +156,16 @@ print(lock)
 ```{r cp1}
 cp1 <- checkpoint_cohort_adequacy(lock)
 print(cp1)
+```
+
+---
+
+## Design-Stage Diagnostics
+
+```{r design-precision}
+dp <- estimate_design_precision(lock, target_mdd = 0.05)
+print(dp)
+summarize_event_support(lock)
 ```
 
 ---
@@ -197,6 +225,15 @@ nc  <- run_negative_control(lock, "nc_outcome", ps_fit)
 cp3 <- checkpoint_residual_bias(nc, lock_hash = lock$lock_hash)
 print(nc)
 print(cp3)
+```
+
+---
+
+## Pre-Outcome Authorization Gate
+
+```{r gate}
+gate <- authorize_outcome_analysis(audit)
+print(gate)
 ```
 
 ---
@@ -336,6 +373,15 @@ audit <- record_checkpoint(audit, cp2)
 audit <- record_checkpoint(audit, cp3)
 audit <- record_stage(audit, "Stage 4", "Final estimation complete")
 export_audit_trail(audit)
+```
+
+### Decision Log
+
+```{r decision-log}
+audit <- record_decision_log_entry(audit, "Stage 2", "model_specification",
+                                   "Selected GLM PS model")
+export_decision_log(audit)
+summarize_stage_path(audit)
 ```
 
 ```{r manifest}

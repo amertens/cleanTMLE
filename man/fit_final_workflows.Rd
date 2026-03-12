@@ -4,7 +4,12 @@
 \alias{fit_final_workflows}
 \title{Fit All Stage 3 Workflows}
 \usage{
-fit_final_workflows(lock, ps_fit, workflows = c("match", "iptw", "tmle"))
+fit_final_workflows(
+  lock,
+  ps_fit,
+  workflows = c("match", "iptw", "tmle"),
+  override_clean_room = FALSE
+)
 }
 \arguments{
 \item{lock}{A \code{cleanroom_lock} from \code{\link[=create_analysis_lock]{create_analysis_lock()}}.}
@@ -16,6 +21,9 @@ fit_final_workflows(lock, ps_fit, workflows = c("match", "iptw", "tmle"))
 Default: \code{c("match", "iptw", "tmle")}.  Matching and IPTW serve as
 secondary comparators; the primary TMLE uses the locked specification
 from \code{\link[=lock_primary_tmle_spec]{lock_primary_tmle_spec()}} when available.}
+
+\item{override_clean_room}{Logical; if \code{TRUE}, skips the outcome-
+access check.  Default \code{FALSE}.}
 }
 \value{
 A named list with elements named by the requested workflows.

@@ -4,7 +4,12 @@
 \alias{fit_tmle_outcome_mechanism}
 \title{Fit TMLE Outcome Mechanism}
 \usage{
-fit_tmle_outcome_mechanism(lock, g_fit, sl_library = NULL)
+fit_tmle_outcome_mechanism(
+  lock,
+  g_fit,
+  sl_library = NULL,
+  override_clean_room = FALSE
+)
 }
 \arguments{
 \item{lock}{A \code{cleanroom_lock} from \code{\link[=create_analysis_lock]{create_analysis_lock()}}.}
@@ -15,6 +20,9 @@ fit_tmle_outcome_mechanism(lock, g_fit, sl_library = NULL)
 \item{sl_library}{Optional SuperLearner library override. If \code{NULL},
 uses the locked primary TMLE spec Q-library if available, then falls
 back to \code{lock$sl_library}.}
+
+\item{override_clean_room}{Logical; if \code{TRUE}, skips the outcome-
+access check.  Default \code{FALSE}.}
 }
 \value{
 An object of class \code{tmle_mechanism} with \code{type = "outcome"}
