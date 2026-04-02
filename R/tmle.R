@@ -60,11 +60,18 @@ NULL
 #' print(fit)
 #' }
 #'
+#' @param n_folds Integer; number of cross-fitting folds. Default: 1
+#'   (no cross-fitting; standard TMLE). Set to 2 or more for K-fold
+#'   cross-fitted nuisance estimation.
+#' @param fold_vec Optional integer vector of length \code{nrow(data)}
+#'   assigning each observation to a fold. Overrides \code{n_folds}.
+#'
 #' @export
 estimate_tmle_risk_point <- function(data, treatment = NULL, outcome = NULL,
                                      covariates = NULL, family = "binomial",
                                      sl_library = c("SL.glm", "SL.mean"),
-                                     truncate = 0.01, spec = NULL, ...) {
+                                     truncate = 0.01, spec = NULL,
+                                     n_folds = 1L, fold_vec = NULL, ...) {
   # Extract from spec if provided
 
   if (!is.null(spec) && inherits(spec, "cr_spec")) {
@@ -102,52 +109,227 @@ estimate_tmle_risk_point <- function(data, treatment = NULL, outcome = NULL,
     )
   }
   W <- data[, covariates, drop = FALSE]
+  n <- nrow(data)
 
-  # Run TMLE
-  tmle_fit <- tmle::tmle(
-    Y = Y, A = A, W = W,
-    family = family,
-    Q.SL.library = sl_library,
-    g.SL.library = sl_library,
-    gbound = truncate,
-    ...
-  )
+  # Determine whether to cross-fit
+  use_cv <- !is.null(fold_vec) || n_folds > 1L
 
-  # Extract results
-  ate <- tmle_fit$estimates$ATE
-  rr_est <- tmle_fit$estimates$RR
+  if (use_cv) {
+    # ── Cross-fitted TMLE ────────────────────────────────────────────
+    if (is.null(fold_vec)) {
+      fold_vec <- sample(rep(seq_len(n_folds), length.out = n))
+    }
+    K <- max(fold_vec)
 
-  estimates <- list(
-    ATE = list(
-      estimate = ate$psi,
-      se = sqrt(ate$var.psi),
-      ci_lower = ate$CI[1],
-      ci_upper = ate$CI[2],
-      p_value = ate$pvalue
+    # Containers for out-of-fold predictions
+    ps_cf   <- numeric(n)
+    Q_a1_cf <- numeric(n)
+    Q_a0_cf <- numeric(n)
+    Q_aw_cf <- numeric(n)
+
+    for (k in seq_len(K)) {
+      val_idx   <- which(fold_vec == k)
+      train_idx <- which(fold_vec != k)
+
+      W_train <- W[train_idx, , drop = FALSE]
+      W_val   <- W[val_idx,   , drop = FALSE]
+      A_train <- A[train_idx]
+      Y_train <- Y[train_idx]
+      A_val   <- A[val_idx]
+
+      # g-model on training fold
+      g_sl <- SuperLearner::SuperLearner(
+        Y = A_train, X = W_train, family = binomial(),
+        SL.library = sl_library,
+        env = asNamespace("SuperLearner")
+      )
+      ps_cf[val_idx] <- pmax(pmin(
+        as.numeric(predict(g_sl, newdata = W_val)$pred),
+        1 - truncate), truncate)
+
+      # Q-model on training fold
+      AW_train <- cbind(W_train, .A_tmle. = A_train)
+      AW_val   <- cbind(W_val,   .A_tmle. = A_val)
+      Q_sl <- SuperLearner::SuperLearner(
+        Y = Y_train, X = AW_train, family = binomial(),
+        SL.library = sl_library,
+        env = asNamespace("SuperLearner")
+      )
+      Q_aw_cf[val_idx] <- as.numeric(predict(Q_sl, newdata = AW_val)$pred)
+
+      AW_a1 <- AW_val; AW_a1$.A_tmle. <- 1L
+      AW_a0 <- AW_val; AW_a0$.A_tmle. <- 0L
+      Q_a1_cf[val_idx] <- as.numeric(predict(Q_sl, newdata = AW_a1)$pred)
+      Q_a0_cf[val_idx] <- as.numeric(predict(Q_sl, newdata = AW_a0)$pred)
+    }
+
+    # Targeting step using cross-fitted predictions
+    H_a1 <-  1 / ps_cf
+    H_a0 <- -1 / (1 - ps_cf)
+    H_aw <- ifelse(A == 1, H_a1, H_a0)
+
+    Q_aw_logit <- stats::qlogis(pmax(pmin(Q_aw_cf, 0.999), 0.001))
+    epsilon <- tryCatch({
+      fluc <- stats::glm(Y ~ -1 + H_aw + offset(Q_aw_logit),
+                          family = stats::binomial())
+      unname(stats::coef(fluc))
+    }, error = function(e) 0)
+
+    Q_a1_u <- stats::plogis(
+      stats::qlogis(pmax(pmin(Q_a1_cf, 0.999), 0.001)) + epsilon * H_a1)
+    Q_a0_u <- stats::plogis(
+      stats::qlogis(pmax(pmin(Q_a0_cf, 0.999), 0.001)) + epsilon * H_a0)
+    Q_aw_u <- stats::plogis(Q_aw_logit + epsilon * H_aw)
+
+    psi  <- mean(Q_a1_u) - mean(Q_a0_u)
+    eic  <- H_aw * (Y - Q_aw_u) + (Q_a1_u - Q_a0_u) - psi
+    se   <- sqrt(var(eic) / n)
+    ci_l <- psi - 1.96 * se
+    ci_u <- psi + 1.96 * se
+    pval <- 2 * stats::pnorm(-abs(psi / se))
+
+    estimates <- list(
+      ATE = list(
+        estimate = psi, se = se, ci_lower = ci_l, ci_upper = ci_u,
+        p_value = pval
+      )
     )
-  )
 
-  if (!is.null(rr_est)) {
-    estimates$RR <- list(
-      estimate = rr_est$psi,
-      se = sqrt(rr_est$var.log.psi),
-      ci_lower = rr_est$CI[1],
-      ci_upper = rr_est$CI[2],
-      p_value = rr_est$pvalue
+    # Build a lightweight tmle-like object for downstream compat
+    tmle_fit <- list(
+      g = list(g1W = ps_cf),
+      estimates = list(ATE = list(psi = psi, var.psi = se^2,
+                                   CI = c(ci_l, ci_u), pvalue = pval),
+                       IC = list(IC.ATE = eic)),
+      cross_fitted = TRUE,
+      n_folds = K,
+      fold_vec = fold_vec
     )
+    ic <- eic
+
+  } else {
+    # ── Standard (non-cross-fitted) TMLE ─────────────────────────────
+    tmle_fit <- tmle::tmle(
+      Y = Y, A = A, W = W,
+      family = family,
+      Q.SL.library = sl_library,
+      g.SL.library = sl_library,
+      gbound = truncate,
+      ...
+    )
+
+    # Extract results
+    ate <- tmle_fit$estimates$ATE
+    rr_est <- tmle_fit$estimates$RR
+
+    estimates <- list(
+      ATE = list(
+        estimate = ate$psi,
+        se = sqrt(ate$var.psi),
+        ci_lower = ate$CI[1],
+        ci_upper = ate$CI[2],
+        p_value = ate$pvalue
+      )
+    )
+
+    if (!is.null(rr_est)) {
+      estimates$RR <- list(
+        estimate = rr_est$psi,
+        se = sqrt(rr_est$var.log.psi),
+        ci_lower = rr_est$CI[1],
+        ci_upper = rr_est$CI[2],
+        p_value = rr_est$pvalue
+      )
+    }
+
+    ic <- tmle_fit$estimates$IC$IC.ATE
+    fold_vec <- NULL
   }
 
   # Influence curve
   ic <- tmle_fit$estimates$IC$IC.ATE
 
+  # ── Weight diagnostics ──────────────────────────────────────────────
+  weight_diagnostics <- tryCatch({
+    g1W <- tmle_fit$g$g1W
+    ps_raw <- g1W
+    ps_bounded <- pmax(pmin(ps_raw, 1 - truncate), truncate)
+
+    w_diag <- ifelse(A == 1, 1 / ps_bounded, 1 / (1 - ps_bounded))
+
+    # Weight summary by treatment group
+    wt_summary_rows <- lapply(sort(unique(A)), function(a) {
+      wg <- w_diag[A == a]
+      data.frame(
+        group = as.character(a), n = length(wg),
+        mean = round(mean(wg), 4), sd = round(sd(wg), 4),
+        min = round(min(wg), 4),
+        p5  = round(quantile(wg, 0.05, names = FALSE), 4),
+        p25 = round(quantile(wg, 0.25, names = FALSE), 4),
+        p50 = round(quantile(wg, 0.50, names = FALSE), 4),
+        p75 = round(quantile(wg, 0.75, names = FALSE), 4),
+        p95 = round(quantile(wg, 0.95, names = FALSE), 4),
+        max = round(max(wg), 4),
+        stringsAsFactors = FALSE, row.names = NULL
+      )
+    })
+    wt_summary <- do.call(rbind, wt_summary_rows)
+
+    # Extreme weights (top 10)
+    top_idx <- order(abs(w_diag), decreasing = TRUE)[seq_len(min(10L, length(w_diag)))]
+    extreme_wt <- data.frame(
+      row = top_idx, weight = w_diag[top_idx],
+      ps = ps_bounded[top_idx], A = A[top_idx],
+      stringsAsFactors = FALSE
+    )
+
+    # PS histogram by treatment group
+    plot_df <- data.frame(
+      ps    = ps_bounded,
+      group = ifelse(A == 1, "Treated (A=1)", "Control (A=0)"),
+      stringsAsFactors = FALSE
+    )
+    ps_hist <- ggplot2::ggplot(plot_df, ggplot2::aes(
+      x = .data$ps, fill = .data$group
+    )) +
+      ggplot2::geom_histogram(position = "identity", alpha = 0.5, bins = 30L) +
+      ggplot2::labs(x = "Propensity Score", y = "Count",
+                    title = "PS Distribution", fill = "Group") +
+      ggplot2::theme_minimal()
+
+    # ESS (Kish)
+    ess_treated <- sum(w_diag[A == 1])^2 / sum(w_diag[A == 1]^2)
+    ess_control <- sum(w_diag[A == 0])^2 / sum(w_diag[A == 0]^2)
+
+    frac_at_lower <- mean(ps_raw <= truncate)
+    frac_at_upper <- mean(ps_raw >= 1 - truncate)
+
+    list(
+      wt_summary       = wt_summary,
+      extreme_weights  = extreme_wt,
+      ps_histogram     = ps_hist,
+      ps_min           = min(ps_raw),
+      ps_max           = max(ps_raw),
+      frac_at_lower    = frac_at_lower,
+      frac_at_upper    = frac_at_upper,
+      ess_treated      = round(ess_treated, 1),
+      ess_control      = round(ess_control, 1),
+      ess_total        = round(ess_treated + ess_control, 1)
+    )
+  }, error = function(e) NULL)
+
   result <- list(
     estimates = estimates,
     tmle_obj = tmle_fit,
     influence_curve = ic,
+    weight_diagnostics = weight_diagnostics,
     treatment = treatment,
     outcome = outcome,
     covariates = covariates,
     type = "point_tmle",
+    cross_fitted = use_cv,
+    n_folds = if (use_cv) max(fold_vec) else 1L,
+    fold_vec = fold_vec,
     call = match.call()
   )
   class(result) <- c("tmle_fit", "cr_result")
@@ -214,6 +396,72 @@ estimate_surv_tmle <- function(data, treatment = "treatment",
                                covariates, target_times,
                                sl_library, ...)
   }
+
+  # ── Weight diagnostics (PS-based) ──────────────────────────────────
+  fit$weight_diagnostics <- tryCatch({
+    A <- data[[treatment]]
+    W <- data[, covariates, drop = FALSE]
+
+    ps_fml <- stats::reformulate(covariates, response = treatment)
+    ps_mod <- stats::glm(ps_fml, data = data, family = stats::binomial())
+    ps_raw <- as.numeric(stats::predict(ps_mod, type = "response"))
+    ps_bounded <- pmax(pmin(ps_raw, 0.99), 0.01)
+
+    w_diag <- ifelse(A == 1, 1 / ps_bounded, 1 / (1 - ps_bounded))
+
+    wt_summary_rows <- lapply(sort(unique(A)), function(a) {
+      wg <- w_diag[A == a]
+      data.frame(
+        group = as.character(a), n = length(wg),
+        mean = round(mean(wg), 4), sd = round(sd(wg), 4),
+        min = round(min(wg), 4),
+        p5  = round(quantile(wg, 0.05, names = FALSE), 4),
+        p25 = round(quantile(wg, 0.25, names = FALSE), 4),
+        p50 = round(quantile(wg, 0.50, names = FALSE), 4),
+        p75 = round(quantile(wg, 0.75, names = FALSE), 4),
+        p95 = round(quantile(wg, 0.95, names = FALSE), 4),
+        max = round(max(wg), 4),
+        stringsAsFactors = FALSE, row.names = NULL
+      )
+    })
+    wt_summary <- do.call(rbind, wt_summary_rows)
+
+    top_idx <- order(abs(w_diag), decreasing = TRUE)[seq_len(min(10L, length(w_diag)))]
+    extreme_wt <- data.frame(
+      row = top_idx, weight = w_diag[top_idx],
+      ps = ps_bounded[top_idx], A = A[top_idx],
+      stringsAsFactors = FALSE
+    )
+
+    plot_df <- data.frame(
+      ps    = ps_bounded,
+      group = ifelse(A == 1, "Treated (A=1)", "Control (A=0)"),
+      stringsAsFactors = FALSE
+    )
+    ps_hist <- ggplot2::ggplot(plot_df, ggplot2::aes(
+      x = .data$ps, fill = .data$group
+    )) +
+      ggplot2::geom_histogram(position = "identity", alpha = 0.5, bins = 30L) +
+      ggplot2::labs(x = "Propensity Score", y = "Count",
+                    title = "PS Distribution (Survival TMLE)", fill = "Group") +
+      ggplot2::theme_minimal()
+
+    ess_treated <- sum(w_diag[A == 1])^2 / sum(w_diag[A == 1]^2)
+    ess_control <- sum(w_diag[A == 0])^2 / sum(w_diag[A == 0]^2)
+
+    list(
+      wt_summary       = wt_summary,
+      extreme_weights  = extreme_wt,
+      ps_histogram     = ps_hist,
+      ps_min           = min(ps_raw),
+      ps_max           = max(ps_raw),
+      frac_at_lower    = mean(ps_raw <= 0.01),
+      frac_at_upper    = mean(ps_raw >= 0.99),
+      ess_treated      = round(ess_treated, 1),
+      ess_control      = round(ess_control, 1),
+      ess_total        = round(ess_treated + ess_control, 1)
+    )
+  }, error = function(e) NULL)
 
   fit
 }

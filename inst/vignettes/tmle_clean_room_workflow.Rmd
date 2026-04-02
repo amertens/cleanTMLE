@@ -1,0 +1,296 @@
+---
+title: "Clean-Room TMLE Workflow"
+author: "cleanTMLE"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Clean-Room TMLE Workflow}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 5,
+  warning = FALSE,
+  message = TRUE
+)
+```
+
+## Overview
+
+This vignette demonstrates the full **clean-room staged TMLE workflow**
+using the `run_clean_tmle()` wrapper.
+The staged workflow enforces outcome blinding through structured gates:
+
+| Stage | Purpose | Output |
+|-------|---------|--------|
+| **1** | Lock analytic specification | `cleanroom_lock` |
+| **2a** | Propensity-score diagnostics & gating | PS diagnostics, ESS, love plot |
+| **2b** | Negative controls / plasmode simulation | Bias, RMSE, coverage |
+| **3** | Primary TMLE estimation | ATE, IC, weight diagnostics |
+
+## Simulated Data
+
+We simulate a dataset with a binary treatment, baseline covariates, and
+a binary 24-month event outcome.
+
+```{r simulate-data}
+library(cleanTMLE)
+set.seed(42)
+
+# Simulate via built-in DGP (or manually if sim_func1 not available)
+n <- 800
+age       <- rnorm(n, 55, 10)
+sex       <- rbinom(n, 1, 0.45)
+biomarker <- rnorm(n, 0, 1)
+comorbid  <- rbinom(n, 1, 0.30)
+
+# Treatment mechanism (confounded)
+lp_trt <- -1.0 + 0.02 * age + 0.3 * sex + 0.4 * biomarker + 0.5 * comorbid
+ps_true <- plogis(lp_trt)
+treatment <- rbinom(n, 1, ps_true)
+
+# Outcome mechanism (binary at 24 months)
+lp_out <- -2.0 + 0.01 * age + 0.2 * sex + 0.3 * biomarker +
+          0.4 * comorbid - 0.5 * treatment
+event_24 <- rbinom(n, 1, plogis(lp_out))
+
+# Negative-control outcome (unrelated to treatment)
+nc_outcome <- rbinom(n, 1, plogis(-1.5 + 0.01 * age))
+
+dat <- data.frame(
+  age, sex, biomarker, comorbid, treatment, event_24, nc_outcome
+)
+
+head(dat)
+```
+
+## Stage 1: Analysis Lock
+
+The wrapper validates that a pre-specified SuperLearner library and
+truncation rules are provided, then creates a locked specification.
+
+```{r stage1-lock}
+# These would normally be pre-registered
+sl_lib <- c("SL.glm", "SL.mean")
+trunc  <- c(0.01, 0.99)
+```
+
+## Full Pipeline via `run_clean_tmle()`
+
+```{r run-pipeline}
+result <- run_clean_tmle(
+  data                 = dat,
+  Avar                 = "treatment",
+  Yvar                 = "event_24",
+  covariates           = c("age", "sex", "biomarker", "comorbid"),
+  learner_lib          = sl_lib,
+  truncation           = trunc,
+  neg_control_outcomes = "nc_outcome",
+  simulation_spec      = list(reps = 20, effect_sizes = c(0.05)),
+  stage2a_thresholds   = list(ESS = 0.20, max_smd = 0.25),
+  seed                 = 42,
+  verbose              = TRUE
+)
+
+print(result)
+```
+
+## Stage 2a Diagnostics
+
+### Weight Distribution
+
+```{r weight-summary}
+result$weight_summary
+```
+
+### Extreme Weights
+
+```{r extreme-wts}
+result$extreme_weights
+```
+
+### PS Overlap Histogram
+
+```{r ps-histogram, fig.cap = "Propensity score overlap by treatment group."}
+result$ps_diagnostics$overlap_plot
+```
+
+### Love Plot (Covariate Balance)
+
+```{r love-plot, fig.cap = "Standardised mean differences before and after weighting."}
+result$love_plot
+```
+
+### Effective Sample Size
+
+```{r ess}
+result$ps_diagnostics$ess
+```
+
+## Stage 2b: Negative Controls
+
+If negative-control outcomes were specified, the pipeline estimates the
+treatment effect on each and tests whether it differs from zero.
+
+```{r nc-results}
+if (!is.null(result$nc_results)) {
+  for (nc in result$nc_results) {
+    print(nc)
+    cat("\n")
+  }
+}
+```
+
+## Stage 2b: Plasmode Simulation
+
+If a `simulation_spec` was provided, the pipeline runs plasmode
+replicates to assess bias, RMSE, and coverage.
+
+```{r plasmode}
+if (!is.null(result$plasmode_results)) {
+  print(result$plasmode_results$metrics)
+}
+```
+
+## Stage 3: Primary TMLE Estimation
+
+```{r stage3-estimate}
+if (!is.null(result$tmle_result)) {
+  print(result$tmle_result)
+}
+```
+
+### Influence Curve Histogram
+
+```{r ic-hist, fig.cap = "Distribution of the efficient influence curve."}
+if (!is.null(result$tmle_result)) {
+  ic_histogram(result$tmle_result)
+}
+```
+
+### IC Summary
+
+```{r ic-summary}
+result$ic_summary
+```
+
+## Cross-Fitted TMLE (Comparison)
+
+We can also run a 2-fold cross-fitted TMLE for comparison.
+
+```{r cross-fitted}
+tmle_cf <- estimate_tmle_risk_point(
+  data       = dat,
+  treatment  = "treatment",
+  outcome    = "event_24",
+  covariates = c("age", "sex", "biomarker", "comorbid"),
+  sl_library = sl_lib,
+  truncate   = 0.01,
+  n_folds    = 2L
+)
+
+cat("Cross-fitted ATE:\n")
+cat(sprintf("  Estimate: %.5f (95%% CI: %.5f, %.5f)\n",
+            tmle_cf$estimates$ATE$estimate,
+            tmle_cf$estimates$ATE$ci_lower,
+            tmle_cf$estimates$ATE$ci_upper))
+```
+
+## Comparison with IPW and Matching
+
+To illustrate improvements, we compare the TMLE estimate against
+crude, IPTW, and matching approaches using the cleanTMLE infrastructure.
+
+```{r comparison}
+# Create lock for comparison workflows
+lock <- create_analysis_lock(
+  data       = dat,
+  treatment  = "treatment",
+  outcome    = "event_24",
+  covariates = c("age", "sex", "biomarker", "comorbid"),
+  seed       = 42
+)
+
+ps_fit  <- fit_ps_glm(lock)
+iptw    <- run_iptw_workflow(lock, ps_fit, override_clean_room = TRUE)
+matched <- run_match_workflow(lock, ps_fit, override_clean_room = TRUE)
+
+# Crude
+Y <- dat$event_24; A <- dat$treatment
+crude_rd <- mean(Y[A == 1]) - mean(Y[A == 0])
+
+comparison <- data.frame(
+  Method   = c("Crude", "IPTW", "PS Matching", "TMLE"),
+  Estimate = round(c(crude_rd, iptw$estimate, matched$estimate,
+                     result$tmle_result$estimates$ATE$estimate), 5),
+  SE       = round(c(NA, iptw$se, matched$se,
+                     result$tmle_result$estimates$ATE$se), 5),
+  stringsAsFactors = FALSE
+)
+print(comparison)
+```
+
+## Integration Utilities
+
+### External PS and Parallel Support
+
+```{r external-ps}
+# Wrap externally computed PS scores
+my_ps <- predict(glm(treatment ~ age + sex + biomarker + comorbid,
+                      data = dat, family = binomial()), type = "response")
+ext_fit <- wrap_ps_fit(lock, ps_scores = my_ps, method = "custom_glm")
+print(ext_fit)
+```
+
+### Covariate Sanitisation
+
+```{r sanitize}
+clean <- sanitize_covariates(dat,
+  covariates = c("age", "sex", "biomarker", "comorbid"),
+  verbose = TRUE)
+```
+
+### TMLE-Based Negative Controls
+
+```{r nc-tmle}
+nc_tmle <- run_negative_control_tmle(lock, "nc_outcome", ps_fit)
+cat(sprintf("TMLE NC: est=%.5f, p=%.4f (method: %s)\n",
+            nc_tmle$estimate, nc_tmle$p_value, nc_tmle$method))
+```
+
+### Matched-Cohort TMLE
+
+```{r matched-tmle}
+matched_idx <- c(which(dat$treatment == 1)[1:50],
+                 which(dat$treatment == 0)[1:50])
+matched_tmle <- run_matched_tmle(lock, ps_fit, subset_idx = matched_idx,
+                                  override_clean_room = TRUE)
+cat(sprintf("Matched TMLE ATE: %.5f (n=%d)\n",
+            matched_tmle$estimates$ATE$estimate, matched_tmle$n_matched))
+```
+
+### Clever Covariate Plot
+
+```{r clever-plot, fig.cap = "Clever covariate H(A,W) by treatment group."}
+clever_covariate_plot(ps_fit = ps_fit, lock = lock)
+```
+
+## Decision Log
+
+The full decision log records every stage, metric, and gating decision
+with timestamps.
+
+```{r decision-log}
+knitr::kable(result$decision_log, caption = "Decision Log")
+```
+
+## Session Info
+
+```{r session-info}
+sessionInfo()
+```

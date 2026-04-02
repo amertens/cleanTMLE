@@ -95,6 +95,24 @@ and whether it accesses the real outcome.
 | -- | `build_stage_manifest()` | No | Print stage path summary |
 | Util | `mask_outcome()` | No | Mask outcome column with NA |
 | Util | `unmask_outcome()` | No | Restore masked outcome |
+| Wrapper | `run_clean_tmle()` | **Yes** | Full staged clean-room pipeline |
+| Wrapper | `init_decision_log()` | No | Create empty decision log |
+| Wrapper | `log_decision_entry()` | No | Append row to decision log |
+| Wrapper | `save_decision_log()` | No | Write decision log to CSV |
+| Plot | `love_plot()` | No | SMD dot-plot (weighted vs unweighted) |
+| Plot | `ic_histogram()` | No | Influence curve histogram |
+| Integ | `wrap_ps_fit()` | No | Wrap external PS scores into ps_fit |
+| Integ | `fit_ps_parallel()` | No | SuperLearner PS with parallel cluster |
+| Integ | `save_lock()` / `load_lock()` | No | Serialise / deserialise lock to RDS |
+| Integ | `save_audit()` / `load_audit()` | No | Serialise / deserialise audit log |
+| 3 | `run_negative_control_tmle()` | Yes‡ | TMLE-based negative control (doubly robust) |
+| 4 | `run_matched_tmle()` | **Yes** | Modular TMLE on a matched subset |
+| Integ | `sanitize_covariates()` | No | Clean covariates for SuperLearner |
+| Integ | `create_analysis_lock_from_yaml()` | No | Lock from YAML config file |
+| Plot | `clever_covariate_plot()` | No | H(A,W) distribution by group |
+| Plot | `love_plot_threeway()` | No | Unweighted / IPTW / matched SMDs |
+| Integ | `compute_matched_smds()` | No | SMDs on a matched subset |
+| Gate | `gate_all()` | No | Composite GO/FLAG/STOP across checkpoints |
 
 \* Accesses event counts only.
 † Generates simulated outcomes; does not use the real outcome association.
@@ -108,14 +126,6 @@ and whether it accesses the real outcome.
 expit(0)            # 0.5
 logit(0.5)          # 0
 expit(logit(0.73))  # 0.73
-```
-
-### Outcome Masking
-
-```{r masking}
-masked <- mask_outcome(lock)
-all(is.na(masked$data[["event_24"]]))
-unmasked <- unmask_outcome(masked, lock)
 ```
 
 ---
@@ -147,6 +157,14 @@ lock <- define_negative_control(lock, "nc_outcome")
 
 validate_analysis_lock(lock)
 print(lock)
+```
+
+### Outcome Masking
+
+```{r masking}
+masked <- mask_outcome(lock)
+all(is.na(masked$data[["event_24"]]))
+unmasked <- unmask_outcome(masked, lock)
 ```
 
 ---
@@ -228,6 +246,16 @@ print(cp3)
 ```
 
 ---
+
+## Audit Trail (initialise early for gate)
+
+```{r audit}
+audit <- create_audit_log(lock)
+audit <- record_stage(audit, "Stage 1a", "Lock created")
+audit <- record_checkpoint(audit, cp1)
+audit <- record_checkpoint(audit, cp2)
+audit <- record_checkpoint(audit, cp3)
+```
 
 ## Pre-Outcome Authorization Gate
 
@@ -363,14 +391,9 @@ extreme_weights(fit_ipw, k = 5)
 
 ---
 
-## Audit Trail
+## Audit Trail (continued)
 
-```{r audit}
-audit <- create_audit_log(lock)
-audit <- record_stage(audit, "Stage 1a", "Lock created")
-audit <- record_checkpoint(audit, cp1)
-audit <- record_checkpoint(audit, cp2)
-audit <- record_checkpoint(audit, cp3)
+```{r audit-final}
 audit <- record_stage(audit, "Stage 4", "Final estimation complete")
 export_audit_trail(audit)
 ```
@@ -386,6 +409,109 @@ summarize_stage_path(audit)
 
 ```{r manifest}
 build_stage_manifest(audit)
+```
+
+---
+
+## Real-World Pipeline Integration
+
+When applying cleanTMLE to actual data, several practical concerns
+arise: externally fitted PS, dirty covariate matrices, file-based
+multi-stage scripts, and matched-cohort analyses.
+This section demonstrates the integration utilities that address
+those needs.
+
+### Dirty covariates → clean matrix
+
+Real registry data often has missing values, zero-variance columns,
+or column names with special characters.
+`sanitize_covariates()` handles all of these in one call:
+
+```{r sanitize}
+clean <- sanitize_covariates(dat,
+  covariates = c("age", "sex", "biomarker", "comorbidity"),
+  verbose = TRUE)
+cat("Covariates after cleaning:", paste(clean$covariates, collapse = ", "), "\n")
+```
+
+### Bring your own propensity scores
+
+If PS were estimated outside cleanTMLE (parallel SuperLearner,
+Bayesian model, external software), `wrap_ps_fit()` wraps them into
+a `ps_fit` so all downstream functions work identically:
+
+```{r wrap-ps}
+my_ps <- predict(glm(treatment ~ age + sex + biomarker + comorbidity,
+                      data = dat, family = binomial()), type = "response")
+ext_ps_fit <- wrap_ps_fit(lock, ps_scores = my_ps, method = "custom_glm")
+ext_diag   <- compute_ps_diagnostics(ext_ps_fit)
+print(ext_diag$ess)
+```
+
+### Serialise lock and audit between stages
+
+In production pipelines, each stage runs as a separate R script.
+`save_lock()` / `load_lock()` serialise with automatic hash
+re-validation on reload:
+
+```{r save-load-lock}
+# Round-trip: save, reload, verify
+tmp <- tempfile("lock_", fileext = ".rds")
+save_lock(lock, tmp)
+lock_rt <- load_lock(tmp)
+cat("Hash intact:", identical(lock$lock_hash, lock_rt$lock_hash), "\n")
+unlink(tmp)
+```
+
+### TMLE-based negative controls
+
+The default `run_negative_control()` uses IPTW.
+`run_negative_control_tmle()` is doubly robust --- more consistent
+with a TMLE-centred pipeline:
+
+```{r nc-tmle}
+nc_tmle <- run_negative_control_tmle(lock, "nc_outcome", ps_fit)
+print(nc_tmle)
+cat("Method:", nc_tmle$method, "\n")
+```
+
+### Matched-cohort TMLE
+
+`run_matched_tmle()` runs the full TMLE update on a matched subset
+without creating a separate lock:
+
+```{r matched-tmle}
+matched_idx <- c(which(dat$treatment == 1)[1:50],
+                 which(dat$treatment == 0)[1:50])
+matched_fit <- run_matched_tmle(lock, ps_fit, subset_idx = matched_idx,
+                                override_clean_room = TRUE)
+print(matched_fit)
+```
+
+### Diagnostic plots
+
+```{r clever-plot, fig.cap = "Clever covariate H(A,W) by treatment group."}
+clever_covariate_plot(ps_fit = ps_fit, lock = lock)
+```
+
+`compute_matched_smds()` + `love_plot_threeway()` compare balance
+across all three adjustment strategies:
+
+```{r threeway-love, fig.cap = "Unweighted vs IPTW vs matched SMDs."}
+m_smds <- compute_matched_smds(dat, "treatment",
+  c("age", "sex", "biomarker", "comorbidity"),
+  subset_idx = matched_idx)
+love_plot_threeway(diag, matched_smds = m_smds)
+```
+
+### Composite gating
+
+`gate_all()` evaluates all checkpoints at once ---
+convenient when the pipeline has many stages:
+
+```{r gate-all}
+composite <- gate_all(cp1, cp2, cp3, allow_flag = TRUE)
+print(composite)
 ```
 
 ```{r session-info}

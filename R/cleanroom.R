@@ -768,26 +768,59 @@ run_plasmode_feasibility <- function(lock,
 
       for (cand in tmle_candidates) {
         cand_result <- tryCatch({
-          # Fit PS with candidate truncation
-          ps_fml <- stats::reformulate(covariates, response = treatment)
-          ps_mod <- stats::glm(ps_fml, data = data, family = stats::binomial())
-          ps_hat <- as.numeric(stats::predict(ps_mod, type = "response"))
+          # Fit PS using the candidate's g-library
+          g_lib <- cand$g_library
+          q_lib <- cand$q_library
+
+          use_sl <- requireNamespace("SuperLearner", quietly = TRUE) &&
+            !identical(g_lib, "SL.glm")
+
+          if (use_sl) {
+            W_mat <- data[, covariates, drop = FALSE]
+            g_sl  <- SuperLearner::SuperLearner(
+              Y = A, X = W_mat, family = binomial(),
+              SL.library = g_lib,
+              env = asNamespace("SuperLearner")
+            )
+            ps_hat <- as.numeric(g_sl$SL.predict)
+          } else {
+            ps_fml <- stats::reformulate(covariates, response = treatment)
+            ps_mod <- stats::glm(ps_fml, data = data, family = stats::binomial())
+            ps_hat <- as.numeric(stats::predict(ps_mod, type = "response"))
+          }
           ps_hat <- pmax(pmin(ps_hat, 1 - cand$truncation), cand$truncation)
 
-          # Fit Q-model on simulated outcome
+          # Fit Q-model using the candidate's q-library
           ds <- data
           ds[[".Y_sim."]] <- Y_sim
-          Q_fml  <- stats::reformulate(c(treatment, covariates),
-                                       response = ".Y_sim.")
-          Q_fit_s <- stats::glm(Q_fml, data = ds, family = stats::binomial())
+          AW <- ds[, c(treatment, covariates), drop = FALSE]
 
-          ds_a1 <- ds; ds_a1[[treatment]] <- 1L
-          ds_a0 <- ds; ds_a0[[treatment]] <- 0L
-          Q_a1  <- as.numeric(stats::predict(Q_fit_s, newdata = ds_a1,
-                                              type = "response"))
-          Q_a0  <- as.numeric(stats::predict(Q_fit_s, newdata = ds_a0,
-                                              type = "response"))
-          Q_aw  <- as.numeric(stats::predict(Q_fit_s, type = "response"))
+          use_sl_q <- requireNamespace("SuperLearner", quietly = TRUE) &&
+            !identical(q_lib, "SL.glm")
+
+          if (use_sl_q) {
+            q_sl <- SuperLearner::SuperLearner(
+              Y = Y_sim, X = AW, family = binomial(),
+              SL.library = q_lib,
+              env = asNamespace("SuperLearner")
+            )
+            ds_a1 <- AW; ds_a1[[treatment]] <- 1L
+            ds_a0 <- AW; ds_a0[[treatment]] <- 0L
+            Q_a1 <- as.numeric(predict(q_sl, newdata = ds_a1)$pred)
+            Q_a0 <- as.numeric(predict(q_sl, newdata = ds_a0)$pred)
+            Q_aw <- as.numeric(q_sl$SL.predict)
+          } else {
+            Q_fml   <- stats::reformulate(c(treatment, covariates),
+                                           response = ".Y_sim.")
+            Q_fit_s <- stats::glm(Q_fml, data = ds, family = stats::binomial())
+            ds_a1 <- ds; ds_a1[[treatment]] <- 1L
+            ds_a0 <- ds; ds_a0[[treatment]] <- 0L
+            Q_a1 <- as.numeric(stats::predict(Q_fit_s, newdata = ds_a1,
+                                               type = "response"))
+            Q_a0 <- as.numeric(stats::predict(Q_fit_s, newdata = ds_a0,
+                                               type = "response"))
+            Q_aw <- as.numeric(stats::predict(Q_fit_s, type = "response"))
+          }
 
           # TMLE targeting step
           H_a1 <- 1 / ps_hat
@@ -1258,9 +1291,17 @@ print.iptw_result <- function(x, ...) {
 #'
 #' @return An object of class `tmle_mechanism` with `type = "treatment"`.
 #'
+#' @param n_folds Integer; number of cross-fitting folds. Default: 1
+#'   (no cross-fitting). When > 1, PS is estimated via out-of-fold
+#'   SuperLearner predictions.
+#' @param fold_vec Optional integer vector assigning each observation
+#'   to a fold.  Overrides \code{n_folds}.
+#'
 #' @export
 fit_tmle_treatment_mechanism <- function(lock, ps_fit = NULL,
-                                          truncation = NULL) {
+                                          truncation = NULL,
+                                          n_folds = 1L,
+                                          fold_vec = NULL) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
 
@@ -1270,19 +1311,51 @@ fit_tmle_treatment_mechanism <- function(lock, ps_fit = NULL,
     truncation <- if (!is.null(primary_spec)) primary_spec$truncation else 0.01
   }
 
-  if (!is.null(ps_fit)) {
+  data       <- lock$data
+  A          <- data[[lock$treatment]]
+  W          <- data[, lock$covariates, drop = FALSE]
+  n          <- nrow(data)
+  use_cv     <- !is.null(fold_vec) || n_folds > 1L
+
+  if (use_cv && is.null(ps_fit)) {
+    # Cross-fitted PS estimation
+    if (is.null(fold_vec))
+      fold_vec <- sample(rep(seq_len(n_folds), length.out = n))
+    K <- max(fold_vec)
+
+    if (!requireNamespace("SuperLearner", quietly = TRUE))
+      stop("Package 'SuperLearner' is required for cross-fitting.",
+           call. = FALSE)
+
+    ps <- numeric(n)
+    for (k in seq_len(K)) {
+      val_idx   <- which(fold_vec == k)
+      train_idx <- which(fold_vec != k)
+
+      set.seed(lock$seed + k)
+      g_sl <- SuperLearner::SuperLearner(
+        Y = A[train_idx], X = W[train_idx, , drop = FALSE],
+        family = binomial(), SL.library = lock$sl_library,
+        env = asNamespace("SuperLearner")
+      )
+      ps[val_idx] <- as.numeric(
+        predict(g_sl, newdata = W[val_idx, , drop = FALSE])$pred)
+    }
+    ps <- pmax(pmin(ps, 1 - truncation), truncation)
+    g_mod <- NULL
+
+  } else if (!is.null(ps_fit)) {
     if (!inherits(ps_fit, "ps_fit"))
       stop("`ps_fit` must be a ps_fit object.", call. = FALSE)
     ps    <- ps_fit$ps
     g_mod <- ps_fit$sl_fit
+    ps <- pmax(pmin(ps, 1 - truncation), truncation)
   } else {
     temp  <- fit_ps_superlearner(lock)
     ps    <- temp$ps
     g_mod <- temp$sl_fit
+    ps <- pmax(pmin(ps, 1 - truncation), truncation)
   }
-
-  # Apply truncation from locked spec
-  ps <- pmax(pmin(ps, 1 - truncation), truncation)
 
   result <- list(
     type       = "treatment",
@@ -1293,6 +1366,9 @@ fit_tmle_treatment_mechanism <- function(lock, ps_fit = NULL,
     data       = lock$data,
     lock       = lock,
     truncation = truncation,
+    cross_fitted = use_cv,
+    n_folds    = if (use_cv) max(fold_vec) else 1L,
+    fold_vec   = fold_vec,
     call       = match.call()
   )
   class(result) <- "tmle_mechanism"
@@ -1351,8 +1427,44 @@ fit_tmle_outcome_mechanism <- function(lock, g_fit, sl_library = NULL,
   covariates <- lock$covariates
   AW         <- data[, c(treatment, covariates), drop = FALSE]
   Y          <- data[[outcome]]
+  n          <- nrow(data)
 
-  if (requireNamespace("SuperLearner", quietly = TRUE)) {
+  # Inherit cross-fitting from g_fit if present
+  use_cv   <- isTRUE(g_fit$cross_fitted)
+  fold_vec <- g_fit$fold_vec
+
+  if (use_cv && !is.null(fold_vec) &&
+      requireNamespace("SuperLearner", quietly = TRUE)) {
+    # Cross-fitted Q estimation
+    K <- max(fold_vec)
+    Q_a1 <- numeric(n)
+    Q_a0 <- numeric(n)
+    Q_aw <- numeric(n)
+
+    for (k in seq_len(K)) {
+      val_idx   <- which(fold_vec == k)
+      train_idx <- which(fold_vec != k)
+
+      set.seed(lock$seed + 1L + k)
+      Q_sl_k <- SuperLearner::SuperLearner(
+        Y          = Y[train_idx],
+        X          = AW[train_idx, , drop = FALSE],
+        family     = binomial(),
+        SL.library = sl_library,
+        env        = asNamespace("SuperLearner")
+      )
+
+      AW_val <- AW[val_idx, , drop = FALSE]
+      Q_aw[val_idx] <- as.numeric(predict(Q_sl_k, newdata = AW_val)$pred)
+
+      AW_a1 <- AW_val; AW_a1[[treatment]] <- 1L
+      AW_a0 <- AW_val; AW_a0[[treatment]] <- 0L
+      Q_a1[val_idx] <- as.numeric(predict(Q_sl_k, newdata = AW_a1)$pred)
+      Q_a0[val_idx] <- as.numeric(predict(Q_sl_k, newdata = AW_a0)$pred)
+    }
+    Q_fit_o <- NULL
+
+  } else if (requireNamespace("SuperLearner", quietly = TRUE)) {
     set.seed(lock$seed + 1L)
     Q_sl <- SuperLearner::SuperLearner(
       Y          = Y,
@@ -1379,18 +1491,20 @@ fit_tmle_outcome_mechanism <- function(lock, g_fit, sl_library = NULL,
   }
 
   result <- list(
-    type       = "outcome",
-    Q_a1       = Q_a1,
-    Q_a0       = Q_a0,
-    Q_aw       = Q_aw,
-    Q_fit      = Q_fit_o,
-    outcome    = outcome,
-    treatment  = treatment,
-    covariates = covariates,
-    data       = data,
-    lock       = lock,
-    g_fit      = g_fit,
-    call       = match.call()
+    type         = "outcome",
+    Q_a1         = Q_a1,
+    Q_a0         = Q_a0,
+    Q_aw         = Q_aw,
+    Q_fit        = Q_fit_o,
+    outcome      = outcome,
+    treatment    = treatment,
+    covariates   = covariates,
+    data         = data,
+    lock         = lock,
+    g_fit        = g_fit,
+    cross_fitted = use_cv,
+    fold_vec     = fold_vec,
+    call         = match.call()
   )
   class(result) <- "tmle_mechanism"
   result

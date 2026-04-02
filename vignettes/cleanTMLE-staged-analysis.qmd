@@ -112,12 +112,26 @@ immutable object.
 Any downstream function that receives the lock can verify its integrity
 against the stored hash.
 
+### Covariate sanitisation
+
+Before locking the specification, we sanitise covariates to ensure they
+are safe for SuperLearner: impute missing values, drop zero-variance
+columns, and fix formula-unsafe names.
+
+```{r sanitize}
+clean <- sanitize_covariates(dat,
+  covariates = c("age", "sex", "biomarker", "comorbidity"),
+  verbose = TRUE)
+dat <- clean$data
+covs <- clean$covariates
+```
+
 ```{r lock}
 lock <- create_analysis_lock(
   data          = dat,
   treatment     = "treatment",
   outcome       = "event_24",
-  covariates    = c("age", "sex", "biomarker", "comorbidity"),
+  covariates    = covs,
   sl_library    = c("SL.glm", "SL.mean"),
   plasmode_reps = 40L,
   seed          = 42L
@@ -182,6 +196,36 @@ audit <- record_stage(audit, "Stage 1a",
                       "Analysis lock created and estimand attached")
 ```
 
+### File-based pipeline support
+
+In production pipelines each stage runs as a separate script.
+`save_lock()` / `load_lock()` handle serialisation with automatic
+hash re-validation, eliminating the boilerplate of manual RDS
+save/load and integrity checks.
+
+```{r save-lock}
+# Round-trip demonstration: save, load, verify integrity
+tmp_lock_path  <- tempfile("lock_",  fileext = ".rds")
+tmp_audit_path <- tempfile("audit_", fileext = ".rds")
+
+save_lock(lock, tmp_lock_path)
+save_audit(audit, tmp_audit_path)
+
+# Reload --- load_lock() automatically re-validates the hash
+lock_reloaded  <- load_lock(tmp_lock_path)
+audit_reloaded <- load_audit(tmp_audit_path)
+cat("Lock hash match:", identical(lock$lock_hash, lock_reloaded$lock_hash), "\n")
+cat("Audit entries match:", length(audit$entries) == length(audit_reloaded$entries), "\n")
+
+# Clean up temp files
+unlink(c(tmp_lock_path, tmp_audit_path))
+```
+
+In a real multi-stage pipeline each stage script would save to a
+shared results directory (e.g., `save_lock(lock, "results/stage1_lock.rds")`)
+and the next stage script would `load_lock("results/stage1_lock.rds")`
+at its top.
+
 We also begin populating the decision log, which records the
 rationale behind key analytic choices.
 
@@ -231,6 +275,17 @@ dp <- estimate_design_precision(lock, target_mdd = 0.05)
 print(dp)
 ```
 
+::: {.callout-note}
+The MDD report may show "Feasible: NO" with this small simulated
+sample (n = `r nrow(dat)`).
+This is expected --- the vignette uses a deliberately small dataset
+for fast rendering.
+In practice you would either increase sample size or relax the
+target MDD.
+Importantly, the MDD check is **informational** and does not trigger a
+STOP gate; the pipeline continues.
+:::
+
 ```{r event-support}
 es <- summarize_event_support(lock)
 print(es)
@@ -251,6 +306,25 @@ treatment (A) are used.
 ps_fit <- fit_ps_glm(lock, truncate = 0.01)
 print(ps_fit)
 ```
+
+::: {.callout-tip}
+## Using external or parallel PS
+
+If you have PS estimated outside cleanTMLE (e.g., via a parallel
+SuperLearner cluster), wrap them with `wrap_ps_fit()`:
+
+```r
+cl <- parallel::makeCluster(2, type = "PSOCK")
+ps_fit <- fit_ps_parallel(lock, cluster = cl, truncate = 0.01)
+parallel::stopCluster(cl)
+
+# Or bring-your-own PS:
+ps_fit <- wrap_ps_fit(lock, ps_scores = my_ps, method = "external_sl")
+```
+
+All downstream functions (`compute_ps_diagnostics`, `checkpoint_balance`,
+`run_iptw_workflow`, etc.) work identically with wrapped PS objects.
+:::
 
 ### Diagnostics
 
@@ -384,6 +458,19 @@ cp3 <- stage3$checkpoint
 audit <- record_checkpoint(audit, cp3)
 ```
 
+### TMLE-based negative controls (doubly robust)
+
+The default `run_negative_control()` uses IPTW.
+`run_negative_control_tmle()` uses the full modular TMLE pipeline,
+which is doubly robust and more appropriate for a package built
+around TMLE.
+
+```{r nc-tmle}
+nc_tmle <- run_negative_control_tmle(lock, "nc_outcome", ps_fit)
+cat(sprintf("TMLE NC estimate: %.5f  (p = %.4f, method: %s)\n",
+            nc_tmle$estimate, nc_tmle$p_value, nc_tmle$method))
+```
+
 The decision is **`r cp3$decision`**.
 No significant association with the negative control was detected, so
 we proceed to the pre-outcome authorization gate.
@@ -399,6 +486,14 @@ that every required checkpoint has been recorded with a GO (or, if
 `allow_flag = TRUE`, a FLAG) decision.
 If any checkpoint is missing or returned STOP, the gate refuses to
 authorize and the analysis cannot proceed to Stage 4.
+
+Alternatively, `gate_all()` evaluates all checkpoint objects at once
+and returns a single composite decision:
+
+```{r gate-all}
+composite <- gate_all(cp1, cp2, cp3, allow_flag = TRUE)
+print(composite)
+```
 
 ```{r gate}
 gate <- authorize_outcome_analysis(audit)
@@ -417,6 +512,33 @@ audit <- record_decision_log_entry(audit,
 
 The gate decision is **`r gate$decision`** --- outcome data may now
 be accessed.
+
+### What if a checkpoint fails?
+
+In the example above every checkpoint returned GO.
+In practice, poor overlap or residual confounding can trigger FLAG or
+STOP decisions.
+The block below constructs a synthetic failure to show how the pipeline
+responds:
+
+```{r failure-demo}
+# Simulate a STOP scenario: a checkpoint with very high SMD
+fake_diag <- diag
+fake_diag$smds$smd_weighted <- c(0.25, 0.30, 0.15, 0.08)  # badly imbalanced
+fake_cp2 <- checkpoint_balance(fake_diag, max_smd = 0.10,
+                                lock_hash = lock$lock_hash)
+cat(sprintf("Fake CP2 decision: %s\n", fake_cp2$decision))
+cat(sprintf("Rationale: %s\n", fake_cp2$rationale))
+
+# gate_all() blocks when a STOP is present:
+fake_composite <- gate_all(cp1, fake_cp2, cp3, allow_flag = FALSE)
+cat(sprintf("\nComposite gate: %s\n", fake_composite$decision))
+cat(sprintf("Rationale: %s\n", fake_composite$rationale))
+```
+
+When the gate returns STOP, no outcome code should execute.
+In `run_clean_tmle()` this is enforced automatically; in the modular
+workflow the analyst checks the gate decision and branches accordingly.
 
 ---
 
@@ -491,6 +613,46 @@ print(tmle_fit)
 ```{r audit-stage4}
 audit <- record_stage(audit, "Stage 4",
   sprintf("Primary TMLE estimate: %.4f", tmle_fit$estimates$ATE$estimate))
+```
+
+### Matched-cohort TMLE
+
+`run_matched_tmle()` runs the full TMLE pipeline on a matched subset
+without creating a separate lock --- addressing a common need in
+pharmacoepidemiology.
+
+```{r matched-tmle}
+# Extract matched row indices from the matching workflow.
+# run_match_workflow() preserves original rownames in matched_data.
+matched_idx <- as.integer(rownames(match_fit$matched_data))
+cat(sprintf("Matched observations: %d (of %d total)\n",
+            length(matched_idx), nrow(dat)))
+
+# Run TMLE on just the matched subset
+matched_tmle_fit <- run_matched_tmle(lock, ps_fit,
+  subset_idx = matched_idx)
+print(matched_tmle_fit)
+```
+
+### TMLE diagnostics
+
+```{r clever-covariate, fig.cap = "Clever covariate H(A,W) by treatment group."}
+clever_covariate_plot(ps_fit = ps_fit, lock = lock)
+```
+
+```{r ic-hist, fig.cap = "Efficient influence curve distribution."}
+ic_histogram(tmle_fit)
+```
+
+### Three-way balance comparison
+
+`compute_matched_smds()` and `love_plot_threeway()` show covariate
+balance under three adjustment strategies side by side:
+
+```{r threeway-love, fig.cap = "Unweighted, IPTW-weighted, and matched SMDs."}
+m_smds <- compute_matched_smds(dat, "treatment", lock$covariates,
+                                subset_idx = matched_idx)
+love_plot_threeway(diag, matched_smds = m_smds)
 ```
 
 ### Cross-estimator comparison
@@ -597,22 +759,42 @@ knitr::kable(dlog_df, caption = "Decision log for the staged analysis.")
 This vignette demonstrated how **cleanTMLE** operationalises a staged
 clean-room analysis:
 
-1. The causal question and statistical estimand were defined first.
-2. The analytic specification was locked before any outcome modelling.
-3. Cohort adequacy, treatment comparability, and residual bias were
+1. Covariates were sanitised with `sanitize_covariates()` before locking.
+2. The causal question and statistical estimand were defined first.
+3. The analytic specification was locked and serialised with `save_lock()`.
+4. Cohort adequacy, treatment comparability, and residual bias were
    assessed through structured checkpoints with prespecified
    decision thresholds.
-4. Design precision and event support diagnostics confirmed the
+5. Design precision and event support diagnostics confirmed the
    study was adequately powered.
-5. The primary estimator (TMLE) was selected via outcome-blind
+6. The primary estimator (TMLE) was selected via outcome-blind
    plasmode simulation.
-6. A formal pre-outcome authorization gate verified that all
-   checkpoints passed before outcome data were accessed.
-7. The final comparative analysis was conducted only after the gate
-   opened.
-8. Sensitivity analysis and an E-value were computed as prespecified.
-9. An audit trail, stage path narrative, and decision log document
-   the full analytic path and the rationale behind key choices.
+7. TMLE-based negative controls (`run_negative_control_tmle()`)
+   provided doubly-robust residual-bias assessment.
+8. A formal pre-outcome authorization gate --- including the
+   composite `gate_all()` --- verified that all checkpoints passed.
+9. The final comparative analysis included full-cohort TMLE,
+   matched-cohort TMLE (`run_matched_tmle()`), IPTW, and matching.
+10. Clever covariate and influence-curve diagnostics confirmed
+    the TMLE update behaved as expected.
+11. Sensitivity analysis and an E-value were computed as prespecified.
+12. An audit trail, stage path narrative, and decision log document
+    the full analytic path and the rationale behind key choices.
+
+### Integration with real-world pipelines
+
+The package now supports common production patterns:
+
+- **External PS**: `wrap_ps_fit()` wraps PS from parallel SuperLearner,
+  Bayesian models, or external software into a compatible `ps_fit`.
+- **Parallel SuperLearner**: `fit_ps_parallel()` accepts a PSOCK cluster.
+- **File-based pipelines**: `save_lock()` / `load_lock()` and
+  `save_audit()` / `load_audit()` handle RDS serialisation with
+  automatic hash re-validation.
+- **YAML config**: `create_analysis_lock_from_yaml()` reads analytic
+  specifications from a YAML configuration file.
+- **Matched-cohort TMLE**: `run_matched_tmle()` runs TMLE on a subset
+  without creating a separate lock.
 
 The package does not enforce institutional governance (role separation,
 independent review boards, blinded data managers); those are

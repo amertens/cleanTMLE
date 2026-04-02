@@ -13,6 +13,8 @@ estimate_tmle_risk_point(
   sl_library = c("SL.glm", "SL.mean"),
   truncate = 0.01,
   spec = NULL,
+  n_folds = 1L,
+  fold_vec = NULL,
   ...
 )
 }
@@ -36,6 +38,13 @@ meaning PS is bounded to the interval 0.01 to 0.99).}
 
 \item{spec}{Optional \code{cr_spec} object. If provided, extracts
 treatment/outcome/covariate info from it.}
+
+\item{n_folds}{Integer; number of cross-fitting folds. Default: 1
+(no cross-fitting; standard TMLE). Set to 2 or more for K-fold
+cross-fitted nuisance estimation.}
+
+\item{fold_vec}{Optional integer vector of length \code{nrow(data)}
+assigning each observation to a fold. Overrides \code{n_folds}.}
 
 \item{...}{Additional arguments passed to \code{tmle::tmle()}.}
 }

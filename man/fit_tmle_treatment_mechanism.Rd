@@ -4,7 +4,13 @@
 \alias{fit_tmle_treatment_mechanism}
 \title{Fit TMLE Treatment Mechanism}
 \usage{
-fit_tmle_treatment_mechanism(lock, ps_fit = NULL, truncation = NULL)
+fit_tmle_treatment_mechanism(
+  lock,
+  ps_fit = NULL,
+  truncation = NULL,
+  n_folds = 1L,
+  fold_vec = NULL
+)
 }
 \arguments{
 \item{lock}{A \code{cleanroom_lock} from \code{\link[=create_analysis_lock]{create_analysis_lock()}}.}
@@ -15,6 +21,13 @@ the already-estimated propensity scores are reused.}
 \item{truncation}{Numeric; PS truncation threshold.  If \code{NULL}
 (default), uses the locked primary TMLE spec truncation if available,
 otherwise 0.01.}
+
+\item{n_folds}{Integer; number of cross-fitting folds. Default: 1
+(no cross-fitting). When > 1, PS is estimated via out-of-fold
+SuperLearner predictions.}
+
+\item{fold_vec}{Optional integer vector assigning each observation
+to a fold.  Overrides \code{n_folds}.}
 }
 \value{
 An object of class \code{tmle_mechanism} with \code{type = "treatment"}.

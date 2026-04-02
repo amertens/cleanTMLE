@@ -40,6 +40,8 @@ Suggests:
     survtmle,
     lmtp,
     glmnet,
+    yaml,
+    parallel,
     testthat (>= 3.0.0),
     knitr,
     rmarkdown,
