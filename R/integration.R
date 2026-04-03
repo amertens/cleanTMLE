@@ -922,3 +922,267 @@ gate_all <- function(..., allow_flag = TRUE) {
 }
 
 
+# ── Attrition Table ──────────────────────────────────────────────────────
+
+#' Generate a Cohort Attrition Table
+#'
+#' Applies a sequence of named inclusion/exclusion criteria to a dataset
+#' and returns a data.frame documenting sample size at each step.
+#' This is essential for Stage 1 cohort build documentation per the
+#' Muntner staging framework.
+#'
+#' @param data A data.frame (the full source population).
+#' @param criteria A named list of logical expressions (as formulas or
+#'   functions) defining each inclusion/exclusion criterion.  Each
+#'   element should be a function taking \code{data} and returning a
+#'   logical vector (\code{TRUE} = include).
+#'   Names are used as row labels in the attrition table.
+#' @param label Character; optional label for the table (e.g.,
+#'   \code{"Primary cohort"}).
+#'
+#' @return An object of class \code{cleantmle_attrition} (data.frame)
+#'   with columns: \code{step}, \code{criterion}, \code{n_remaining},
+#'   \code{n_excluded}, \code{pct_remaining}.
+#'
+#' @examples
+#' \dontrun{
+#' att <- attrition_table(dat, list(
+#'   "Age >= 18"          = function(d) d$age >= 18,
+#'   "Has treatment data" = function(d) !is.na(d$treatment),
+#'   "No prior event"     = function(d) d$prior_event == 0,
+#'   "Enrolled >= 365d"   = function(d) d$enrollment_days >= 365
+#' ))
+#' print(att)
+#' }
+#'
+#' @export
+attrition_table <- function(data, criteria, label = "Cohort") {
+  if (!is.data.frame(data))
+    stop("`data` must be a data.frame.", call. = FALSE)
+  if (!is.list(criteria) || length(criteria) == 0L)
+    stop("`criteria` must be a non-empty named list of functions.",
+         call. = FALSE)
+
+  rows <- list()
+  current <- data
+  n_start <- nrow(data)
+
+  # Row 0: source population
+  rows[[1]] <- data.frame(
+    step          = 0L,
+    criterion     = "Source population",
+    n_remaining   = n_start,
+    n_excluded    = 0L,
+    pct_remaining = 100.0,
+    stringsAsFactors = FALSE
+  )
+
+  for (i in seq_along(criteria)) {
+    crit_name <- names(criteria)[i]
+    crit_fn   <- criteria[[i]]
+    n_before  <- nrow(current)
+
+    keep <- tryCatch(crit_fn(current), error = function(e) {
+      warning("Criterion '", crit_name, "' failed: ", e$message,
+              call. = FALSE)
+      rep(TRUE, nrow(current))
+    })
+
+    if (!is.logical(keep) || length(keep) != nrow(current)) {
+      warning("Criterion '", crit_name, "' did not return a logical vector ",
+              "of the right length. Skipping.", call. = FALSE)
+      keep <- rep(TRUE, nrow(current))
+    }
+
+    current  <- current[keep & !is.na(keep), , drop = FALSE]
+    n_after  <- nrow(current)
+
+    rows[[i + 1]] <- data.frame(
+      step          = as.integer(i),
+      criterion     = crit_name,
+      n_remaining   = n_after,
+      n_excluded    = n_before - n_after,
+      pct_remaining = round(100 * n_after / n_start, 1),
+      stringsAsFactors = FALSE
+    )
+  }
+
+  result <- do.call(rbind, rows)
+  rownames(result) <- NULL
+  attr(result, "label") <- label
+  attr(result, "final_data") <- current
+  class(result) <- c("cleantmle_attrition", "data.frame")
+  result
+}
+
+
+#' @export
+print.cleantmle_attrition <- function(x, ...) {
+  label <- attr(x, "label") %||% "Cohort"
+  cat(sprintf("Attrition Table: %s\n", label))
+  cat(sprintf("=================================\n"))
+  for (i in seq_len(nrow(x))) {
+    prefix <- if (i == 1) "" else sprintf("  -%d ", x$n_excluded[i])
+    cat(sprintf("  Step %d: %-35s  N = %s %s\n",
+                x$step[i],
+                x$criterion[i],
+                format(x$n_remaining[i], big.mark = ","),
+                if (i > 1) sprintf("(%.1f%%)", x$pct_remaining[i]) else ""))
+  }
+  invisible(x)
+}
+
+
+#' Extract the Final Cohort from an Attrition Table
+#'
+#' Returns the data.frame after all inclusion/exclusion criteria have
+#' been applied.
+#'
+#' @param attrition A \code{cleantmle_attrition} object.
+#'
+#' @return A data.frame.
+#'
+#' @export
+get_final_cohort <- function(attrition) {
+  if (!inherits(attrition, "cleantmle_attrition"))
+    stop("`attrition` must be a cleantmle_attrition object.", call. = FALSE)
+  attr(attrition, "final_data")
+}
+
+
+# ── Iterative PS Refinement After NCO ────────────────────────────────────
+
+#' Refine PS Model Based on Negative Control Results
+#'
+#' When negative control outcomes suggest residual confounding in a
+#' particular domain (e.g., healthcare-seeking behaviour), this function
+#' adds specified variables to the PS model and re-estimates, following
+#' the iterative workflow described in the Muntner staging framework.
+#'
+#' The function: (1) adds new covariates to the lock, (2) re-fits the
+#' PS model, (3) re-runs the NCO analysis, and (4) records the
+#' refinement in the audit log.
+#'
+#' @param lock A \code{cleanroom_lock}.
+#' @param ps_fit The current \code{ps_fit} object.
+#' @param additional_covariates Character vector of new covariate names
+#'   to add to the PS model.
+#' @param nc_variables Character vector of negative control outcomes
+#'   to re-evaluate.
+#' @param audit Optional \code{cleantmle_audit} to record the refinement.
+#' @param rationale Character; why these variables are being added
+#'   (for the decision log).
+#'
+#' @return A list with elements:
+#'   \describe{
+#'     \item{lock}{Updated \code{cleanroom_lock} with expanded covariates.}
+#'     \item{ps_fit}{New \code{ps_fit} with additional covariates.}
+#'     \item{ps_diagnostics}{New diagnostics.}
+#'     \item{nc_results}{Re-evaluated negative control results.}
+#'     \item{nc_checkpoint}{New Check Point 3.}
+#'     \item{audit}{Updated audit log (if provided).}
+#'     \item{comparison}{data.frame comparing NC estimates before and
+#'       after refinement.}
+#'   }
+#'
+#' @export
+refine_ps_after_nco <- function(lock, ps_fit, additional_covariates,
+                                nc_variables, audit = NULL,
+                                rationale = "NCO suggested residual confounding") {
+  if (!inherits(lock, "cleanroom_lock"))
+    stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
+
+  # Validate new covariates exist
+  missing_covs <- additional_covariates[!additional_covariates %in% names(lock$data)]
+  if (length(missing_covs) > 0)
+    stop("Variables not found in data: ",
+         paste(missing_covs, collapse = ", "), call. = FALSE)
+
+  # Run NCO with current PS for baseline comparison
+  nc_before <- lapply(nc_variables, function(v) {
+    tryCatch(run_negative_control(lock, v, ps_fit),
+             error = function(e) NULL)
+  })
+  names(nc_before) <- nc_variables
+
+  # Create updated lock with expanded covariates
+  new_covariates <- unique(c(lock$covariates, additional_covariates))
+  lock_new <- create_analysis_lock(
+    data          = lock$data,
+    treatment     = lock$treatment,
+    outcome       = lock$outcome,
+    covariates    = new_covariates,
+    sl_library    = lock$sl_library,
+    plasmode_reps = lock$plasmode_reps,
+    seed          = lock$seed
+  )
+
+  # Transfer metadata from original lock
+  if (!is.null(lock$estimand))
+    lock_new$estimand <- lock$estimand
+  if (!is.null(lock$sensitivity_plans))
+    lock_new$sensitivity_plans <- lock$sensitivity_plans
+  if (!is.null(lock$negative_controls))
+    lock_new$negative_controls <- lock$negative_controls
+  if (!is.null(lock$primary_tmle_spec))
+    lock_new <- lock_primary_tmle_spec(lock_new, lock$primary_tmle_spec)
+
+  # Re-fit PS with expanded covariates
+  ps_new  <- fit_ps_glm(lock_new)
+  diag_new <- compute_ps_diagnostics(ps_new)
+
+  # Re-run NCO with new PS
+  nc_after <- lapply(nc_variables, function(v) {
+    tryCatch(run_negative_control(lock_new, v, ps_new),
+             error = function(e) NULL)
+  })
+  names(nc_after) <- nc_variables
+
+  # Build comparison table
+  comparison_rows <- lapply(nc_variables, function(v) {
+    before <- nc_before[[v]]
+    after  <- nc_after[[v]]
+    data.frame(
+      variable    = v,
+      est_before  = if (!is.null(before)) round(before$estimate, 5) else NA,
+      p_before    = if (!is.null(before)) round(before$p_value, 4) else NA,
+      est_after   = if (!is.null(after)) round(after$estimate, 5) else NA,
+      p_after     = if (!is.null(after)) round(after$p_value, 4) else NA,
+      attenuated  = if (!is.null(before) && !is.null(after))
+        abs(after$estimate) < abs(before$estimate) else NA,
+      stringsAsFactors = FALSE
+    )
+  })
+  comparison <- do.call(rbind, comparison_rows)
+
+  # Checkpoint
+  nc_after_valid <- Filter(Negate(is.null), nc_after)
+  cp3_new <- if (length(nc_after_valid) > 0) {
+    checkpoint_residual_bias(nc_after_valid, lock_hash = lock_new$lock_hash)
+  } else NULL
+
+  # Record in audit log
+  if (!is.null(audit)) {
+    audit <- record_stage(audit, "Stage 2b (PS Refinement)",
+      sprintf("Added covariates: %s. Rationale: %s",
+              paste(additional_covariates, collapse = ", "), rationale))
+    if (!is.null(cp3_new))
+      audit <- record_checkpoint(audit, cp3_new)
+    audit <- record_decision_log_entry(audit,
+      stage         = "Stage 2b",
+      decision_type = "ps_refinement",
+      description   = sprintf("PS model refined: added %s",
+                               paste(additional_covariates, collapse = ", ")),
+      rationale     = rationale)
+  }
+
+  list(
+    lock           = lock_new,
+    ps_fit         = ps_new,
+    ps_diagnostics = diag_new,
+    nc_results     = nc_after,
+    nc_checkpoint  = cp3_new,
+    audit          = audit,
+    comparison     = comparison
+  )
+}
