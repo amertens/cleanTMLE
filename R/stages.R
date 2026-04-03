@@ -235,16 +235,19 @@ checkpoint_cohort_adequacy <- function(lock,
   A    <- data[[lock$treatment]]
   Y    <- data[[lock$outcome]]
   n    <- nrow(data)
-  n1   <- sum(A == 1)
-  n0   <- sum(A == 0)
+  n1   <- sum(A == 1, na.rm = TRUE)
+  n0   <- sum(A == 0, na.rm = TRUE)
   events_total <- sum(Y == 1, na.rm = TRUE)
   events_trt   <- sum(Y[A == 1] == 1, na.rm = TRUE)
   events_ctrl  <- sum(Y[A == 0] == 1, na.rm = TRUE)
   prevalence   <- mean(Y == 1, na.rm = TRUE)
+  if (is.na(prevalence)) prevalence <- 0
 
   # Simple MDD proxy: risk difference detectable with 80% power
   p_bar <- prevalence
-  mdd <- 2.8 * sqrt(p_bar * (1 - p_bar) * (1/n1 + 1/n0))
+  mdd <- if (n1 > 0 && n0 > 0 && p_bar > 0 && p_bar < 1) {
+    2.8 * sqrt(p_bar * (1 - p_bar) * (1/n1 + 1/n0))
+  } else NA_real_
 
   metrics <- data.frame(
     metric = c("N total", "N treated", "N control",
@@ -260,15 +263,21 @@ checkpoint_cohort_adequacy <- function(lock,
   if (n1 < min_n_per_arm) flags <- c(flags, "treated arm below min N")
   if (n0 < min_n_per_arm) flags <- c(flags, "control arm below min N")
   if (events_total < min_events) flags <- c(flags, "total events below minimum")
-  if (prevalence < min_prevalence) flags <- c(flags, "outcome prevalence too low")
+  if (is.na(prevalence) || prevalence < min_prevalence)
+    flags <- c(flags, "outcome prevalence too low or NA")
 
   # Positivity red flag: any covariate with zero variance in an arm
   pos_flags <- vapply(lock$covariates, function(v) {
     x <- data[[v]]
     if (is.numeric(x)) {
-      var(x[A == 1], na.rm = TRUE) == 0 || var(x[A == 0], na.rm = TRUE) == 0
+      v1 <- var(x[A == 1], na.rm = TRUE)
+      v0 <- var(x[A == 0], na.rm = TRUE)
+      isTRUE(v1 == 0) || isTRUE(v0 == 0)
     } else {
-      length(unique(x[A == 1])) == 1 || length(unique(x[A == 0])) == 1
+      a1_vals <- x[!is.na(A) & A == 1]
+      a0_vals <- x[!is.na(A) & A == 0]
+      length(unique(a1_vals[!is.na(a1_vals)])) <= 1 ||
+        length(unique(a0_vals[!is.na(a0_vals)])) <= 1
     }
   }, logical(1))
   if (any(pos_flags))

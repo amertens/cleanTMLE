@@ -2,7 +2,7 @@
 % Please edit documentation in R/tmle.R
 \name{.surv_tmle_fallback}
 \alias{.surv_tmle_fallback}
-\title{Fallback survival TMLE via binarization}
+\title{Fallback survival TMLE via censoring-aware binarization}
 \usage{
 .surv_tmle_fallback(
   data,
@@ -16,6 +16,10 @@
 )
 }
 \description{
-Fallback survival TMLE via binarization
+For each target time, restricts to subjects observed at least until
+that time (or who had an event before), constructs a binary outcome,
+and applies TMLE with IPCW-style subsetting.  This accounts for
+censoring by excluding subjects censored before each time horizon
+rather than treating them as non-events.
 }
 \keyword{internal}

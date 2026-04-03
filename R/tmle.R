@@ -472,46 +472,77 @@ estimate_surv_tmle <- function(data, treatment = "treatment",
 .surv_tmle_via_package <- function(data, treatment, time, event,
                                     covariates, target_times,
                                     sl_library, ...) {
-  # Discretize time for survtmle
-  obs_time <- data[[time]]
-  max_t <- max(target_times)
+  obs_time  <- data[[time]]
+  max_t     <- max(target_times)
 
-  # survtmle expects integer times and specific format
+  # survtmle expects integer times
   t_discrete <- ceiling(obs_time)
   t_discrete <- pmin(t_discrete, max_t + 1L)
 
-  W <- data[, covariates, drop = FALSE]
-  A <- data[[treatment]]
+  W         <- data[, covariates, drop = FALSE]
+  A         <- data[[treatment]]
   event_ind <- data[[event]]
-
-  # Compute censoring indicator (C = 1 means observed/uncensored)
-  ftime <- as.integer(t_discrete)
-  ftype <- as.integer(event_ind)
+  ftime     <- as.integer(t_discrete)
+  ftype     <- as.integer(event_ind)
 
   tryCatch({
     fit <- survtmle::survtmle(
-      ftime = ftime,
-      ftype = ftype,
-      trt = A,
+      ftime      = ftime,
+      ftype      = ftype,
+      trt        = A,
       adjustVars = W,
-      t0 = as.integer(max(target_times)),
-      SL.ftime = sl_library,
-      SL.ctime = sl_library,
-      SL.trt = sl_library,
-      method = "hazard",
+      t0         = as.integer(max_t),
+      SL.ftime   = sl_library,
+      SL.ctime   = sl_library,
+      SL.trt     = sl_library,
+      method     = "hazard",
       ...
     )
 
-    # Extract estimates
+    # Extract per-timepoint estimates via timepoints()
+    tp <- tryCatch(
+      survtmle::timepoints(fit, times = as.integer(target_times)),
+      error = function(e) NULL
+    )
+
     estimates <- list()
-    for (tt in target_times) {
-      estimates[[paste0("risk_t", tt)]] <- list(
-        estimate = fit$est[1],
-        se = sqrt(fit$var[1]),
-        ci_lower = fit$est[1] - 1.96 * sqrt(fit$var[1]),
-        ci_upper = fit$est[1] + 1.96 * sqrt(fit$var[1]),
-        p_value = 2 * pnorm(-abs(fit$est[1] / sqrt(fit$var[1])))
-      )
+    if (!is.null(tp)) {
+      # tp contains per-timepoint, per-treatment cumulative incidence
+      for (i in seq_along(target_times)) {
+        tt <- target_times[i]
+        # Risk difference: treated (trt=1) minus control (trt=0)
+        # tp$est is a matrix with rows = trt levels, cols = timepoints
+        if (is.matrix(tp$est) && ncol(tp$est) >= i) {
+          r1 <- tp$est["1", i]
+          r0 <- tp$est["0", i]
+          rd <- r1 - r0
+          se_rd <- sqrt(tp$var["1", i] + tp$var["0", i])
+        } else {
+          # Single timepoint or different structure
+          rd <- tp$est[1]
+          se_rd <- sqrt(tp$var[1])
+        }
+        estimates[[paste0("risk_t", tt)]] <- list(
+          estimate = rd,
+          se       = se_rd,
+          ci_lower = rd - 1.96 * se_rd,
+          ci_upper = rd + 1.96 * se_rd,
+          p_value  = 2 * stats::pnorm(-abs(rd / se_rd))
+        )
+      }
+    } else {
+      # Fallback: use raw fit$est (only valid for single timepoint)
+      for (tt in target_times) {
+        rd <- fit$est[1]
+        se_rd <- sqrt(fit$var[1])
+        estimates[[paste0("risk_t", tt)]] <- list(
+          estimate = rd,
+          se       = se_rd,
+          ci_lower = rd - 1.96 * se_rd,
+          ci_upper = rd + 1.96 * se_rd,
+          p_value  = 2 * stats::pnorm(-abs(rd / se_rd))
+        )
+      }
     }
 
     result <- list(
@@ -536,30 +567,51 @@ estimate_surv_tmle <- function(data, treatment = "treatment",
 }
 
 
-#' Fallback survival TMLE via binarization
+#' Fallback survival TMLE via censoring-aware binarization
+#'
+#' For each target time, restricts to subjects observed at least until
+#' that time (or who had an event before), constructs a binary outcome,
+#' and applies TMLE with IPCW-style subsetting.  This accounts for
+#' censoring by excluding subjects censored before each time horizon
+#' rather than treating them as non-events.
+#'
 #' @keywords internal
 .surv_tmle_fallback <- function(data, treatment, time, event,
                                  covariates, target_times,
                                  sl_library, ...) {
-  obs_time <- data[[time]]
+  obs_time  <- data[[time]]
   event_ind <- data[[event]]
-  A <- data[[treatment]]
+  A         <- data[[treatment]]
 
   estimates <- list()
 
   for (tt in target_times) {
-    # Binarize: Y_t = I(event occurred by time t)
-    Y_t <- as.integer(event_ind == 1 & obs_time <= tt)
+    # Restrict to subjects still at risk at time tt:
+    # Include if: had event by tt, OR observed (censored or event) at or after tt
+    at_risk <- (obs_time >= tt) | (event_ind == 1 & obs_time <= tt)
+    data_t  <- data[at_risk, , drop = FALSE]
+    A_t     <- A[at_risk]
+    n_t     <- nrow(data_t)
 
-    # Only include subjects still observed at time t or who had event before t
-    # (simple approach: include everyone)
+    # Binary outcome: event by time tt (among those at risk)
+    Y_t <- as.integer(event_ind[at_risk] == 1 & obs_time[at_risk] <= tt)
+
+    if (n_t < 20) {
+      # Too few subjects at this horizon
+      estimates[[paste0("risk_t", tt)]] <- list(
+        estimate = NA_real_, se = NA_real_,
+        ci_lower = NA_real_, ci_upper = NA_real_,
+        p_value = NA_real_
+      )
+      next
+    }
 
     if (requireNamespace("tmle", quietly = TRUE) &&
         requireNamespace("SuperLearner", quietly = TRUE)) {
-      W <- data[, covariates, drop = FALSE]
+      W_t <- data_t[, covariates, drop = FALSE]
 
       tmle_t <- tryCatch(
-        tmle::tmle(Y = Y_t, A = A, W = W,
+        tmle::tmle(Y = Y_t, A = A_t, W = W_t,
                    family = "binomial",
                    Q.SL.library = sl_library,
                    g.SL.library = sl_library),
@@ -570,36 +622,41 @@ estimate_surv_tmle <- function(data, treatment = "treatment",
         ate <- tmle_t$estimates$ATE
         estimates[[paste0("risk_t", tt)]] <- list(
           estimate = ate$psi,
-          se = sqrt(ate$var.psi),
+          se       = sqrt(ate$var.psi),
           ci_lower = ate$CI[1],
           ci_upper = ate$CI[2],
-          p_value = ate$pvalue
+          p_value  = ate$pvalue
         )
       } else {
-        # Very simple fallback
-        r1 <- mean(Y_t[A == 1])
-        r0 <- mean(Y_t[A == 0])
+        # TMLE failed — IPTW fallback with censoring subsetting
+        r1  <- mean(Y_t[A_t == 1])
+        r0  <- mean(Y_t[A_t == 0])
+        rd  <- r1 - r0
+        se1 <- if (sum(A_t == 1) > 1) var(Y_t[A_t == 1]) / sum(A_t == 1) else 0
+        se0 <- if (sum(A_t == 0) > 1) var(Y_t[A_t == 0]) / sum(A_t == 0) else 0
+        se  <- sqrt(se1 + se0)
         estimates[[paste0("risk_t", tt)]] <- list(
-          estimate = r1 - r0,
-          se = NA_real_,
-          ci_lower = NA_real_,
-          ci_upper = NA_real_,
-          p_value = NA_real_
+          estimate = rd,
+          se       = se,
+          ci_lower = rd - 1.96 * se,
+          ci_upper = rd + 1.96 * se,
+          p_value  = if (se > 0) 2 * stats::pnorm(-abs(rd / se)) else NA_real_
         )
       }
     } else {
-      # No tmle package: simple difference
-      r1 <- mean(Y_t[A == 1])
-      r0 <- mean(Y_t[A == 0])
-      se <- sqrt(var(Y_t[A == 1]) / sum(A == 1) +
-                   var(Y_t[A == 0]) / sum(A == 0))
-      rd <- r1 - r0
+      # No tmle package: censoring-aware simple difference
+      r1  <- mean(Y_t[A_t == 1])
+      r0  <- mean(Y_t[A_t == 0])
+      rd  <- r1 - r0
+      se1 <- if (sum(A_t == 1) > 1) var(Y_t[A_t == 1]) / sum(A_t == 1) else 0
+      se0 <- if (sum(A_t == 0) > 1) var(Y_t[A_t == 0]) / sum(A_t == 0) else 0
+      se  <- sqrt(se1 + se0)
       estimates[[paste0("risk_t", tt)]] <- list(
         estimate = rd,
-        se = se,
+        se       = se,
         ci_lower = rd - 1.96 * se,
         ci_upper = rd + 1.96 * se,
-        p_value = 2 * pnorm(-abs(rd / se))
+        p_value  = if (se > 0) 2 * stats::pnorm(-abs(rd / se)) else NA_real_
       )
     }
   }

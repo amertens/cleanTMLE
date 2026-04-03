@@ -112,6 +112,11 @@ and whether it accesses the real outcome.
 | Plot | `clever_covariate_plot()` | No | H(A,W) distribution by group |
 | Plot | `love_plot_threeway()` | No | Unweighted / IPTW / matched SMDs |
 | Integ | `compute_matched_smds()` | No | SMDs on a matched subset |
+| 1 | `attrition_table()` | No | Cohort flow / attrition documentation |
+| 1 | `get_final_cohort()` | No | Extract filtered data from attrition table |
+| 2b | `refine_ps_after_nco()` | Yes‡ | Iterative PS refinement after NCO signal |
+| 2b | `run_plasmode_dq_stress()` | No† | DQ stress test (missingness, misclass, U) |
+| 2b | `summarize_dq_degradation()` | No | DQ degradation comparison table |
 | Gate | `gate_all()` | No | Composite GO/FLAG/STOP across checkpoints |
 
 \* Accesses event counts only.

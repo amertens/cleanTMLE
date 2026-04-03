@@ -739,9 +739,17 @@ run_plasmode_feasibility <- function(lock,
 
   # Fit baseline outcome model (covariates only; outcome-blind in the
   # sense that the treatment--outcome association is not used)
+  # Use complete cases for GLM fitting, then predict for all rows
   Q0_fml <- stats::reformulate(covariates, response = outcome)
   Q0_fit <- stats::glm(Q0_fml, data = data, family = stats::binomial())
-  p_base <- as.numeric(stats::predict(Q0_fit, type = "response"))
+  p_base <- as.numeric(stats::predict(Q0_fit, type = "response",
+                                       newdata = data))
+  # Handle NAs from quasi-separation or missing covariate values
+  if (any(is.na(p_base))) {
+    p_base[is.na(p_base)] <- mean(p_base, na.rm = TRUE)
+  }
+  # Clamp to valid probability range
+  p_base <- pmin(pmax(p_base, 0.001), 0.999)
 
   cand_ids <- vapply(tmle_candidates, function(x) x$candidate_id, character(1))
 
