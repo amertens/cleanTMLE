@@ -2,11 +2,20 @@
 % Please edit documentation in R/plasmode_dq.R
 \name{.degrade_missingness}
 \alias{.degrade_missingness}
-\title{Introduce MCAR missingness into covariates}
+\title{Introduce MCAR missingness into covariates and impute with column medians}
 \usage{
-.degrade_missingness(data, covariates, fraction, seed_offset)
+.degrade_missingness(data, covariates, fraction)
+}
+\arguments{
+\item{data}{data.frame whose covariate columns will be degraded.}
+
+\item{covariates}{character vector of column names to degrade.}
+
+\item{fraction}{MCAR fraction in the unit interval.}
 }
 \description{
-Introduce MCAR missingness into covariates
+Operates on the data.frame in-place (returns a new copy). The outer
+\code{run_plasmode_dq_stress()} loop sets the seed deterministically
+before each rep, so this function does not need its own seed argument.
 }
 \keyword{internal}

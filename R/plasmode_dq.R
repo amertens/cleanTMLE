@@ -1,9 +1,11 @@
-#' Data Quality Stress Testing via Plasmode Simulation
+#' Data-Quality Stress Testing via Plasmode Simulation
 #'
-#' Extends the plasmode feasibility framework to evaluate TMLE candidate
-#' robustness under controlled data quality degradations: covariate
-#' missingness, treatment misclassification, outcome misclassification,
-#' and unmeasured confounding.
+#' Extends the plasmode feasibility framework to evaluate TMLE
+#' candidate robustness under controlled data-quality degradations:
+#' covariate missingness, treatment misclassification (with
+#' asymmetric sensitivity and specificity), outcome misclassification
+#' (optionally differential by treatment arm), and unmeasured
+#' confounding.
 #'
 #' @name plasmode_dq
 NULL
@@ -109,9 +111,17 @@ NULL
 
 # ── Internal: DQ Degradation Functions ───────────────────────────────────
 
-#' Introduce MCAR missingness into covariates
+#' Introduce MCAR missingness into covariates and impute with column medians
+#'
+#' Operates on the data.frame in-place (returns a new copy). The outer
+#' \code{run_plasmode_dq_stress()} loop sets the seed deterministically
+#' before each rep, so this function does not need its own seed argument.
+#'
+#' @param data data.frame whose covariate columns will be degraded.
+#' @param covariates character vector of column names to degrade.
+#' @param fraction MCAR fraction in the unit interval.
 #' @keywords internal
-.degrade_missingness <- function(data, covariates, fraction, seed_offset) {
+.degrade_missingness <- function(data, covariates, fraction) {
   for (v in covariates) {
     n <- nrow(data)
     n_miss <- round(n * fraction)
@@ -120,7 +130,7 @@ NULL
       data[[v]][idx] <- NA
     }
   }
-  # Impute with column medians (matching sanitize_covariates behaviour)
+  # Impute with column medians (matches sanitize_covariates behaviour)
   for (v in covariates) {
     bad <- is.na(data[[v]])
     if (any(bad)) {
@@ -132,48 +142,132 @@ NULL
 }
 
 
-#' Flip treatment assignment (non-differential misclassification)
+#' Apply asymmetric (sensitivity, specificity) misclassification to A.
+#'
+#' Interpretation:
+#'   sens = P(A* = 1 | A = 1)
+#'   spec = P(A* = 0 | A = 0)
+#' For backwards compatibility, callers may instead pass a single
+#' \code{rate}, in which case the function applies a symmetric
+#' non-differential flip (sens = spec = 1 - rate).
+#'
+#' @param A integer/numeric treatment vector.
+#' @param sensitivity numeric in the unit interval or NULL.
+#' @param specificity numeric in the unit interval or NULL.
+#' @param rate optional symmetric flip rate; used if both
+#'   \code{sensitivity} and \code{specificity} are NULL.
 #' @keywords internal
-.degrade_treatment <- function(A, rate) {
+.degrade_treatment <- function(A, sensitivity = NULL, specificity = NULL,
+                                rate = NULL) {
   n <- length(A)
-  n_flip <- round(n * rate)
-  if (n_flip > 0) {
-    idx <- sample.int(n, n_flip)
-    A[idx] <- 1L - A[idx]
+
+  if (is.null(sensitivity) && is.null(specificity)) {
+    if (is.null(rate)) return(A)
+    sensitivity <- 1 - rate
+    specificity <- 1 - rate
+  } else {
+    if (is.null(sensitivity)) sensitivity <- 1
+    if (is.null(specificity)) specificity <- 1
   }
-  A
+
+  A_out <- A
+  pos_idx <- which(A == 1)
+  neg_idx <- which(A == 0)
+
+  if (length(pos_idx) > 0L) {
+    flip <- stats::rbinom(length(pos_idx), 1L, 1 - sensitivity)
+    A_out[pos_idx[flip == 1L]] <- 0L
+  }
+  if (length(neg_idx) > 0L) {
+    flip <- stats::rbinom(length(neg_idx), 1L, 1 - specificity)
+    A_out[neg_idx[flip == 1L]] <- 1L
+  }
+  A_out
 }
 
 
-#' Apply outcome misclassification
+#' Apply outcome misclassification, optionally differential by treatment arm.
+#'
+#' If \code{sens_a1}/\code{spec_a1} and \code{sens_a0}/\code{spec_a0} are
+#' supplied, sensitivity and specificity may differ between treatment arms,
+#' modelling differential outcome ascertainment. Otherwise the marginal
+#' (sens, spec) pair is applied to both arms.
+#'
+#' @param Y integer outcome vector.
+#' @param sensitivity marginal sensitivity (used if per-arm values are NULL).
+#' @param specificity marginal specificity.
+#' @param A optional treatment vector for per-arm differential
+#'   misclassification.
+#' @param sens_a1,sens_a0,spec_a1,spec_a0 optional per-arm overrides.
 #' @keywords internal
-.degrade_outcome <- function(Y, sensitivity, specificity) {
+.degrade_outcome <- function(Y, sensitivity = NULL, specificity = NULL,
+                              A = NULL,
+                              sens_a1 = NULL, spec_a1 = NULL,
+                              sens_a0 = NULL, spec_a0 = NULL) {
   Y_out <- Y
-  # True positives misclassified as negatives: P(Y*=0 | Y=1) = 1 - sens
-  pos_idx <- which(Y == 1)
-  if (length(pos_idx) > 0) {
-    flip_pos <- stats::rbinom(length(pos_idx), 1, 1 - sensitivity)
-    Y_out[pos_idx[flip_pos == 1]] <- 0L
+
+  has_per_arm <- !is.null(A) &&
+    (!is.null(sens_a1) || !is.null(spec_a1) ||
+     !is.null(sens_a0) || !is.null(spec_a0))
+
+  if (!has_per_arm) {
+    sens <- if (is.null(sensitivity)) 1 else sensitivity
+    spec <- if (is.null(specificity)) 1 else specificity
+    pos_idx <- which(Y == 1)
+    if (length(pos_idx) > 0L) {
+      flip <- stats::rbinom(length(pos_idx), 1L, 1 - sens)
+      Y_out[pos_idx[flip == 1L]] <- 0L
+    }
+    neg_idx <- which(Y == 0)
+    if (length(neg_idx) > 0L) {
+      flip <- stats::rbinom(length(neg_idx), 1L, 1 - spec)
+      Y_out[neg_idx[flip == 1L]] <- 1L
+    }
+    return(Y_out)
   }
-  # True negatives misclassified as positives: P(Y*=1 | Y=0) = 1 - spec
-  neg_idx <- which(Y == 0)
-  if (length(neg_idx) > 0) {
-    flip_neg <- stats::rbinom(length(neg_idx), 1, 1 - specificity)
-    Y_out[neg_idx[flip_neg == 1]] <- 1L
+
+  # Per-arm differential misclassification.
+  sens_a1 <- if (is.null(sens_a1)) (sensitivity %||% 1) else sens_a1
+  sens_a0 <- if (is.null(sens_a0)) (sensitivity %||% 1) else sens_a0
+  spec_a1 <- if (is.null(spec_a1)) (specificity %||% 1) else spec_a1
+  spec_a0 <- if (is.null(spec_a0)) (specificity %||% 1) else spec_a0
+
+  for (a in c(0L, 1L)) {
+    arm_idx <- which(A == a)
+    if (length(arm_idx) == 0L) next
+    sens_a <- if (a == 1L) sens_a1 else sens_a0
+    spec_a <- if (a == 1L) spec_a1 else spec_a0
+
+    pos_idx <- arm_idx[Y[arm_idx] == 1L]
+    if (length(pos_idx) > 0L) {
+      flip <- stats::rbinom(length(pos_idx), 1L, 1 - sens_a)
+      Y_out[pos_idx[flip == 1L]] <- 0L
+    }
+    neg_idx <- arm_idx[Y[arm_idx] == 0L]
+    if (length(neg_idx) > 0L) {
+      flip <- stats::rbinom(length(neg_idx), 1L, 1 - spec_a)
+      Y_out[neg_idx[flip == 1L]] <- 1L
+    }
   }
+
   Y_out
 }
+
+
+# Local null-coalescing operator.
+`%||%` <- function(a, b) if (is.null(a)) b else a
 
 
 # ── Main: DQ Stress Test ────────────────────────────────────────────────
 
 #' Run Data-Quality Stress Tests via Plasmode Simulation
 #'
-#' Evaluates TMLE candidate robustness under controlled data quality
-#' degradations.  For each DQ scenario and severity level, plasmode
-#' outcomes are generated from the real covariate distribution and then
-#' degraded before the TMLE candidate is fit.  This is an outcome-blind
-#' procedure: only synthetic outcomes are used.
+#' Evaluates TMLE candidate robustness under controlled data-quality
+#' degradations. For each DQ scenario and severity level, plasmode
+#' outcomes are generated from the real covariate distribution and
+#' the fitted Q0 model, then degraded before each prespecified TMLE
+#' candidate is fit. The procedure is outcome-blind: only synthetic
+#' outcomes are used.
 #'
 #' @section Clean-room stage: Stage 2b (pre-outcome).
 #'
@@ -181,34 +275,39 @@ NULL
 #' @param tmle_candidates A list of \code{tmle_candidate_spec} objects.
 #' @param effect_sizes Numeric vector of true risk differences.
 #'   Default: \code{c(0.05)}.
-#' @param reps Integer; plasmode replicates per scenario.
-#'   Default: 50 (fewer than standard plasmode for speed).
-#' @param data_quality_scenarios A named list of DQ scenarios.  See Details.
-#' @param verbose Logical.
+#' @param reps Integer; plasmode replicates per scenario. Default 50,
+#'   typically smaller than the baseline plasmode for speed.
+#' @param data_quality_scenarios A named list of DQ scenarios; see Details.
+#' @param verbose Logical; print progress messages.
 #'
 #' @details
 #' The \code{data_quality_scenarios} list may contain any combination of:
 #'
 #' \describe{
 #'   \item{\code{covariate_missingness}}{List with \code{fractions}
-#'     (numeric vector, e.g., \code{c(0.05, 0.10, 0.20)}) and optional
+#'     (numeric vector, e.g. \code{c(0.05, 0.10, 0.20)}) and optional
 #'     \code{variables} (character vector; default: all covariates).}
-#'   \item{\code{treatment_misclass}}{List with \code{rates}
-#'     (numeric vector, e.g., \code{c(0.02, 0.05, 0.10)}).}
+#'   \item{\code{treatment_misclass}}{List with optional \code{rates}
+#'     (numeric vector for symmetric flips) and / or asymmetric
+#'     \code{sensitivity} and \code{specificity} (numeric vectors of
+#'     equal length).}
 #'   \item{\code{outcome_misclass}}{List with \code{sensitivity} and
-#'     \code{specificity} (numeric vectors of equal length).}
+#'     \code{specificity} (numeric vectors of equal length). For
+#'     differential misclassification by treatment arm, supply
+#'     \code{sens_a1}, \code{sens_a0}, \code{spec_a1}, \code{spec_a0}
+#'     of equal length instead of (or alongside) the marginal pair.}
 #'   \item{\code{unmeasured_confounding}}{List with \code{U_prevalence},
-#'     \code{U_treatment_OR}, and \code{U_outcome_OR} (numeric vectors;
-#'     \code{U_treatment_OR} and \code{U_outcome_OR} must be equal length).}
+#'     \code{U_treatment_OR}, and \code{U_outcome_OR} (the latter two
+#'     of equal length).}
 #' }
 #'
-#' @return An object of class \code{plasmode_dq_results} containing:
+#' @return An object of class \code{plasmode_dq_results} containing
 #'   \describe{
-#'     \item{metrics}{data.frame with columns: scenario, level,
+#'     \item{metrics}{data.frame with columns scenario, level,
 #'       effect_size, candidate, bias, rmse, coverage, emp_sd,
-#'       mean_se, se_cal.}
-#'     \item{scenarios}{The input \code{data_quality_scenarios}.}
-#'     \item{baseline}{Metrics under \code{scenario = "none"} (no degradation).}
+#'       mean_se, se_cal, n_converged.}
+#'     \item{scenarios}{the input \code{data_quality_scenarios}.}
+#'     \item{baseline}{rows of metrics where scenario == "none".}
 #'   }
 #'
 #' @export
@@ -232,10 +331,23 @@ run_plasmode_dq_stress <- function(lock,
   A          <- data[[treatment]]
   n          <- nrow(data)
 
-  # Baseline outcome model for plasmode DGP
+  # Baseline outcome model for plasmode DGP (Q0; outcome-blind in the sense
+  # that the treatment-outcome association is not used here -- this is the
+  # covariate-only mean of Y).
   Q0_fml <- stats::reformulate(covariates, response = outcome)
   Q0_fit <- stats::glm(Q0_fml, data = data, family = stats::binomial())
   p_base <- as.numeric(stats::predict(Q0_fit, type = "response"))
+  if (any(is.na(p_base))) p_base[is.na(p_base)] <- mean(p_base, na.rm = TRUE)
+  p_base <- pmin(pmax(p_base, 0.001), 0.999)
+
+  # Real propensity (treatment-mechanism) model fitted on the lock data.
+  # Used as the *baseline* propensity that the unmeasured-confounding
+  # scenario shifts. Earlier prototype versions of this function reused
+  # the outcome model for this purpose, which biased the U scenario.
+  ps_fml  <- stats::reformulate(covariates, response = treatment)
+  ps_mod  <- stats::glm(ps_fml, data = data, family = stats::binomial())
+  ps_base <- as.numeric(stats::predict(ps_mod, type = "response"))
+  ps_base <- pmin(pmax(ps_base, 0.001), 0.999)
 
   cand_ids <- vapply(tmle_candidates, function(x) x$candidate_id, character(1))
 
@@ -255,28 +367,69 @@ run_plasmode_dq_stress <- function(lock,
   }
 
   if (!is.null(dqs$treatment_misclass)) {
-    for (r in dqs$treatment_misclass$rates) {
-      scenario_grid <- rbind(scenario_grid, data.frame(
-        scenario = "trt_misclass", level = as.character(r),
-        stringsAsFactors = FALSE))
+    sens_t <- dqs$treatment_misclass$sensitivity
+    spec_t <- dqs$treatment_misclass$specificity
+    rates_t <- dqs$treatment_misclass$rates
+    if (!is.null(sens_t) || !is.null(spec_t)) {
+      ns <- max(length(sens_t), length(spec_t))
+      if (is.null(sens_t)) sens_t <- rep(1, ns)
+      if (is.null(spec_t)) spec_t <- rep(1, ns)
+      for (i in seq_len(ns)) {
+        scenario_grid <- rbind(scenario_grid, data.frame(
+          scenario = "trt_misclass",
+          level = sprintf("sens%.2f_spec%.2f", sens_t[i], spec_t[i]),
+          stringsAsFactors = FALSE))
+      }
+    }
+    if (!is.null(rates_t)) {
+      for (r in rates_t) {
+        scenario_grid <- rbind(scenario_grid, data.frame(
+          scenario = "trt_misclass",
+          level = sprintf("rate%.2f", r),
+          stringsAsFactors = FALSE))
+      }
     }
   }
 
   if (!is.null(dqs$outcome_misclass)) {
     sens <- dqs$outcome_misclass$sensitivity
     spec <- dqs$outcome_misclass$specificity
-    for (i in seq_along(sens)) {
-      scenario_grid <- rbind(scenario_grid, data.frame(
-        scenario = "out_misclass",
-        level = sprintf("sens%.2f_spec%.2f", sens[i], spec[i]),
-        stringsAsFactors = FALSE))
+    sens_a1 <- dqs$outcome_misclass$sens_a1
+    sens_a0 <- dqs$outcome_misclass$sens_a0
+    spec_a1 <- dqs$outcome_misclass$spec_a1
+    spec_a0 <- dqs$outcome_misclass$spec_a0
+    has_marginal <- !is.null(sens) || !is.null(spec)
+    has_perarm   <- !is.null(sens_a1) || !is.null(spec_a1) ||
+                    !is.null(sens_a0) || !is.null(spec_a0)
+    if (has_marginal) {
+      for (i in seq_along(sens)) {
+        scenario_grid <- rbind(scenario_grid, data.frame(
+          scenario = "out_misclass",
+          level = sprintf("sens%.2f_spec%.2f", sens[i], spec[i]),
+          stringsAsFactors = FALSE))
+      }
+    }
+    if (has_perarm) {
+      ns <- max(length(sens_a1) %||% 0L, length(sens_a0) %||% 0L,
+                length(spec_a1) %||% 0L, length(spec_a0) %||% 0L)
+      sens_a1 <- if (is.null(sens_a1)) rep(1, ns) else sens_a1
+      sens_a0 <- if (is.null(sens_a0)) rep(1, ns) else sens_a0
+      spec_a1 <- if (is.null(spec_a1)) rep(1, ns) else spec_a1
+      spec_a0 <- if (is.null(spec_a0)) rep(1, ns) else spec_a0
+      for (i in seq_len(ns)) {
+        scenario_grid <- rbind(scenario_grid, data.frame(
+          scenario = "out_misclass_diff",
+          level = sprintf("a1[%.2f,%.2f]_a0[%.2f,%.2f]",
+                          sens_a1[i], spec_a1[i],
+                          sens_a0[i], spec_a0[i]),
+          stringsAsFactors = FALSE))
+      }
     }
   }
 
   if (!is.null(dqs$unmeasured_confounding)) {
     u_trt <- dqs$unmeasured_confounding$U_treatment_OR
     u_out <- dqs$unmeasured_confounding$U_outcome_OR
-    u_prev <- dqs$unmeasured_confounding$U_prevalence
     for (i in seq_along(u_trt)) {
       scenario_grid <- rbind(scenario_grid, data.frame(
         scenario = "unmeasured_U",
@@ -299,39 +452,66 @@ run_plasmode_dq_stress <- function(lock,
 
     if (verbose) cat(sprintf("  Scenario: %s [%s]\n", sc_name, sc_level))
 
+    # Resolve scenario-specific parameters from the level string.
+    sens_lvl <- spec_lvl <- rate_lvl <- NA_real_
+    sens_a1_lvl <- sens_a0_lvl <- spec_a1_lvl <- spec_a0_lvl <- NA_real_
+    u_trt_or_lvl <- u_out_or_lvl <- NA_real_
+
+    if (sc_name == "trt_misclass") {
+      if (grepl("^rate", sc_level)) {
+        rate_lvl <- as.numeric(sub("rate", "", sc_level))
+      } else {
+        parts <- strsplit(sc_level, "_")[[1]]
+        sens_lvl <- as.numeric(sub("sens", "", parts[1]))
+        spec_lvl <- as.numeric(sub("spec", "", parts[2]))
+      }
+    }
+    if (sc_name == "out_misclass") {
+      parts <- strsplit(sc_level, "_")[[1]]
+      sens_lvl <- as.numeric(sub("sens", "", parts[1]))
+      spec_lvl <- as.numeric(sub("spec", "", parts[2]))
+    }
+    if (sc_name == "out_misclass_diff") {
+      m <- regmatches(sc_level,
+        regexec("a1\\[([0-9.]+),([0-9.]+)\\]_a0\\[([0-9.]+),([0-9.]+)\\]",
+                sc_level))[[1]]
+      sens_a1_lvl <- as.numeric(m[2]); spec_a1_lvl <- as.numeric(m[3])
+      sens_a0_lvl <- as.numeric(m[4]); spec_a0_lvl <- as.numeric(m[5])
+    }
+    if (sc_name == "unmeasured_U") {
+      m <- regmatches(sc_level,
+        regexec("OR_trt([0-9.]+)_out([0-9.]+)", sc_level))[[1]]
+      u_trt_or_lvl <- as.numeric(m[2])
+      u_out_or_lvl <- as.numeric(m[3])
+    }
+
     for (es in effect_sizes) {
       rep_results <- vector("list", reps)
 
       for (rep_i in seq_len(reps)) {
         set.seed(lock$seed + rep_i + sg_i * 10000L)
 
-        # Generate synthetic outcome
+        # Generate synthetic outcome and possibly modify A under U.
         A_rep <- A
         p1_sim <- pmin(p_base + es, 0.999)
         p0_sim <- p_base
 
-        # ── Unmeasured confounding: modify DGP ──
         if (sc_name == "unmeasured_U") {
           u_prev <- dqs$unmeasured_confounding$U_prevalence
-          idx <- which(scenario_grid$scenario == "unmeasured_U" &
-                         scenario_grid$level == sc_level)
-          u_idx <- sum(scenario_grid$scenario[1:idx] == "unmeasured_U")
-          u_trt_or <- dqs$unmeasured_confounding$U_treatment_OR[u_idx]
-          u_out_or <- dqs$unmeasured_confounding$U_outcome_OR[u_idx]
-
           U <- stats::rbinom(n, 1, u_prev)
-          # Modify treatment (re-sample A given U)
-          ps_orig <- p_base  # approximate PS from Q0 model (imperfect but fast)
-          lp_ps <- stats::qlogis(pmax(pmin(ps_orig, 0.999), 0.001))
-          lp_ps_u <- lp_ps + log(u_trt_or) * U
-          ps_u <- stats::plogis(lp_ps_u)
-          A_rep <- stats::rbinom(n, 1, ps_u)
 
-          # Modify outcome probabilities given U
+          # Use the *real* propensity model fitted on lock data as the
+          # baseline; shift its log-odds by log(OR_A) * U.
+          lp_ps   <- stats::qlogis(ps_base)
+          lp_ps_u <- lp_ps + log(u_trt_or_lvl) * U
+          ps_u    <- stats::plogis(lp_ps_u)
+          A_rep   <- stats::rbinom(n, 1L, ps_u)
+
+          # Modify outcome probabilities given U.
           lp1 <- stats::qlogis(pmax(pmin(p1_sim, 0.999), 0.001)) +
-            log(u_out_or) * U
+            log(u_out_or_lvl) * U
           lp0 <- stats::qlogis(pmax(pmin(p0_sim, 0.999), 0.001)) +
-            log(u_out_or) * U
+            log(u_out_or_lvl) * U
           p1_sim <- stats::plogis(lp1)
           p0_sim <- stats::plogis(lp0)
         }
@@ -340,33 +520,44 @@ run_plasmode_dq_stress <- function(lock,
         Y_sim  <- stats::rbinom(n, 1L, p_obs)
         truth  <- mean(p1_sim) - mean(p0_sim)
 
-        # ── Treatment misclassification ──
+        # Treatment misclassification (asymmetric or symmetric).
         A_fit <- A_rep
         if (sc_name == "trt_misclass") {
-          rate <- as.numeric(sc_level)
-          A_fit <- .degrade_treatment(A_rep, rate)
+          if (!is.na(rate_lvl)) {
+            A_fit <- .degrade_treatment(A_rep, rate = rate_lvl)
+          } else {
+            A_fit <- .degrade_treatment(A_rep,
+                                         sensitivity = sens_lvl,
+                                         specificity = spec_lvl)
+          }
         }
 
-        # ── Outcome misclassification ──
+        # Outcome misclassification (marginal or per-arm).
         Y_fit <- Y_sim
         if (sc_name == "out_misclass") {
-          parts <- strsplit(sc_level, "_")[[1]]
-          sens_val <- as.numeric(sub("sens", "", parts[1]))
-          spec_val <- as.numeric(sub("spec", "", parts[2]))
-          Y_fit <- .degrade_outcome(Y_sim, sens_val, spec_val)
+          Y_fit <- .degrade_outcome(Y_sim,
+                                     sensitivity = sens_lvl,
+                                     specificity = spec_lvl)
+        }
+        if (sc_name == "out_misclass_diff") {
+          Y_fit <- .degrade_outcome(Y_sim,
+                                     A = A_rep,
+                                     sens_a1 = sens_a1_lvl,
+                                     sens_a0 = sens_a0_lvl,
+                                     spec_a1 = spec_a1_lvl,
+                                     spec_a0 = spec_a0_lvl)
         }
 
-        # ── Covariate missingness ──
+        # Covariate missingness.
         W_fit <- data
         if (sc_name == "cov_miss") {
           frac <- as.numeric(sc_level)
           miss_vars <- dqs$covariate_missingness$variables
           if (is.null(miss_vars)) miss_vars <- covariates
-          W_fit <- .degrade_missingness(data, miss_vars, frac,
-                                         seed_offset = rep_i)
+          W_fit <- .degrade_missingness(data, miss_vars, frac)
         }
 
-        # ── Fit each candidate ──
+        # Fit each candidate.
         cand_results <- list()
         for (cand in tmle_candidates) {
           cand_results[[cand$candidate_id]] <- tryCatch(
@@ -385,7 +576,7 @@ run_plasmode_dq_stress <- function(lock,
         rep_results[[rep_i]] <- c(cand_results, list(.truth = truth))
       }
 
-      # ── Aggregate metrics ──
+      # Aggregate per-candidate metrics.
       truth_v <- vapply(rep_results, function(x) x$.truth, numeric(1))
 
       for (cid in cand_ids) {
@@ -460,8 +651,8 @@ print.plasmode_dq_results <- function(x, ...) {
 
 #' Summarise DQ Stress Test as a Degradation Table
 #'
-#' Computes the relative change in bias, RMSE, and coverage compared
-#' to the baseline (no degradation) for each DQ scenario and level.
+#' Computes the relative change in bias, RMSE, and coverage versus the
+#' baseline (no degradation) for each DQ scenario, level, and candidate.
 #'
 #' @param dq_results A \code{plasmode_dq_results} object.
 #'

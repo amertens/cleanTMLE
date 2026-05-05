@@ -417,6 +417,75 @@ This specification is now locked into the analysis lock and will be
 used automatically by `fit_tmle_treatment_mechanism()` and
 `fit_tmle_outcome_mechanism()`.
 
+### Plasmode data-quality stress test
+
+`run_plasmode_dq_stress()` extends the plasmode loop with a set of
+controlled data-quality (DQ) degradations. For each scenario and
+severity level it generates a synthetic outcome from the same Q0
+model used by the standard plasmode, applies the degradation, fits
+each candidate, and reports bias, RMSE, and coverage. The output
+sits on the same scale as the standard plasmode output, so the
+GO/FLAG/STOP gate can score it with the same thresholds.
+
+Four mechanisms are supported:
+
+1. *Covariate missingness*: a fraction of values is set to `NA` and
+   imputed with the column median.
+2. *Treatment misclassification*: an asymmetric pair of (sensitivity,
+   specificity) is applied to A.
+3. *Outcome misclassification*: an asymmetric pair of (sensitivity,
+   specificity) is applied to Y, optionally per treatment arm.
+4. *Unmeasured confounding*: a latent binary U is sampled and shifts
+   both the treatment mechanism (via a real PS model fitted on the
+   lock data) and the outcome probability by user-specified odds
+   ratios.
+
+```{r dq-stress, cache = TRUE, eval = FALSE}
+dq_results <- run_plasmode_dq_stress(
+  lock,
+  tmle_candidates = candidates,
+  effect_sizes    = c(0.05),
+  reps            = 30L,
+  data_quality_scenarios = list(
+    covariate_missingness = list(
+      fractions = c(0.05, 0.10, 0.20)
+    ),
+    treatment_misclass = list(
+      sensitivity = c(0.99, 0.95, 0.90),
+      specificity = c(0.99, 0.95, 0.90)
+    ),
+    outcome_misclass = list(
+      sensitivity = c(0.95, 0.90),
+      specificity = c(0.99, 0.95)
+    ),
+    unmeasured_confounding = list(
+      U_prevalence   = 0.20,
+      U_treatment_OR = c(1.5, 2.0),
+      U_outcome_OR   = c(1.5, 2.0)
+    )
+  ),
+  verbose = FALSE
+)
+
+deg <- summarize_dq_degradation(dq_results)
+head(deg)
+```
+
+`summarize_dq_degradation()` returns a long table comparing each
+degraded run with the baseline (no degradation): bias change, RMSE
+ratio, coverage drop. A robust candidate produces a flat curve; a
+fragile candidate shows a cliff. The table can be filtered to the
+candidate locked in by `select_tmle_candidate()` and reviewed
+alongside the SPIFD2 fit-for-purpose narrative before the gate is
+scored.
+
+The DQ stress test is the package's distinguishing contribution
+relative to prior outcome-blind plasmode work: standard plasmode
+selects the candidate with the best baseline RMSE, while
+`run_plasmode_dq_stress()` allows the analyst to select the
+candidate that stays inside the gate thresholds across the
+plausible range of every realistic data threat.
+
 ```{r audit-stage2b}
 audit <- record_stage(audit, "Stage 2b",
   paste("Plasmode evaluation complete; selected TMLE spec:",
@@ -780,6 +849,10 @@ clean-room analysis:
 11. Sensitivity analysis and an E-value were computed as prespecified.
 12. An audit trail, stage path narrative, and decision log document
     the full analytic path and the rationale behind key choices.
+13. The plasmode DQ stress test (`run_plasmode_dq_stress()`,
+    `summarize_dq_degradation()`) is available for sites that want
+    to combine candidate selection with a quantitative data-fitness
+    check before the outcome is unblinded.
 
 ### Integration with real-world pipelines
 

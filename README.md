@@ -2,6 +2,28 @@
 
 **Staged Clean-Room Causal Analysis with TMLE**
 
+## Attribution
+
+cleanTMLE reuses the cohort-specification API and several
+estimator/reporting functions from the
+[**causalRisk**](https://github.com/CausalInference/causalRisk)
+package by M. Alan Brookhart, Alexander Breskin, and Bassim
+Eledath, under the MIT licence and with attribution. Reused
+elements include: the model-specification DSL (`specify_models`,
+`identify_treatment`, `identify_outcome`, `identify_censoring`,
+`identify_competing_risk`, `identify_subject`, `identify_interval`,
+`identify_missing`); the IPW / G-computation / AIPW estimators
+(`estimate_ipwrisk`, `estimate_gcomprisk`, `estimate_aipwrisk`,
+`estimate_ipwhr`); and the reporting helpers (`make_table1`,
+`make_table2`, `extreme_weights`, `inspect_ipw_weights`,
+`forest_plot`, `compare_fits`, `re_estimate`, `hr_data`).
+Functions unique to cleanTMLE (the analysis lock, outcome masking,
+plasmode feasibility and DQ stress, audit and decision logs, the
+modular TMLE primitives, and the GO/FLAG/STOP gate) are
+documented as cleanTMLE-original in the corresponding `.Rd` files.
+We thank the causalRisk authors for the MIT-licensed code that
+made this attribution-based reuse possible.
+
 ## Overview
 
 `cleanTMLE` supports a structured, outcome-blinded workflow for

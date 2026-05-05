@@ -13,6 +13,6 @@ summarize_dq_degradation(dq_results)
 A data.frame with relative degradation metrics.
 }
 \description{
-Computes the relative change in bias, RMSE, and coverage compared
-to the baseline (no degradation) for each DQ scenario and level.
+Computes the relative change in bias, RMSE, and coverage versus the
+baseline (no degradation) for each DQ scenario, level, and candidate.
 }

@@ -21,44 +21,50 @@ run_plasmode_dq_stress(
 \item{effect_sizes}{Numeric vector of true risk differences.
 Default: \code{c(0.05)}.}
 
-\item{reps}{Integer; plasmode replicates per scenario.
-Default: 50 (fewer than standard plasmode for speed).}
+\item{reps}{Integer; plasmode replicates per scenario. Default 50,
+typically smaller than the baseline plasmode for speed.}
 
-\item{data_quality_scenarios}{A named list of DQ scenarios.  See Details.}
+\item{data_quality_scenarios}{A named list of DQ scenarios; see Details.}
 
-\item{verbose}{Logical.}
+\item{verbose}{Logical; print progress messages.}
 }
 \value{
-An object of class \code{plasmode_dq_results} containing:
+An object of class \code{plasmode_dq_results} containing
 \describe{
-\item{metrics}{data.frame with columns: scenario, level,
+\item{metrics}{data.frame with columns scenario, level,
 effect_size, candidate, bias, rmse, coverage, emp_sd,
-mean_se, se_cal.}
-\item{scenarios}{The input \code{data_quality_scenarios}.}
-\item{baseline}{Metrics under \code{scenario = "none"} (no degradation).}
+mean_se, se_cal, n_converged.}
+\item{scenarios}{the input \code{data_quality_scenarios}.}
+\item{baseline}{rows of metrics where scenario == "none".}
 }
 }
 \description{
-Evaluates TMLE candidate robustness under controlled data quality
-degradations.  For each DQ scenario and severity level, plasmode
-outcomes are generated from the real covariate distribution and then
-degraded before the TMLE candidate is fit.  This is an outcome-blind
-procedure: only synthetic outcomes are used.
+Evaluates TMLE candidate robustness under controlled data-quality
+degradations. For each DQ scenario and severity level, plasmode
+outcomes are generated from the real covariate distribution and
+the fitted Q0 model, then degraded before each prespecified TMLE
+candidate is fit. The procedure is outcome-blind: only synthetic
+outcomes are used.
 }
 \details{
 The \code{data_quality_scenarios} list may contain any combination of:
 
 \describe{
 \item{\code{covariate_missingness}}{List with \code{fractions}
-(numeric vector, e.g., \code{c(0.05, 0.10, 0.20)}) and optional
+(numeric vector, e.g. \code{c(0.05, 0.10, 0.20)}) and optional
 \code{variables} (character vector; default: all covariates).}
-\item{\code{treatment_misclass}}{List with \code{rates}
-(numeric vector, e.g., \code{c(0.02, 0.05, 0.10)}).}
+\item{\code{treatment_misclass}}{List with optional \code{rates}
+(numeric vector for symmetric flips) and / or asymmetric
+\code{sensitivity} and \code{specificity} (numeric vectors of
+equal length).}
 \item{\code{outcome_misclass}}{List with \code{sensitivity} and
-\code{specificity} (numeric vectors of equal length).}
+\code{specificity} (numeric vectors of equal length). For
+differential misclassification by treatment arm, supply
+\code{sens_a1}, \code{sens_a0}, \code{spec_a1}, \code{spec_a0}
+of equal length instead of (or alongside) the marginal pair.}
 \item{\code{unmeasured_confounding}}{List with \code{U_prevalence},
-\code{U_treatment_OR}, and \code{U_outcome_OR} (numeric vectors;
-\code{U_treatment_OR} and \code{U_outcome_OR} must be equal length).}
+\code{U_treatment_OR}, and \code{U_outcome_OR} (the latter two
+of equal length).}
 }
 }
 \section{Clean-room stage}{

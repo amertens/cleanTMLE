@@ -2,11 +2,26 @@
 % Please edit documentation in R/plasmode_dq.R
 \name{.degrade_treatment}
 \alias{.degrade_treatment}
-\title{Flip treatment assignment (non-differential misclassification)}
+\title{Apply asymmetric (sensitivity, specificity) misclassification to A.}
 \usage{
-.degrade_treatment(A, rate)
+.degrade_treatment(A, sensitivity = NULL, specificity = NULL, rate = NULL)
+}
+\arguments{
+\item{A}{integer/numeric treatment vector.}
+
+\item{sensitivity}{numeric in the unit interval or NULL.}
+
+\item{specificity}{numeric in the unit interval or NULL.}
+
+\item{rate}{optional symmetric flip rate; used if both
+\code{sensitivity} and \code{specificity} are NULL.}
 }
 \description{
-Flip treatment assignment (non-differential misclassification)
+Interpretation:
+sens = P(A* = 1 | A = 1)
+spec = P(A* = 0 | A = 0)
+For backwards compatibility, callers may instead pass a single
+\code{rate}, in which case the function applies a symmetric
+non-differential flip (sens = spec = 1 - rate).
 }
 \keyword{internal}

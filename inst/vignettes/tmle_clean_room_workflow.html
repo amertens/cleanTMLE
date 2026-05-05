@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<meta name="author" content="cleanTMLE" />
+
+<meta name="date" content="2026-04-01" />
+
+<title>Clean-Room TMLE Workflow</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Clean-Room TMLE Workflow</h1>
+<h4 class="author">cleanTMLE</h4>
+<h4 class="date">2026-04-01</h4>
+
+
+
+<div id="overview" class="section level2">
+<h2>Overview</h2>
+<p>This vignette demonstrates the full <strong>clean-room staged TMLE
+workflow</strong> using the <code>run_clean_tmle()</code> wrapper. The
+staged workflow enforces outcome blinding through structured gates:</p>
+<table>
+<colgroup>
+<col width="29%" />
+<col width="37%" />
+<col width="33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Stage</th>
+<th>Purpose</th>
+<th>Output</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>1</strong></td>
+<td>Lock analytic specification</td>
+<td><code>cleanroom_lock</code></td>
+</tr>
+<tr class="even">
+<td><strong>2a</strong></td>
+<td>Propensity-score diagnostics &amp; gating</td>
+<td>PS diagnostics, ESS, love plot</td>
+</tr>
+<tr class="odd">
+<td><strong>2b</strong></td>
+<td>Negative controls / plasmode simulation</td>
+<td>Bias, RMSE, coverage</td>
+</tr>
+<tr class="even">
+<td><strong>3</strong></td>
+<td>Primary TMLE estimation</td>
+<td>ATE, IC, weight diagnostics</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="simulated-data" class="section level2">
+<h2>Simulated Data</h2>
+<p>We simulate a dataset with a binary treatment, baseline covariates,
+and a binary 24-month event outcome.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(cleanTMLE)</span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="co">#&gt; cleanTMLE: Causal Inference for Risk Estimation</span></span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a><span class="co">#&gt; Use sim_func1() to generate example data, or data(example1) if available.</span></span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">42</span>)</span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a><span class="co"># Simulate via built-in DGP (or manually if sim_func1 not available)</span></span>
+<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">800</span></span>
+<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a>age       <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(n, <span class="dv">55</span>, <span class="dv">10</span>)</span>
+<span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a>sex       <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, <span class="fl">0.45</span>)</span>
+<span id="cb1-10"><a href="#cb1-10" tabindex="-1"></a>biomarker <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(n, <span class="dv">0</span>, <span class="dv">1</span>)</span>
+<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a>comorbid  <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, <span class="fl">0.30</span>)</span>
+<span id="cb1-12"><a href="#cb1-12" tabindex="-1"></a></span>
+<span id="cb1-13"><a href="#cb1-13" tabindex="-1"></a><span class="co"># Treatment mechanism (confounded)</span></span>
+<span id="cb1-14"><a href="#cb1-14" tabindex="-1"></a>lp_trt <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fl">1.0</span> <span class="sc">+</span> <span class="fl">0.02</span> <span class="sc">*</span> age <span class="sc">+</span> <span class="fl">0.3</span> <span class="sc">*</span> sex <span class="sc">+</span> <span class="fl">0.4</span> <span class="sc">*</span> biomarker <span class="sc">+</span> <span class="fl">0.5</span> <span class="sc">*</span> comorbid</span>
+<span id="cb1-15"><a href="#cb1-15" tabindex="-1"></a>ps_true <span class="ot">&lt;-</span> <span class="fu">plogis</span>(lp_trt)</span>
+<span id="cb1-16"><a href="#cb1-16" tabindex="-1"></a>treatment <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, ps_true)</span>
+<span id="cb1-17"><a href="#cb1-17" tabindex="-1"></a></span>
+<span id="cb1-18"><a href="#cb1-18" tabindex="-1"></a><span class="co"># Outcome mechanism (binary at 24 months)</span></span>
+<span id="cb1-19"><a href="#cb1-19" tabindex="-1"></a>lp_out <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fl">2.0</span> <span class="sc">+</span> <span class="fl">0.01</span> <span class="sc">*</span> age <span class="sc">+</span> <span class="fl">0.2</span> <span class="sc">*</span> sex <span class="sc">+</span> <span class="fl">0.3</span> <span class="sc">*</span> biomarker <span class="sc">+</span></span>
+<span id="cb1-20"><a href="#cb1-20" tabindex="-1"></a>          <span class="fl">0.4</span> <span class="sc">*</span> comorbid <span class="sc">-</span> <span class="fl">0.5</span> <span class="sc">*</span> treatment</span>
+<span id="cb1-21"><a href="#cb1-21" tabindex="-1"></a>event_24 <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, <span class="fu">plogis</span>(lp_out))</span>
+<span id="cb1-22"><a href="#cb1-22" tabindex="-1"></a></span>
+<span id="cb1-23"><a href="#cb1-23" tabindex="-1"></a><span class="co"># Negative-control outcome (unrelated to treatment)</span></span>
+<span id="cb1-24"><a href="#cb1-24" tabindex="-1"></a>nc_outcome <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, <span class="fu">plogis</span>(<span class="sc">-</span><span class="fl">1.5</span> <span class="sc">+</span> <span class="fl">0.01</span> <span class="sc">*</span> age))</span>
+<span id="cb1-25"><a href="#cb1-25" tabindex="-1"></a></span>
+<span id="cb1-26"><a href="#cb1-26" tabindex="-1"></a>dat <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb1-27"><a href="#cb1-27" tabindex="-1"></a>  age, sex, biomarker, comorbid, treatment, event_24, nc_outcome</span>
+<span id="cb1-28"><a href="#cb1-28" tabindex="-1"></a>)</span>
+<span id="cb1-29"><a href="#cb1-29" tabindex="-1"></a></span>
+<span id="cb1-30"><a href="#cb1-30" tabindex="-1"></a><span class="fu">head</span>(dat)</span>
+<span id="cb1-31"><a href="#cb1-31" tabindex="-1"></a><span class="co">#&gt;        age sex   biomarker comorbid treatment event_24 nc_outcome</span></span>
+<span id="cb1-32"><a href="#cb1-32" tabindex="-1"></a><span class="co">#&gt; 1 68.70958   1 -0.74651645        0         0        0          0</span></span>
+<span id="cb1-33"><a href="#cb1-33" tabindex="-1"></a><span class="co">#&gt; 2 49.35302   1  0.03660612        1         1        0          1</span></span>
+<span id="cb1-34"><a href="#cb1-34" tabindex="-1"></a><span class="co">#&gt; 3 58.63128   1  0.32330962        0         1        0          1</span></span>
+<span id="cb1-35"><a href="#cb1-35" tabindex="-1"></a><span class="co">#&gt; 4 61.32863   0  0.37967603        1         1        1          0</span></span>
+<span id="cb1-36"><a href="#cb1-36" tabindex="-1"></a><span class="co">#&gt; 5 59.04268   1  0.87655650        0         1        0          1</span></span>
+<span id="cb1-37"><a href="#cb1-37" tabindex="-1"></a><span class="co">#&gt; 6 53.93875   1  0.93338799        0         1        0          1</span></span></code></pre></div>
+</div>
+<div id="stage-1-analysis-lock" class="section level2">
+<h2>Stage 1: Analysis Lock</h2>
+<p>The wrapper validates that a pre-specified SuperLearner library and
+truncation rules are provided, then creates a locked specification.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="co"># These would normally be pre-registered</span></span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>sl_lib <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">&quot;SL.glm&quot;</span>, <span class="st">&quot;SL.mean&quot;</span>)</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>trunc  <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">0.01</span>, <span class="fl">0.99</span>)</span></code></pre></div>
+</div>
+<div id="full-pipeline-via-run_clean_tmle" class="section level2">
+<h2>Full Pipeline via <code>run_clean_tmle()</code></h2>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>result <span class="ot">&lt;-</span> <span class="fu">run_clean_tmle</span>(</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>  <span class="at">data                 =</span> dat,</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>  <span class="at">Avar                 =</span> <span class="st">&quot;treatment&quot;</span>,</span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>  <span class="at">Yvar                 =</span> <span class="st">&quot;event_24&quot;</span>,</span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>  <span class="at">covariates           =</span> <span class="fu">c</span>(<span class="st">&quot;age&quot;</span>, <span class="st">&quot;sex&quot;</span>, <span class="st">&quot;biomarker&quot;</span>, <span class="st">&quot;comorbid&quot;</span>),</span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>  <span class="at">learner_lib          =</span> sl_lib,</span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a>  <span class="at">truncation           =</span> trunc,</span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a>  <span class="at">neg_control_outcomes =</span> <span class="st">&quot;nc_outcome&quot;</span>,</span>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a>  <span class="at">simulation_spec      =</span> <span class="fu">list</span>(<span class="at">reps =</span> <span class="dv">20</span>, <span class="at">effect_sizes =</span> <span class="fu">c</span>(<span class="fl">0.05</span>)),</span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a>  <span class="at">stage2a_thresholds   =</span> <span class="fu">list</span>(<span class="at">ESS =</span> <span class="fl">0.20</span>, <span class="at">max_smd =</span> <span class="fl">0.25</span>),</span>
+<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a>  <span class="at">seed                 =</span> <span class="dv">42</span>,</span>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a>  <span class="at">verbose              =</span> <span class="cn">TRUE</span></span>
+<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a>)</span>
+<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a><span class="co">#&gt; Stage 1: Analysis lock created.</span></span>
+<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a><span class="co">#&gt; Loading required package: nnls</span></span>
+<span id="cb3-16"><a href="#cb3-16" tabindex="-1"></a><span class="co">#&gt; Stage 2a: GO - ESS and balance adequate.</span></span>
+<span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a><span class="co">#&gt; Stage 2b (NC): GO - No negative controls flagged; no evidence of residual confounding.</span></span>
+<span id="cb3-18"><a href="#cb3-18" tabindex="-1"></a><span class="co">#&gt; Effect size: 0.05</span></span>
+<span id="cb3-19"><a href="#cb3-19" tabindex="-1"></a><span class="co">#&gt; Selected TMLE candidate: &#39;tmle_glm_t001&#39; (rule = &#39;min_rmse&#39;)</span></span>
+<span id="cb3-20"><a href="#cb3-20" tabindex="-1"></a><span class="co">#&gt; Stage 2b (Plasmode): GO</span></span>
+<span id="cb3-21"><a href="#cb3-21" tabindex="-1"></a><span class="co">#&gt; Stage 3: Primary TMLE estimation complete.</span></span>
+<span id="cb3-22"><a href="#cb3-22" tabindex="-1"></a></span>
+<span id="cb3-23"><a href="#cb3-23" tabindex="-1"></a><span class="fu">print</span>(result)</span>
+<span id="cb3-24"><a href="#cb3-24" tabindex="-1"></a><span class="co">#&gt; Clean-Room TMLE Result</span></span>
+<span id="cb3-25"><a href="#cb3-25" tabindex="-1"></a><span class="co">#&gt; ======================</span></span>
+<span id="cb3-26"><a href="#cb3-26" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-27"><a href="#cb3-27" tabindex="-1"></a><span class="co">#&gt; Stage 2a decision:  GO </span></span>
+<span id="cb3-28"><a href="#cb3-28" tabindex="-1"></a><span class="co">#&gt; Stage 2b decision:  GO </span></span>
+<span id="cb3-29"><a href="#cb3-29" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-30"><a href="#cb3-30" tabindex="-1"></a><span class="co">#&gt; Primary ATE:  -0.05566  (95% CI: -0.11136, 0.00004)  p=0.0501</span></span>
+<span id="cb3-31"><a href="#cb3-31" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-32"><a href="#cb3-32" tabindex="-1"></a><span class="co">#&gt; Decision log: 16 entries</span></span></code></pre></div>
+</div>
+<div id="stage-2a-diagnostics" class="section level2">
+<h2>Stage 2a Diagnostics</h2>
+<div id="weight-distribution" class="section level3">
+<h3>Weight Distribution</h3>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>result<span class="sc">$</span>weight_summary</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a><span class="co">#&gt;   group   n   mean     sd    min     p1     p5    p25    p50    p75    p95</span></span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a><span class="co">#&gt; 1     0 345 2.3005 0.5730 1.4152 1.4695 1.5692 1.8842 2.1909 2.6098 3.4847</span></span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="co">#&gt; 2     1 455 1.7493 0.3369 1.2000 1.2609 1.3431 1.5162 1.6660 1.9030 2.4103</span></span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="co">#&gt;      p99    max</span></span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a><span class="co">#&gt; 1 3.9213 4.4562</span></span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a><span class="co">#&gt; 2 2.7976 3.3621</span></span></code></pre></div>
+</div>
+<div id="extreme-weights" class="section level3">
+<h3>Extreme Weights</h3>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>result<span class="sc">$</span>extreme_weights</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a><span class="co">#&gt;    row   weight        ps A</span></span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a><span class="co">#&gt; 1  461 4.456203 0.7755937 0</span></span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a><span class="co">#&gt; 2  591 4.404165 0.7729422 0</span></span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a><span class="co">#&gt; 3  662 4.049905 0.7530806 0</span></span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a><span class="co">#&gt; 4  693 3.924916 0.7452175 0</span></span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a><span class="co">#&gt; 5  294 3.916650 0.7446798 0</span></span>
+<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a><span class="co">#&gt; 6  579 3.794367 0.7364515 0</span></span>
+<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a><span class="co">#&gt; 7  317 3.751044 0.7334076 0</span></span>
+<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a><span class="co">#&gt; 8  614 3.740979 0.7326903 0</span></span>
+<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a><span class="co">#&gt; 9  620 3.713419 0.7307064 0</span></span>
+<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a><span class="co">#&gt; 10 204 3.676456 0.7279989 0</span></span></code></pre></div>
+</div>
+<div id="ps-overlap-histogram" class="section level3">
+<h3>PS Overlap Histogram</h3>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>result<span class="sc">$</span>ps_diagnostics<span class="sc">$</span>overlap_plot</span></code></pre></div>
+<div class="float">
+<img role="img" aria-label="Propensity score overlap by treatment group." src="data:image/png;base64,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" alt="Propensity score overlap by treatment group." />
+<div class="figcaption">Propensity score overlap by treatment
+group.</div>
+</div>
+</div>
+<div id="love-plot-covariate-balance" class="section level3">
+<h3>Love Plot (Covariate Balance)</h3>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>result<span class="sc">$</span>love_plot</span></code></pre></div>
+<div class="float">
+<img role="img" aria-label="Standardised mean differences before and after weighting." src="data:image/png;base64,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" alt="Standardised mean differences before and after weighting." />
+<div class="figcaption">Standardised mean differences before and after
+weighting.</div>
+</div>
+</div>
+<div id="effective-sample-size" class="section level3">
+<h3>Effective Sample Size</h3>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>result<span class="sc">$</span>ps_diagnostics<span class="sc">$</span>ess</span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a><span class="co">#&gt;     group   n   ess ess_pct</span></span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a><span class="co">#&gt; 1 Treated 455 438.8    96.4</span></span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a><span class="co">#&gt; 2 Control 345 324.9    94.2</span></span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a><span class="co">#&gt; 3   Total 800 763.7    95.5</span></span></code></pre></div>
+</div>
+</div>
+<div id="stage-2b-negative-controls" class="section level2">
+<h2>Stage 2b: Negative Controls</h2>
+<p>If negative-control outcomes were specified, the pipeline estimates
+the treatment effect on each and tests whether it differs from zero.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(result<span class="sc">$</span>nc_results)) {</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>  <span class="cf">for</span> (nc <span class="cf">in</span> result<span class="sc">$</span>nc_results) {</span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a>    <span class="fu">print</span>(nc)</span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a>    <span class="fu">cat</span>(<span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a>  }</span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a>}</span>
+<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a><span class="co">#&gt; Negative Control Analysis</span></span>
+<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a><span class="co">#&gt; =========================</span></span>
+<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a><span class="co">#&gt; Variable:    nc_outcome</span></span>
+<span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a><span class="co">#&gt; Estimate:    -0.00217  (95% CI: -0.06768, 0.06333)</span></span>
+<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a><span class="co">#&gt; SE:          0.03342   p-value: 0.9482</span></span>
+<span id="cb9-12"><a href="#cb9-12" tabindex="-1"></a><span class="co">#&gt; Assessment:  No significant association: no evidence of residual confounding.</span></span></code></pre></div>
+</div>
+<div id="stage-2b-plasmode-simulation" class="section level2">
+<h2>Stage 2b: Plasmode Simulation</h2>
+<p>If a <code>simulation_spec</code> was provided, the pipeline runs
+plasmode replicates to assess bias, RMSE, and coverage.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(result<span class="sc">$</span>plasmode_results)) {</span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>  <span class="fu">print</span>(result<span class="sc">$</span>plasmode_results<span class="sc">$</span>metrics)</span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>}</span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a><span class="co">#&gt;                    effect_size          candidate    bias    rmse coverage</span></span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a><span class="co">#&gt; tmle_glm_t001             0.05      tmle_glm_t001 0.00061 0.02611        1</span></span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a><span class="co">#&gt; tmle_glm_t005             0.05      tmle_glm_t005 0.00061 0.02611        1</span></span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a><span class="co">#&gt; tmle_glm_mean_t001        0.05 tmle_glm_mean_t001 0.00061 0.02611        1</span></span>
+<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a><span class="co">#&gt; tmle_glm_mean_t005        0.05 tmle_glm_mean_t005 0.00061 0.02611        1</span></span>
+<span id="cb10-9"><a href="#cb10-9" tabindex="-1"></a><span class="co">#&gt;                     emp_sd mean_se n_converged se_cal</span></span>
+<span id="cb10-10"><a href="#cb10-10" tabindex="-1"></a><span class="co">#&gt; tmle_glm_t001      0.02678 0.02899          20  1.083</span></span>
+<span id="cb10-11"><a href="#cb10-11" tabindex="-1"></a><span class="co">#&gt; tmle_glm_t005      0.02678 0.02899          20  1.083</span></span>
+<span id="cb10-12"><a href="#cb10-12" tabindex="-1"></a><span class="co">#&gt; tmle_glm_mean_t001 0.02678 0.02899          20  1.083</span></span>
+<span id="cb10-13"><a href="#cb10-13" tabindex="-1"></a><span class="co">#&gt; tmle_glm_mean_t005 0.02678 0.02899          20  1.083</span></span></code></pre></div>
+</div>
+<div id="stage-3-primary-tmle-estimation" class="section level2">
+<h2>Stage 3: Primary TMLE Estimation</h2>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(result<span class="sc">$</span>tmle_result)) {</span>
+<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a>  <span class="fu">print</span>(result<span class="sc">$</span>tmle_result)</span>
+<span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a>}</span>
+<span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a><span class="co">#&gt; Point-Treatment TMLE </span></span>
+<span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a><span class="co">#&gt; ==================== </span></span>
+<span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a><span class="co">#&gt; ATE:</span></span>
+<span id="cb11-8"><a href="#cb11-8" tabindex="-1"></a><span class="co">#&gt;   Estimate: -0.05566</span></span>
+<span id="cb11-9"><a href="#cb11-9" tabindex="-1"></a><span class="co">#&gt;   SE:       0.02842</span></span>
+<span id="cb11-10"><a href="#cb11-10" tabindex="-1"></a><span class="co">#&gt;   95% CI:   [-0.11136, 0.00004]</span></span>
+<span id="cb11-11"><a href="#cb11-11" tabindex="-1"></a><span class="co">#&gt;   p-value:  0.05014</span></span>
+<span id="cb11-12"><a href="#cb11-12" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb11-13"><a href="#cb11-13" tabindex="-1"></a><span class="co">#&gt; RR:</span></span>
+<span id="cb11-14"><a href="#cb11-14" tabindex="-1"></a><span class="co">#&gt;   Estimate: 0.73247</span></span>
+<span id="cb11-15"><a href="#cb11-15" tabindex="-1"></a><span class="co">#&gt;   SE:       0.15655</span></span>
+<span id="cb11-16"><a href="#cb11-16" tabindex="-1"></a><span class="co">#&gt;   95% CI:   [0.53893, 0.99551]</span></span>
+<span id="cb11-17"><a href="#cb11-17" tabindex="-1"></a><span class="co">#&gt;   p-value:  0.04673</span></span></code></pre></div>
+<div id="influence-curve-histogram" class="section level3">
+<h3>Influence Curve Histogram</h3>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a><span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(result<span class="sc">$</span>tmle_result)) {</span>
+<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a>  <span class="fu">ic_histogram</span>(result<span class="sc">$</span>tmle_result)</span>
+<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a>}</span></code></pre></div>
+<div class="float">
+<img role="img" aria-label="Distribution of the efficient influence curve." src="data:image/png;base64,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" alt="Distribution of the efficient influence curve." />
+<div class="figcaption">Distribution of the efficient influence
+curve.</div>
+</div>
+</div>
+<div id="ic-summary" class="section level3">
+<h3>IC Summary</h3>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a>result<span class="sc">$</span>ic_summary</span>
+<span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a><span class="co">#&gt;   statistic         value</span></span>
+<span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a><span class="co">#&gt; 1      mean  5.243876e-16</span></span>
+<span id="cb13-4"><a href="#cb13-4" tabindex="-1"></a><span class="co">#&gt; 2        sd  8.037600e-01</span></span>
+<span id="cb13-5"><a href="#cb13-5" tabindex="-1"></a><span class="co">#&gt; 3       min -3.088751e+00</span></span>
+<span id="cb13-6"><a href="#cb13-6" tabindex="-1"></a><span class="co">#&gt; 4        p5 -1.668631e+00</span></span>
+<span id="cb13-7"><a href="#cb13-7" tabindex="-1"></a><span class="co">#&gt; 5       p25 -2.819454e-01</span></span>
+<span id="cb13-8"><a href="#cb13-8" tabindex="-1"></a><span class="co">#&gt; 6    median -2.205448e-01</span></span>
+<span id="cb13-9"><a href="#cb13-9" tabindex="-1"></a><span class="co">#&gt; 7       p75  4.528613e-01</span></span>
+<span id="cb13-10"><a href="#cb13-10" tabindex="-1"></a><span class="co">#&gt; 8       p95  1.358386e+00</span></span>
+<span id="cb13-11"><a href="#cb13-11" tabindex="-1"></a><span class="co">#&gt; 9       max  2.497907e+00</span></span></code></pre></div>
+</div>
+</div>
+<div id="cross-fitted-tmle-comparison" class="section level2">
+<h2>Cross-Fitted TMLE (Comparison)</h2>
+<p>We can also run a 2-fold cross-fitted TMLE for comparison.</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a>tmle_cf <span class="ot">&lt;-</span> <span class="fu">estimate_tmle_risk_point</span>(</span>
+<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a>  <span class="at">data       =</span> dat,</span>
+<span id="cb14-3"><a href="#cb14-3" tabindex="-1"></a>  <span class="at">treatment  =</span> <span class="st">&quot;treatment&quot;</span>,</span>
+<span id="cb14-4"><a href="#cb14-4" tabindex="-1"></a>  <span class="at">outcome    =</span> <span class="st">&quot;event_24&quot;</span>,</span>
+<span id="cb14-5"><a href="#cb14-5" tabindex="-1"></a>  <span class="at">covariates =</span> <span class="fu">c</span>(<span class="st">&quot;age&quot;</span>, <span class="st">&quot;sex&quot;</span>, <span class="st">&quot;biomarker&quot;</span>, <span class="st">&quot;comorbid&quot;</span>),</span>
+<span id="cb14-6"><a href="#cb14-6" tabindex="-1"></a>  <span class="at">sl_library =</span> sl_lib,</span>
+<span id="cb14-7"><a href="#cb14-7" tabindex="-1"></a>  <span class="at">truncate   =</span> <span class="fl">0.01</span>,</span>
+<span id="cb14-8"><a href="#cb14-8" tabindex="-1"></a>  <span class="at">n_folds    =</span> <span class="dv">2</span><span class="dt">L</span></span>
+<span id="cb14-9"><a href="#cb14-9" tabindex="-1"></a>)</span>
+<span id="cb14-10"><a href="#cb14-10" tabindex="-1"></a></span>
+<span id="cb14-11"><a href="#cb14-11" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Cross-fitted ATE:</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb14-12"><a href="#cb14-12" tabindex="-1"></a><span class="co">#&gt; Cross-fitted ATE:</span></span>
+<span id="cb14-13"><a href="#cb14-13" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;  Estimate: %.5f (95%% CI: %.5f, %.5f)</span><span class="sc">\n</span><span class="st">&quot;</span>,</span>
+<span id="cb14-14"><a href="#cb14-14" tabindex="-1"></a>            tmle_cf<span class="sc">$</span>estimates<span class="sc">$</span>ATE<span class="sc">$</span>estimate,</span>
+<span id="cb14-15"><a href="#cb14-15" tabindex="-1"></a>            tmle_cf<span class="sc">$</span>estimates<span class="sc">$</span>ATE<span class="sc">$</span>ci_lower,</span>
+<span id="cb14-16"><a href="#cb14-16" tabindex="-1"></a>            tmle_cf<span class="sc">$</span>estimates<span class="sc">$</span>ATE<span class="sc">$</span>ci_upper))</span>
+<span id="cb14-17"><a href="#cb14-17" tabindex="-1"></a><span class="co">#&gt;   Estimate: -0.05783 (95% CI: -0.11305, -0.00261)</span></span></code></pre></div>
+</div>
+<div id="comparison-with-ipw-and-matching" class="section level2">
+<h2>Comparison with IPW and Matching</h2>
+<p>To illustrate improvements, we compare the TMLE estimate against
+crude, IPTW, and matching approaches using the cleanTMLE
+infrastructure.</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a><span class="co"># Create lock for comparison workflows</span></span>
+<span id="cb15-2"><a href="#cb15-2" tabindex="-1"></a>lock <span class="ot">&lt;-</span> <span class="fu">create_analysis_lock</span>(</span>
+<span id="cb15-3"><a href="#cb15-3" tabindex="-1"></a>  <span class="at">data       =</span> dat,</span>
+<span id="cb15-4"><a href="#cb15-4" tabindex="-1"></a>  <span class="at">treatment  =</span> <span class="st">&quot;treatment&quot;</span>,</span>
+<span id="cb15-5"><a href="#cb15-5" tabindex="-1"></a>  <span class="at">outcome    =</span> <span class="st">&quot;event_24&quot;</span>,</span>
+<span id="cb15-6"><a href="#cb15-6" tabindex="-1"></a>  <span class="at">covariates =</span> <span class="fu">c</span>(<span class="st">&quot;age&quot;</span>, <span class="st">&quot;sex&quot;</span>, <span class="st">&quot;biomarker&quot;</span>, <span class="st">&quot;comorbid&quot;</span>),</span>
+<span id="cb15-7"><a href="#cb15-7" tabindex="-1"></a>  <span class="at">seed       =</span> <span class="dv">42</span></span>
+<span id="cb15-8"><a href="#cb15-8" tabindex="-1"></a>)</span>
+<span id="cb15-9"><a href="#cb15-9" tabindex="-1"></a></span>
+<span id="cb15-10"><a href="#cb15-10" tabindex="-1"></a>ps_fit  <span class="ot">&lt;-</span> <span class="fu">fit_ps_glm</span>(lock)</span>
+<span id="cb15-11"><a href="#cb15-11" tabindex="-1"></a>iptw    <span class="ot">&lt;-</span> <span class="fu">run_iptw_workflow</span>(lock, ps_fit, <span class="at">override_clean_room =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb15-12"><a href="#cb15-12" tabindex="-1"></a>matched <span class="ot">&lt;-</span> <span class="fu">run_match_workflow</span>(lock, ps_fit, <span class="at">override_clean_room =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb15-13"><a href="#cb15-13" tabindex="-1"></a></span>
+<span id="cb15-14"><a href="#cb15-14" tabindex="-1"></a><span class="co"># Crude</span></span>
+<span id="cb15-15"><a href="#cb15-15" tabindex="-1"></a>Y <span class="ot">&lt;-</span> dat<span class="sc">$</span>event_24; A <span class="ot">&lt;-</span> dat<span class="sc">$</span>treatment</span>
+<span id="cb15-16"><a href="#cb15-16" tabindex="-1"></a>crude_rd <span class="ot">&lt;-</span> <span class="fu">mean</span>(Y[A <span class="sc">==</span> <span class="dv">1</span>]) <span class="sc">-</span> <span class="fu">mean</span>(Y[A <span class="sc">==</span> <span class="dv">0</span>])</span>
+<span id="cb15-17"><a href="#cb15-17" tabindex="-1"></a></span>
+<span id="cb15-18"><a href="#cb15-18" tabindex="-1"></a>comparison <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb15-19"><a href="#cb15-19" tabindex="-1"></a>  <span class="at">Method   =</span> <span class="fu">c</span>(<span class="st">&quot;Crude&quot;</span>, <span class="st">&quot;IPTW&quot;</span>, <span class="st">&quot;PS Matching&quot;</span>, <span class="st">&quot;TMLE&quot;</span>),</span>
+<span id="cb15-20"><a href="#cb15-20" tabindex="-1"></a>  <span class="at">Estimate =</span> <span class="fu">round</span>(<span class="fu">c</span>(crude_rd, iptw<span class="sc">$</span>estimate, matched<span class="sc">$</span>estimate,</span>
+<span id="cb15-21"><a href="#cb15-21" tabindex="-1"></a>                     result<span class="sc">$</span>tmle_result<span class="sc">$</span>estimates<span class="sc">$</span>ATE<span class="sc">$</span>estimate), <span class="dv">5</span>),</span>
+<span id="cb15-22"><a href="#cb15-22" tabindex="-1"></a>  <span class="at">SE       =</span> <span class="fu">round</span>(<span class="fu">c</span>(<span class="cn">NA</span>, iptw<span class="sc">$</span>se, matched<span class="sc">$</span>se,</span>
+<span id="cb15-23"><a href="#cb15-23" tabindex="-1"></a>                     result<span class="sc">$</span>tmle_result<span class="sc">$</span>estimates<span class="sc">$</span>ATE<span class="sc">$</span>se), <span class="dv">5</span>),</span>
+<span id="cb15-24"><a href="#cb15-24" tabindex="-1"></a>  <span class="at">stringsAsFactors =</span> <span class="cn">FALSE</span></span>
+<span id="cb15-25"><a href="#cb15-25" tabindex="-1"></a>)</span>
+<span id="cb15-26"><a href="#cb15-26" tabindex="-1"></a><span class="fu">print</span>(comparison)</span>
+<span id="cb15-27"><a href="#cb15-27" tabindex="-1"></a><span class="co">#&gt;        Method Estimate      SE</span></span>
+<span id="cb15-28"><a href="#cb15-28" tabindex="-1"></a><span class="co">#&gt; 1       Crude -0.04905      NA</span></span>
+<span id="cb15-29"><a href="#cb15-29" tabindex="-1"></a><span class="co">#&gt; 2        IPTW -0.05517 0.02858</span></span>
+<span id="cb15-30"><a href="#cb15-30" tabindex="-1"></a><span class="co">#&gt; 3 PS Matching -0.04560 0.02870</span></span>
+<span id="cb15-31"><a href="#cb15-31" tabindex="-1"></a><span class="co">#&gt; 4        TMLE -0.05566 0.02842</span></span></code></pre></div>
+</div>
+<div id="integration-utilities" class="section level2">
+<h2>Integration Utilities</h2>
+<div id="external-ps-and-parallel-support" class="section level3">
+<h3>External PS and Parallel Support</h3>
+<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a><span class="co"># Wrap externally computed PS scores</span></span>
+<span id="cb16-2"><a href="#cb16-2" tabindex="-1"></a>my_ps <span class="ot">&lt;-</span> <span class="fu">predict</span>(<span class="fu">glm</span>(treatment <span class="sc">~</span> age <span class="sc">+</span> sex <span class="sc">+</span> biomarker <span class="sc">+</span> comorbid,</span>
+<span id="cb16-3"><a href="#cb16-3" tabindex="-1"></a>                      <span class="at">data =</span> dat, <span class="at">family =</span> <span class="fu">binomial</span>()), <span class="at">type =</span> <span class="st">&quot;response&quot;</span>)</span>
+<span id="cb16-4"><a href="#cb16-4" tabindex="-1"></a>ext_fit <span class="ot">&lt;-</span> <span class="fu">wrap_ps_fit</span>(lock, <span class="at">ps_scores =</span> my_ps, <span class="at">method =</span> <span class="st">&quot;custom_glm&quot;</span>)</span>
+<span id="cb16-5"><a href="#cb16-5" tabindex="-1"></a><span class="fu">print</span>(ext_fit)</span>
+<span id="cb16-6"><a href="#cb16-6" tabindex="-1"></a><span class="co">#&gt; Propensity Score Fit (SuperLearner)</span></span>
+<span id="cb16-7"><a href="#cb16-7" tabindex="-1"></a><span class="co">#&gt; ====================================</span></span>
+<span id="cb16-8"><a href="#cb16-8" tabindex="-1"></a><span class="co">#&gt; Treatment:   treatment </span></span>
+<span id="cb16-9"><a href="#cb16-9" tabindex="-1"></a><span class="co">#&gt; Covariates:  age, sex, biomarker, comorbid </span></span>
+<span id="cb16-10"><a href="#cb16-10" tabindex="-1"></a><span class="co">#&gt; PS range:    [0.2589, 0.8664]</span></span>
+<span id="cb16-11"><a href="#cb16-11" tabindex="-1"></a><span class="co">#&gt; PS mean:      0.5687</span></span></code></pre></div>
+</div>
+<div id="covariate-sanitisation" class="section level3">
+<h3>Covariate Sanitisation</h3>
+<div class="sourceCode" id="cb17"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" tabindex="-1"></a>clean <span class="ot">&lt;-</span> <span class="fu">sanitize_covariates</span>(dat,</span>
+<span id="cb17-2"><a href="#cb17-2" tabindex="-1"></a>  <span class="at">covariates =</span> <span class="fu">c</span>(<span class="st">&quot;age&quot;</span>, <span class="st">&quot;sex&quot;</span>, <span class="st">&quot;biomarker&quot;</span>, <span class="st">&quot;comorbid&quot;</span>),</span>
+<span id="cb17-3"><a href="#cb17-3" tabindex="-1"></a>  <span class="at">verbose =</span> <span class="cn">TRUE</span>)</span></code></pre></div>
+</div>
+<div id="tmle-based-negative-controls" class="section level3">
+<h3>TMLE-Based Negative Controls</h3>
+<div class="sourceCode" id="cb18"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" tabindex="-1"></a>nc_tmle <span class="ot">&lt;-</span> <span class="fu">run_negative_control_tmle</span>(lock, <span class="st">&quot;nc_outcome&quot;</span>, ps_fit)</span>
+<span id="cb18-2"><a href="#cb18-2" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;TMLE NC: est=%.5f, p=%.4f (method: %s)</span><span class="sc">\n</span><span class="st">&quot;</span>,</span>
+<span id="cb18-3"><a href="#cb18-3" tabindex="-1"></a>            nc_tmle<span class="sc">$</span>estimate, nc_tmle<span class="sc">$</span>p_value, nc_tmle<span class="sc">$</span>method))</span>
+<span id="cb18-4"><a href="#cb18-4" tabindex="-1"></a><span class="co">#&gt; TMLE NC: est=-0.00223, p=0.9471 (method: tmle)</span></span></code></pre></div>
+</div>
+<div id="matched-cohort-tmle" class="section level3">
+<h3>Matched-Cohort TMLE</h3>
+<div class="sourceCode" id="cb19"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" tabindex="-1"></a>matched_idx <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fu">which</span>(dat<span class="sc">$</span>treatment <span class="sc">==</span> <span class="dv">1</span>)[<span class="dv">1</span><span class="sc">:</span><span class="dv">50</span>],</span>
+<span id="cb19-2"><a href="#cb19-2" tabindex="-1"></a>                 <span class="fu">which</span>(dat<span class="sc">$</span>treatment <span class="sc">==</span> <span class="dv">0</span>)[<span class="dv">1</span><span class="sc">:</span><span class="dv">50</span>])</span>
+<span id="cb19-3"><a href="#cb19-3" tabindex="-1"></a>matched_tmle <span class="ot">&lt;-</span> <span class="fu">run_matched_tmle</span>(lock, ps_fit, <span class="at">subset_idx =</span> matched_idx,</span>
+<span id="cb19-4"><a href="#cb19-4" tabindex="-1"></a>                                  <span class="at">override_clean_room =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb19-5"><a href="#cb19-5" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">&quot;Matched TMLE ATE: %.5f (n=%d)</span><span class="sc">\n</span><span class="st">&quot;</span>,</span>
+<span id="cb19-6"><a href="#cb19-6" tabindex="-1"></a>            matched_tmle<span class="sc">$</span>estimates<span class="sc">$</span>ATE<span class="sc">$</span>estimate, matched_tmle<span class="sc">$</span>n_matched))</span>
+<span id="cb19-7"><a href="#cb19-7" tabindex="-1"></a><span class="co">#&gt; Matched TMLE ATE: -0.20345 (n=100)</span></span></code></pre></div>
+</div>
+<div id="clever-covariate-plot" class="section level3">
+<h3>Clever Covariate Plot</h3>
+<div class="sourceCode" id="cb20"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" tabindex="-1"></a><span class="fu">clever_covariate_plot</span>(<span class="at">ps_fit =</span> ps_fit, <span class="at">lock =</span> lock)</span></code></pre></div>
+<div class="float">
+<img role="img" aria-label="Clever covariate H(A,W) by treatment group." src="data:image/png;base64,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" alt="Clever covariate H(A,W) by treatment group." />
+<div class="figcaption">Clever covariate H(A,W) by treatment
+group.</div>
+</div>
+</div>
+</div>
+<div id="decision-log" class="section level2">
+<h2>Decision Log</h2>
+<p>The full decision log records every stage, metric, and gating
+decision with timestamps.</p>
+<div class="sourceCode" id="cb21"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(result<span class="sc">$</span>decision_log, <span class="at">caption =</span> <span class="st">&quot;Decision Log&quot;</span>)</span></code></pre></div>
+<table style="width:100%;">
+<caption>Decision Log</caption>
+<colgroup>
+<col width="10%" />
+<col width="14%" />
+<col width="19%" />
+<col width="4%" />
+<col width="40%" />
+<col width="10%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">stage</th>
+<th align="left">metric</th>
+<th align="left">value</th>
+<th align="left">decision</th>
+<th align="left">rationale</th>
+<th align="left">timestamp</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Stage 1</td>
+<td align="left">SL library</td>
+<td align="left">SL.glm, SL.mean</td>
+<td align="left">GO</td>
+<td align="left">Pre-specified learner library recorded.</td>
+<td align="left">2026-04-01 14:08:20</td>
+</tr>
+<tr class="even">
+<td align="left">Stage 1</td>
+<td align="left">Truncation</td>
+<td align="left">0.01, 0.99</td>
+<td align="left">GO</td>
+<td align="left">Pre-specified truncation bounds recorded.</td>
+<td align="left">2026-04-01 14:08:20</td>
+</tr>
+<tr class="odd">
+<td align="left">Stage 2a</td>
+<td align="left">PS range</td>
+<td align="left">[0.2934, 0.8333]</td>
+<td align="left">NA</td>
+<td align="left"></td>
+<td align="left">2026-04-01 14:08:20</td>
+</tr>
+<tr class="even">
+<td align="left">Stage 2a</td>
+<td align="left">Fraction at lower truncation</td>
+<td align="left">0.0000</td>
+<td align="left">NA</td>
+<td align="left"></td>
+<td align="left">2026-04-01 14:08:20</td>
+</tr>
+<tr class="odd">
+<td align="left">Stage 2a</td>
+<td align="left">Fraction at upper truncation</td>
+<td align="left">0.0000</td>
+<td align="left">NA</td>
+<td align="left"></td>
+<td align="left">2026-04-01 14:08:20</td>
+</tr>
+<tr class="even">
+<td align="left">Stage 2a</td>
+<td align="left">ESS</td>
+<td align="left">747.0 (93.4% of N=800)</td>
+<td align="left">NA</td>
+<td align="left"></td>
+<td align="left">2026-04-01 14:08:20</td>
+</tr>
+<tr class="odd">
+<td align="left">Stage 2a</td>
+<td align="left">Gating decision</td>
+<td align="left">GO</td>
+<td align="left">GO</td>
+<td align="left">ESS and balance adequate.</td>
+<td align="left">2026-04-01 14:08:20</td>
+</tr>
+<tr class="even">
+<td align="left">Stage 2b (NC)</td>
+<td align="left">nc_outcome</td>
+<td align="left">est=-0.00217, p=0.9482</td>
+<td align="left">NA</td>
+<td align="left">No significant association: no evidence of residual
+confounding.</td>
+<td align="left">2026-04-01 14:08:21</td>
+</tr>
+<tr class="odd">
+<td align="left">Stage 2b</td>
+<td align="left">NC gating decision</td>
+<td align="left">GO</td>
+<td align="left">GO</td>
+<td align="left">No negative controls flagged; no evidence of residual
+confounding.</td>
+<td align="left">2026-04-01 14:08:21</td>
+</tr>
+<tr class="even">
+<td align="left">Stage 2b (Plasmode)</td>
+<td align="left">bias</td>
+<td align="left">0.00061</td>
+<td align="left">NA</td>
+<td align="left"></td>
+<td align="left">2026-04-01 14:08:24</td>
+</tr>
+<tr class="odd">
+<td align="left">Stage 2b (Plasmode)</td>
+<td align="left">rmse</td>
+<td align="left">0.02611</td>
+<td align="left">NA</td>
+<td align="left"></td>
+<td align="left">2026-04-01 14:08:24</td>
+</tr>
+<tr class="even">
+<td align="left">Stage 2b (Plasmode)</td>
+<td align="left">coverage</td>
+<td align="left">1.000</td>
+<td align="left">NA</td>
+<td align="left"></td>
+<td align="left">2026-04-01 14:08:24</td>
+</tr>
+<tr class="odd">
+<td align="left">Stage 2b (Plasmode)</td>
+<td align="left">Gating decision</td>
+<td align="left">GO</td>
+<td align="left">GO</td>
+<td align="left">Selected candidate ‘tmle_glm_t001’: bias=0.00061,
+rmse=0.02611, coverage=1.000</td>
+<td align="left">2026-04-01 14:08:24</td>
+</tr>
+<tr class="even">
+<td align="left">Stage 3</td>
+<td align="left">Outcome unblinding</td>
+<td align="left">TRUE</td>
+<td align="left">GO</td>
+<td align="left">Stages 2a/2b passed; unblinding outcome.</td>
+<td align="left">2026-04-01 14:08:24</td>
+</tr>
+<tr class="odd">
+<td align="left">Stage 3</td>
+<td align="left">ATE estimate</td>
+<td align="left">-0.05566 (95% CI: -0.11136, 0.00004)</td>
+<td align="left">NA</td>
+<td align="left"></td>
+<td align="left">2026-04-01 14:08:28</td>
+</tr>
+<tr class="even">
+<td align="left">Stage 3</td>
+<td align="left">Pipeline complete</td>
+<td align="left">TRUE</td>
+<td align="left">GO</td>
+<td align="left">Primary TMLE estimate produced.</td>
+<td align="left">2026-04-01 14:08:28</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="session-info" class="section level2">
+<h2>Session Info</h2>
+<div class="sourceCode" id="cb22"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" tabindex="-1"></a><span class="fu">sessionInfo</span>()</span>
+<span id="cb22-2"><a href="#cb22-2" tabindex="-1"></a><span class="co">#&gt; R version 4.4.2 (2024-10-31 ucrt)</span></span>
+<span id="cb22-3"><a href="#cb22-3" tabindex="-1"></a><span class="co">#&gt; Platform: x86_64-w64-mingw32/x64</span></span>
+<span id="cb22-4"><a href="#cb22-4" tabindex="-1"></a><span class="co">#&gt; Running under: Windows 11 x64 (build 26200)</span></span>
+<span id="cb22-5"><a href="#cb22-5" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb22-6"><a href="#cb22-6" tabindex="-1"></a><span class="co">#&gt; Matrix products: default</span></span>
+<span id="cb22-7"><a href="#cb22-7" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb22-8"><a href="#cb22-8" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb22-9"><a href="#cb22-9" tabindex="-1"></a><span class="co">#&gt; locale:</span></span>
+<span id="cb22-10"><a href="#cb22-10" tabindex="-1"></a><span class="co">#&gt; [1] LC_COLLATE=English_United States.utf8 </span></span>
+<span id="cb22-11"><a href="#cb22-11" tabindex="-1"></a><span class="co">#&gt; [2] LC_CTYPE=English_United States.utf8   </span></span>
+<span id="cb22-12"><a href="#cb22-12" tabindex="-1"></a><span class="co">#&gt; [3] LC_MONETARY=English_United States.utf8</span></span>
+<span id="cb22-13"><a href="#cb22-13" tabindex="-1"></a><span class="co">#&gt; [4] LC_NUMERIC=C                          </span></span>
+<span id="cb22-14"><a href="#cb22-14" tabindex="-1"></a><span class="co">#&gt; [5] LC_TIME=English_United States.utf8    </span></span>
+<span id="cb22-15"><a href="#cb22-15" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb22-16"><a href="#cb22-16" tabindex="-1"></a><span class="co">#&gt; time zone: America/Los_Angeles</span></span>
+<span id="cb22-17"><a href="#cb22-17" tabindex="-1"></a><span class="co">#&gt; tzcode source: internal</span></span>
+<span id="cb22-18"><a href="#cb22-18" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb22-19"><a href="#cb22-19" tabindex="-1"></a><span class="co">#&gt; attached base packages:</span></span>
+<span id="cb22-20"><a href="#cb22-20" tabindex="-1"></a><span class="co">#&gt; [1] stats     graphics  grDevices utils     datasets  methods   base     </span></span>
+<span id="cb22-21"><a href="#cb22-21" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb22-22"><a href="#cb22-22" tabindex="-1"></a><span class="co">#&gt; other attached packages:</span></span>
+<span id="cb22-23"><a href="#cb22-23" tabindex="-1"></a><span class="co">#&gt; [1] nnls_1.6        cleanTMLE_0.1.0</span></span>
+<span id="cb22-24"><a href="#cb22-24" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb22-25"><a href="#cb22-25" tabindex="-1"></a><span class="co">#&gt; loaded via a namespace (and not attached):</span></span>
+<span id="cb22-26"><a href="#cb22-26" tabindex="-1"></a><span class="co">#&gt;  [1] sandwich_3.1-1        sass_0.4.9            utf8_1.2.4           </span></span>
+<span id="cb22-27"><a href="#cb22-27" tabindex="-1"></a><span class="co">#&gt;  [4] generics_0.1.3        shape_1.4.6.1         lattice_0.22-6       </span></span>
+<span id="cb22-28"><a href="#cb22-28" tabindex="-1"></a><span class="co">#&gt;  [7] digest_0.6.37         magrittr_2.0.3        evaluate_1.0.5       </span></span>
+<span id="cb22-29"><a href="#cb22-29" tabindex="-1"></a><span class="co">#&gt; [10] grid_4.4.2            RColorBrewer_1.1-3    iterators_1.0.14     </span></span>
+<span id="cb22-30"><a href="#cb22-30" tabindex="-1"></a><span class="co">#&gt; [13] fastmap_1.2.0         foreach_1.5.2         jsonlite_2.0.0       </span></span>
+<span id="cb22-31"><a href="#cb22-31" tabindex="-1"></a><span class="co">#&gt; [16] Matrix_1.7-1          glmnet_4.1-8          survival_3.7-0       </span></span>
+<span id="cb22-32"><a href="#cb22-32" tabindex="-1"></a><span class="co">#&gt; [19] fansi_1.0.6           scales_1.4.0          codetools_0.2-20     </span></span>
+<span id="cb22-33"><a href="#cb22-33" tabindex="-1"></a><span class="co">#&gt; [22] jquerylib_0.1.4       cli_3.6.5             rlang_1.1.7          </span></span>
+<span id="cb22-34"><a href="#cb22-34" tabindex="-1"></a><span class="co">#&gt; [25] splines_4.4.2         withr_3.0.2           cachem_1.1.0         </span></span>
+<span id="cb22-35"><a href="#cb22-35" tabindex="-1"></a><span class="co">#&gt; [28] yaml_2.3.10           tools_4.4.2           dplyr_1.1.4          </span></span>
+<span id="cb22-36"><a href="#cb22-36" tabindex="-1"></a><span class="co">#&gt; [31] ggplot2_4.0.2         vctrs_0.7.1           R6_2.6.1             </span></span>
+<span id="cb22-37"><a href="#cb22-37" tabindex="-1"></a><span class="co">#&gt; [34] zoo_1.8-15            lifecycle_1.0.5       SuperLearner_2.0-29  </span></span>
+<span id="cb22-38"><a href="#cb22-38" tabindex="-1"></a><span class="co">#&gt; [37] pkgconfig_2.0.3       pillar_1.9.0          bslib_0.8.0          </span></span>
+<span id="cb22-39"><a href="#cb22-39" tabindex="-1"></a><span class="co">#&gt; [40] gtable_0.3.6          tmle_2.0.1.1          glue_1.8.0           </span></span>
+<span id="cb22-40"><a href="#cb22-40" tabindex="-1"></a><span class="co">#&gt; [43] Rcpp_1.0.13-1         xfun_0.49             tibble_3.2.1         </span></span>
+<span id="cb22-41"><a href="#cb22-41" tabindex="-1"></a><span class="co">#&gt; [46] tidyselect_1.2.1      knitr_1.49            farver_2.1.2         </span></span>
+<span id="cb22-42"><a href="#cb22-42" tabindex="-1"></a><span class="co">#&gt; [49] htmltools_0.5.8.1     labeling_0.4.3        rmarkdown_2.29       </span></span>
+<span id="cb22-43"><a href="#cb22-43" tabindex="-1"></a><span class="co">#&gt; [52] gam_1.22-5            compiler_4.4.2        S7_0.2.1             </span></span>
+<span id="cb22-44"><a href="#cb22-44" tabindex="-1"></a><span class="co">#&gt; [55] WeightedROC_2020.1.31</span></span></code></pre></div>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

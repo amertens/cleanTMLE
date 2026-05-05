@@ -2,10 +2,12 @@
 % Please edit documentation in R/plasmode_dq.R
 \name{plasmode_dq}
 \alias{plasmode_dq}
-\title{Data Quality Stress Testing via Plasmode Simulation}
+\title{Data-Quality Stress Testing via Plasmode Simulation}
 \description{
-Extends the plasmode feasibility framework to evaluate TMLE candidate
-robustness under controlled data quality degradations: covariate
-missingness, treatment misclassification, outcome misclassification,
-and unmeasured confounding.
+Extends the plasmode feasibility framework to evaluate TMLE
+candidate robustness under controlled data-quality degradations:
+covariate missingness, treatment misclassification (with
+asymmetric sensitivity and specificity), outcome misclassification
+(optionally differential by treatment arm), and unmeasured
+confounding.
 }

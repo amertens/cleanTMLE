@@ -2,11 +2,35 @@
 % Please edit documentation in R/plasmode_dq.R
 \name{.degrade_outcome}
 \alias{.degrade_outcome}
-\title{Apply outcome misclassification}
+\title{Apply outcome misclassification, optionally differential by treatment arm.}
 \usage{
-.degrade_outcome(Y, sensitivity, specificity)
+.degrade_outcome(
+  Y,
+  sensitivity = NULL,
+  specificity = NULL,
+  A = NULL,
+  sens_a1 = NULL,
+  spec_a1 = NULL,
+  sens_a0 = NULL,
+  spec_a0 = NULL
+)
+}
+\arguments{
+\item{Y}{integer outcome vector.}
+
+\item{sensitivity}{marginal sensitivity (used if per-arm values are NULL).}
+
+\item{specificity}{marginal specificity.}
+
+\item{A}{optional treatment vector for per-arm differential
+misclassification.}
+
+\item{sens_a1, sens_a0, spec_a1, spec_a0}{optional per-arm overrides.}
 }
 \description{
-Apply outcome misclassification
+If \code{sens_a1}/\code{spec_a1} and \code{sens_a0}/\code{spec_a0} are
+supplied, sensitivity and specificity may differ between treatment arms,
+modelling differential outcome ascertainment. Otherwise the marginal
+(sens, spec) pair is applied to both arms.
 }
 \keyword{internal}
