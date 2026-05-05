@@ -11,6 +11,104 @@
 NULL
 
 
+#' Default DQ Stress Scenario Configurations
+#'
+#' Returns a recommended scenario list for [run_plasmode_dq_stress()],
+#' tunable by preset.  Saves the user from constructing the verbose
+#' nested list by hand for routine cases.
+#'
+#' @param preset Character; one of `"regulatory_standard"` (4 threats,
+#'   moderate severities; the default), `"exploratory"` (lighter, faster),
+#'   or `"stress"` (heavier severities).
+#' @return A named list suitable for the `data_quality_scenarios`
+#'   argument of [run_plasmode_dq_stress()].
+#' @examples
+#' default_dq_scenarios()
+#' default_dq_scenarios("exploratory")
+#' @export
+default_dq_scenarios <- function(preset = c("regulatory_standard",
+                                             "exploratory", "stress")) {
+  preset <- match.arg(preset)
+  switch(preset,
+    regulatory_standard = list(
+      covariate_missingness = list(fractions = c(0.05, 0.10, 0.20)),
+      treatment_misclass    = list(sensitivity = c(0.95, 0.90),
+                                   specificity = c(0.99, 0.95)),
+      outcome_misclass      = list(sensitivity = c(0.95, 0.90),
+                                   specificity = c(0.99, 0.95)),
+      unmeasured_confounding = list(U_prevalence  = 0.20,
+                                    U_treatment_OR = c(1.5, 2.0),
+                                    U_outcome_OR   = c(1.5, 2.0))
+    ),
+    exploratory = list(
+      covariate_missingness = list(fractions = c(0.10)),
+      treatment_misclass    = list(sensitivity = 0.90, specificity = 0.95),
+      outcome_misclass      = list(sensitivity = 0.90, specificity = 0.95),
+      unmeasured_confounding = list(U_prevalence  = 0.20,
+                                    U_treatment_OR = 1.5,
+                                    U_outcome_OR   = 1.5)
+    ),
+    stress = list(
+      covariate_missingness = list(fractions = c(0.10, 0.20, 0.40)),
+      treatment_misclass    = list(sensitivity = c(0.90, 0.80),
+                                   specificity = c(0.95, 0.90)),
+      outcome_misclass      = list(sensitivity = c(0.90, 0.80),
+                                   specificity = c(0.95, 0.90)),
+      unmeasured_confounding = list(U_prevalence  = 0.20,
+                                    U_treatment_OR = c(2.0, 3.0),
+                                    U_outcome_OR   = c(2.0, 3.0))
+    )
+  )
+}
+
+
+#' Print the Active Locked TMLE Specification
+#'
+#' Prints (or returns invisibly) the locked primary TMLE specification
+#' carried on a `cleanroom_lock`: candidate id, label, g/Q libraries,
+#' truncation, plasmode RMSE that won the selection, and the lock hash.
+#' Useful for verifying that downstream estimator calls will pick up the
+#' right candidate.
+#'
+#' @param lock A `cleanroom_lock`.
+#' @return Invisibly returns the locked spec (or `NULL` if none).
+#' @examples
+#' \dontrun{
+#' print_locked_spec(lock)
+#' }
+#' @export
+print_locked_spec <- function(lock) {
+  if (!inherits(lock, "cleanroom_lock"))
+    stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
+  spec <- lock$primary_tmle_spec
+  if (is.null(spec)) {
+    cat("No primary TMLE specification locked. Use ",
+        "lock_primary_tmle_spec() after select_tmle_candidate().\n",
+        sep = "")
+    return(invisible(NULL))
+  }
+  cat("Locked Primary TMLE Specification\n")
+  cat("=================================\n")
+  cat(sprintf("Candidate ID:    %s\n", spec$candidate_id %||% NA))
+  cat(sprintf("Label:           %s\n", spec$label        %||% NA))
+  cat(sprintf("g-library:       %s\n",
+              paste(spec$g_library, collapse = ", ")))
+  cat(sprintf("Q-library:       %s\n",
+              paste(spec$q_library, collapse = ", ")))
+  cat(sprintf("Truncation:      %s\n", as.character(spec$truncation)))
+  if (!is.null(spec$selection_rule))
+    cat(sprintf("Selection rule:  %s\n", spec$selection_rule))
+  if (!is.null(spec$metrics) && is.data.frame(spec$metrics)) {
+    if ("rmse" %in% names(spec$metrics))
+      cat(sprintf("Plasmode RMSE:   %.5f\n", spec$metrics$rmse[1]))
+    if ("coverage" %in% names(spec$metrics))
+      cat(sprintf("Plasmode cov:    %.3f\n", spec$metrics$coverage[1]))
+  }
+  cat(sprintf("Lock hash:       %s\n", lock$lock_hash %||% NA))
+  invisible(spec)
+}
+
+
 # ── Internal: Single-Rep TMLE Fit ────────────────────────────────────────
 
 #' Fit one plasmode replicate for a single TMLE candidate
@@ -331,12 +429,39 @@ run_plasmode_dq_stress <- function(lock,
   A          <- data[[treatment]]
   n          <- nrow(data)
 
+  # Guard against locks where the outcome column is fully NA (e.g. a lock
+  # that has been mask_outcome()'d). The Q0 fit needs the real outcome.
+  y_all <- data[[outcome]]
+  n_obs_y <- sum(!is.na(y_all))
+  if (n_obs_y == 0L) {
+    stop("Q0 model cannot be fit: lock$data[[lock$outcome]] has zero ",
+         "non-NA observations. If the outcome is masked, call ",
+         "unmask_outcome() before run_plasmode_dq_stress(); plasmode ",
+         "uses the marginal Y|W distribution but does not look at the ",
+         "treatment-outcome association.", call. = FALSE)
+  }
+  if (n_obs_y < length(covariates) + 1L) {
+    stop("Q0 model cannot be fit: only ", n_obs_y, " non-NA outcome ",
+         "rows available for ", length(covariates), " covariates. ",
+         "Drop covariates or check the cohort filter.", call. = FALSE)
+  }
+
   # Baseline outcome model for plasmode DGP (Q0; outcome-blind in the sense
   # that the treatment-outcome association is not used here -- this is the
-  # covariate-only mean of Y).
+  # covariate-only mean of Y). Fit on complete cases and predict for ALL
+  # rows so the resulting probability vector has length n. Without
+  # newdata = data, predict.glm() returns predictions only for the rows
+  # used in fitting (which fails downstream when Y has NAs).
   Q0_fml <- stats::reformulate(covariates, response = outcome)
-  Q0_fit <- stats::glm(Q0_fml, data = data, family = stats::binomial())
-  p_base <- as.numeric(stats::predict(Q0_fit, type = "response"))
+  Q0_fit <- stats::glm(Q0_fml, data = data, family = stats::binomial(),
+                       na.action = stats::na.exclude)
+  p_base <- as.numeric(stats::predict(Q0_fit, newdata = data,
+                                       type = "response"))
+  if (length(p_base) != n) {
+    stop("Internal error in plasmode Q0 fit: predicted vector length (",
+         length(p_base), ") does not match data rows (", n, ").",
+         call. = FALSE)
+  }
   if (any(is.na(p_base))) p_base[is.na(p_base)] <- mean(p_base, na.rm = TRUE)
   p_base <- pmin(pmax(p_base, 0.001), 0.999)
 
@@ -646,6 +771,52 @@ print.plasmode_dq_results <- function(x, ...) {
     cat("\n")
   }
   invisible(x)
+}
+
+
+#' @export
+plot.plasmode_dq_results <- function(x, metric = c("rmse", "bias", "coverage"),
+                                     ...) {
+  metric <- match.arg(metric)
+  if (!requireNamespace("ggplot2", quietly = TRUE))
+    stop("ggplot2 is required for plot.plasmode_dq_results().", call. = FALSE)
+
+  m <- x$metrics
+  m <- m[m$scenario != "none", , drop = FALSE]
+  if (nrow(m) == 0L) {
+    message("No degraded-scenario rows to plot.")
+    return(invisible(NULL))
+  }
+
+  m$y <- switch(metric,
+                rmse     = m$rmse,
+                bias     = abs(m$bias),
+                coverage = m$coverage)
+
+  ylab_text <- switch(metric,
+                      rmse     = "RMSE",
+                      bias     = "|Bias|",
+                      coverage = "Coverage")
+
+  p <- ggplot2::ggplot(m, ggplot2::aes_string(x = "level", y = "y",
+                                                colour = "candidate",
+                                                group = "candidate")) +
+    ggplot2::geom_point(size = 2.2) +
+    ggplot2::geom_line(linewidth = 0.7) +
+    ggplot2::facet_wrap(~ scenario, scales = "free_x") +
+    ggplot2::labs(x = "DQ severity level", y = ylab_text,
+                  title = sprintf("Degradation gradient (%s)", metric),
+                  colour = "Candidate") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 30, hjust = 1,
+                                                         size = 8))
+
+  if (metric == "coverage") {
+    p <- p + ggplot2::geom_hline(yintercept = 0.95, linetype = "dashed",
+                                  colour = "red")
+  }
+
+  p
 }
 
 

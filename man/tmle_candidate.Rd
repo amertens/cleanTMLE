@@ -9,7 +9,8 @@ tmle_candidate(
   label = candidate_id,
   g_library = c("SL.glm"),
   q_library = NULL,
-  truncation = 0.01
+  truncation = 0.01,
+  ...
 )
 }
 \arguments{

@@ -984,23 +984,36 @@ estimate_design_precision <- function(lock, target_mdd = NULL) {
   data      <- lock$data
   A         <- data[[lock$treatment]]
   Y         <- data[[lock$outcome]]
-  n_total   <- nrow(data)
-  n_treated <- sum(A == 1L)
-  n_control <- sum(A == 0L)
 
-  events_treated <- sum(Y[A == 1L])
-  events_control <- sum(Y[A == 0L])
+  if (isTRUE(lock$.outcome_masked) || all(is.na(Y))) {
+    stop("estimate_design_precision() requires the outcome column to be ",
+         "available. The lock is masked or the outcome is all NA. Call ",
+         "this on the un-masked lock (before mask_outcome()) or call ",
+         "unmask_outcome() first.", call. = FALSE)
+  }
+
+  n_total   <- nrow(data)
+  n_treated <- sum(A == 1L, na.rm = TRUE)
+  n_control <- sum(A == 0L, na.rm = TRUE)
+
+  events_treated <- sum(Y[A == 1L], na.rm = TRUE)
+  events_control <- sum(Y[A == 0L], na.rm = TRUE)
   events_total   <- events_treated + events_control
 
-  rate_treated <- events_treated / n_treated
-  rate_control <- events_control / n_control
+  n_treated_y <- sum(A == 1L & !is.na(Y))
+  n_control_y <- sum(A == 0L & !is.na(Y))
+  rate_treated <- if (n_treated_y > 0) events_treated / n_treated_y else NA_real_
+  rate_control <- if (n_control_y > 0) events_control / n_control_y else NA_real_
   crude_rates  <- c(treated = rate_treated, control = rate_control)
 
   events_per_arm <- c(treated = events_treated, control = events_control)
 
-  prevalence  <- events_total / n_total
+  prevalence  <- if ((n_treated_y + n_control_y) > 0)
+                   events_total / (n_treated_y + n_control_y) else NA_real_
   p           <- prevalence
-  se_proxy    <- sqrt(p * (1 - p) * (1 / n_treated + 1 / n_control))
+  se_proxy    <- if (!is.na(p) && n_treated > 0 && n_control > 0)
+                   sqrt(p * (1 - p) * (1 / n_treated + 1 / n_control))
+                 else NA_real_
   ci_halfwidth <- 1.96 * se_proxy
   mdd_80       <- 2.8  * se_proxy
 
@@ -1088,15 +1101,31 @@ summarize_event_support <- function(lock) {
   A    <- data[[lock$treatment]]
   Y    <- data[[lock$outcome]]
 
-  n1 <- sum(A == 1L);  e1 <- sum(Y[A == 1L])
-  n0 <- sum(A == 0L);  e0 <- sum(Y[A == 0L])
-  nt <- length(A);     et <- e1 + e0
+  if (isTRUE(lock$.outcome_masked) || all(is.na(Y))) {
+    stop("summarize_event_support() requires the outcome column to be ",
+         "available. The lock is masked or the outcome is all NA.",
+         call. = FALSE)
+  }
+
+  # Use treatment_strategies labels from the estimand if attached.
+  strat <- lock$estimand$treatment_strategies
+  treated_lbl <- if (!is.null(strat) && length(strat) >= 1) strat[1] else "Treated"
+  control_lbl <- if (!is.null(strat) && length(strat) >= 2) strat[2] else "Control"
+
+  n1 <- sum(A == 1L, na.rm = TRUE)
+  n0 <- sum(A == 0L, na.rm = TRUE)
+  e1 <- sum(Y[A == 1L], na.rm = TRUE)
+  e0 <- sum(Y[A == 0L], na.rm = TRUE)
+  nt <- n1 + n0
+  et <- e1 + e0
 
   out <- data.frame(
-    arm        = c("Treated", "Control", "Total"),
+    arm        = c(treated_lbl, control_lbl, "Total"),
     n          = c(n1, n0, nt),
     events     = c(e1, e0, et),
-    event_rate = round(c(e1 / n1, e0 / n0, et / nt), 4),
+    event_rate = round(c(if (n1 > 0) e1 / n1 else NA_real_,
+                         if (n0 > 0) e0 / n0 else NA_real_,
+                         if (nt > 0) et / nt else NA_real_), 4),
     stringsAsFactors = FALSE
   )
 
@@ -1171,28 +1200,67 @@ run_residual_confounding_stage <- function(lock,
            call. = FALSE)
   }
 
-  nc_results <- lapply(variables, function(v) {
-    run_negative_control(lock, v, ps_fit)
+  # Each NC fit can fail (e.g. degenerate column, all-NA, separation). We
+  # capture failures explicitly rather than dropping silently: failed NCs
+  # are surfaced in the summary_table with `failed = TRUE` and `flagged =
+  # NA`, and the failures field is returned for inclusion in the audit log
+  # so the gate decision can see partial NC coverage.
+  nc_attempts <- lapply(variables, function(v) {
+    tryCatch(list(ok = TRUE, value = run_negative_control(lock, v, ps_fit)),
+             error = function(e) list(ok = FALSE, value = NULL,
+                                       error = conditionMessage(e),
+                                       variable = v))
   })
-  names(nc_results) <- variables
+  names(nc_attempts) <- variables
 
-  # Build summary table
-  summary_table <- do.call(rbind, lapply(nc_results, function(nc) {
-    flagged <- nc$p_value < alpha || abs(nc$estimate) > max_abs_estimate
-    data.frame(
-      variable         = nc$variable,
-      estimate         = round(nc$estimate, 5),
-      se               = round(nc$se,       5),
-      p_value          = round(nc$p_value,  4),
-      flagged          = flagged,
-      stringsAsFactors = FALSE
-    )
-  }))
+  ok_idx <- vapply(nc_attempts, function(x) isTRUE(x$ok), logical(1))
+  nc_results <- lapply(nc_attempts[ok_idx], `[[`, "value")
+  failures   <- nc_attempts[!ok_idx]
+
+  if (length(failures) > 0L) {
+    warning("run_residual_confounding_stage: ", length(failures),
+            " of ", length(variables),
+            " negative-control fits failed: ",
+            paste(sprintf("%s (%s)", names(failures),
+                          vapply(failures, function(x) x$error, character(1))),
+                  collapse = "; "),
+            call. = FALSE)
+  }
+
+  ok_rows <- if (length(nc_results) > 0L) {
+    do.call(rbind, lapply(nc_results, function(nc) {
+      flagged <- nc$p_value < alpha || abs(nc$estimate) > max_abs_estimate
+      data.frame(
+        variable = nc$variable,
+        estimate = round(nc$estimate, 5),
+        se       = round(nc$se,       5),
+        p_value  = round(nc$p_value,  4),
+        flagged  = flagged,
+        failed   = FALSE,
+        error    = NA_character_,
+        stringsAsFactors = FALSE
+      )
+    }))
+  } else NULL
+
+  fail_rows <- if (length(failures) > 0L) {
+    do.call(rbind, lapply(failures, function(f) {
+      data.frame(
+        variable = f$variable,
+        estimate = NA_real_, se = NA_real_, p_value = NA_real_,
+        flagged  = NA, failed = TRUE, error = f$error,
+        stringsAsFactors = FALSE
+      )
+    }))
+  } else NULL
+
+  summary_table <- rbind(ok_rows, fail_rows)
   rownames(summary_table) <- NULL
 
-  n_controls         <- length(nc_results)
-  n_flagged          <- sum(summary_table$flagged)
-  proportion_flagged <- n_flagged / n_controls
+  n_controls         <- length(variables)
+  n_failed           <- length(failures)
+  n_flagged          <- if (!is.null(ok_rows)) sum(ok_rows$flagged) else 0L
+  proportion_flagged <- n_flagged / max(1L, n_controls - n_failed)
 
   checkpoint <- checkpoint_residual_bias(
     nc_results,
@@ -1207,6 +1275,8 @@ run_residual_confounding_stage <- function(lock,
     checkpoint         = checkpoint,
     n_controls         = n_controls,
     n_flagged          = n_flagged,
+    n_failed           = n_failed,
+    failures           = failures,
     proportion_flagged = proportion_flagged
   )
   class(result) <- "residual_confounding_stage"
@@ -1269,10 +1339,38 @@ print.residual_confounding_stage <- function(x, ...) {
 #' print(gate)
 #'
 #' @export
-authorize_outcome_analysis <- function(audit,
+authorize_outcome_analysis <- function(audit = NULL,
                                        required_stages = NULL,
                                        allow_flag      = TRUE,
-                                       lock_hash       = NULL) {
+                                       lock_hash       = NULL,
+                                       checkpoints     = NULL) {
+  # Polymorphic: accept either an audit, a list of checkpoints, or both.
+  # When both are supplied, the union of evidence is used (audit entries
+  # plus the explicit checkpoints).
+  synth_audit <- function(cps) {
+    a <- structure(list(
+      lock_hash = if (is.null(lock_hash)) NA_character_ else lock_hash,
+      created   = Sys.time(),
+      entries   = list()
+    ), class = "cleantmle_audit")
+    for (cp in cps) {
+      if (inherits(cp, "cleantmle_checkpoint")) a <- record_checkpoint(a, cp)
+    }
+    a
+  }
+  if (is.null(audit)) {
+    if (is.null(checkpoints))
+      stop("Provide either `audit` or `checkpoints`.", call. = FALSE)
+    if (inherits(checkpoints, "cleantmle_checkpoint"))
+      checkpoints <- list(checkpoints)
+    audit <- synth_audit(checkpoints)
+  } else if (!is.null(checkpoints)) {
+    if (inherits(checkpoints, "cleantmle_checkpoint"))
+      checkpoints <- list(checkpoints)
+    for (cp in checkpoints) {
+      if (inherits(cp, "cleantmle_checkpoint")) audit <- record_checkpoint(audit, cp)
+    }
+  }
   if (!inherits(audit, "cleantmle_audit"))
     stop("`audit` must be a cleantmle_audit object.", call. = FALSE)
 

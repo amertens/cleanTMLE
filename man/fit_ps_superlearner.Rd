@@ -4,7 +4,7 @@
 \alias{fit_ps_superlearner}
 \title{Fit Propensity Score Using SuperLearner}
 \usage{
-fit_ps_superlearner(lock, ...)
+fit_ps_superlearner(lock, truncate = 0.01, cv_folds = 10L, cluster = NULL, ...)
 }
 \arguments{
 \item{lock}{A \code{cleanroom_lock} from \code{\link[=create_analysis_lock]{create_analysis_lock()}}.}

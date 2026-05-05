@@ -168,14 +168,22 @@ plot.cumrisk <- function(x, effect = c("risk", "RD", "RR"), ...) {
 #'
 #' @export
 forest_plot <- function(x, ...) {
-  if (!inherits(x, "hr")) {
-    stop("`x` must be an hr object.", call. = FALSE)
-  }
+  # Dispatch:
+  #  - hr object: hazard-ratio forest (legacy behaviour)
+  #  - list/data.frame of TMLE/IPTW/match/crude results: comparison forest
+  if (inherits(x, "hr")) return(.forest_plot_hr(x))
+  if (is.data.frame(x)) return(.forest_plot_df(x, ...))
+  if (is.list(x)) return(.forest_plot_results_list(x, ...))
+  stop("forest_plot(): unsupported input type. Pass an `hr` object, a ",
+       "summarize_cleanroom_results()-style data.frame, or a list of ",
+       "fitted workflow objects.", call. = FALSE)
+}
 
+.forest_plot_hr <- function(x) {
   ht <- x$hr_table
   ht$term <- factor(ht$term, levels = rev(ht$term))
 
-  p <- ggplot2::ggplot(ht, ggplot2::aes(
+  ggplot2::ggplot(ht, ggplot2::aes(
     y = .data$term, x = .data$hr,
     xmin = .data$ci_lower, xmax = .data$ci_upper
   )) +
@@ -189,8 +197,52 @@ forest_plot <- function(x, ...) {
       axis.text.y = ggplot2::element_text(size = 11),
       plot.title = ggplot2::element_text(face = "bold")
     )
+}
 
-  p
+.forest_plot_results_list <- function(fits, ...) {
+  if (length(fits) == 0L) stop("Empty fits list.", call. = FALSE)
+  df <- summarize_cleanroom_results(fits)
+  .forest_plot_df(df, ...)
+}
+
+.forest_plot_df <- function(df, x_lab = "Risk Difference (95% CI)",
+                            null_value = 0, ...) {
+  needed <- c("method", "estimate", "ci_lower", "ci_upper")
+  miss   <- setdiff(needed, names(df))
+  if (length(miss) > 0L)
+    stop("forest_plot(): data.frame missing columns: ",
+         paste(miss, collapse = ", "), call. = FALSE)
+
+  # Default ordering: TMLE -> IPTW -> Match -> Crude (most-to-least efficient).
+  # Anything else lands at the bottom in input order.
+  preferred <- c("TMLE", "IPTW", "PS Match", "Match", "AIPW", "G-comp",
+                  "Crude")
+  ordered_idx <- order(match(df$method,
+                              c(preferred, setdiff(df$method, preferred)),
+                              nomatch = .Machine$integer.max))
+  df <- df[ordered_idx, , drop = FALSE]
+  df$method <- factor(df$method, levels = rev(df$method))
+
+  highlight <- as.character(df$method) == "TMLE"
+
+  ggplot2::ggplot(df, ggplot2::aes(
+      y = .data$method, x = .data$estimate,
+      xmin = .data$ci_lower, xmax = .data$ci_upper)) +
+    ggplot2::geom_rect(data = df[highlight, , drop = FALSE],
+                       inherit.aes = FALSE,
+                       ggplot2::aes(ymin = as.numeric(.data$method) - 0.45,
+                                     ymax = as.numeric(.data$method) + 0.45,
+                                     xmin = -Inf, xmax = Inf),
+                       fill = "grey92") +
+    ggplot2::geom_point(size = 3) +
+    ggplot2::geom_errorbarh(height = 0.2) +
+    ggplot2::geom_vline(xintercept = null_value, linetype = "dashed",
+                         colour = "grey50") +
+    ggplot2::labs(x = x_lab, y = "",
+                  title = "Forest plot of estimator comparison") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(axis.text.y = ggplot2::element_text(size = 11),
+                    plot.title = ggplot2::element_text(face = "bold"))
 }
 
 

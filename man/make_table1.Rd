@@ -2,11 +2,14 @@
 % Please edit documentation in R/tables.R
 \name{make_table1}
 \alias{make_table1}
+\alias{make_table1.cleanroom_lock}
 \alias{make_table1.default}
 \alias{make_table1.cumrisk}
 \title{Create Table 1: Baseline Characteristics by Group}
 \usage{
 make_table1(x, ...)
+
+\method{make_table1}{cleanroom_lock}(x, vars = NULL, by = NULL, weighted = FALSE, smd = TRUE, ...)
 
 \method{make_table1}{default}(x, vars = NULL, by = NULL, weighted = FALSE, smd = TRUE, ...)
 

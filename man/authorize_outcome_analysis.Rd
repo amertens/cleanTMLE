@@ -5,10 +5,11 @@
 \title{Authorise Outcome Analysis}
 \usage{
 authorize_outcome_analysis(
-  audit,
+  audit = NULL,
   required_stages = NULL,
   allow_flag = TRUE,
-  lock_hash = NULL
+  lock_hash = NULL,
+  checkpoints = NULL
 )
 }
 \arguments{

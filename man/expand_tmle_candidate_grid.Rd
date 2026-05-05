@@ -6,7 +6,8 @@
 \usage{
 expand_tmle_candidate_grid(
   truncations = c(0.01, 0.05),
-  libraries = list(glm = c("SL.glm"), glm_mean = c("SL.glm", "SL.mean"))
+  libraries = list(glm = c("SL.glm"), glm_mean = c("SL.glm", "SL.mean")),
+  ...
 )
 }
 \arguments{

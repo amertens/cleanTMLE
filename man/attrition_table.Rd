@@ -4,7 +4,7 @@
 \alias{attrition_table}
 \title{Generate a Cohort Attrition Table}
 \usage{
-attrition_table(data, criteria, label = "Cohort")
+attrition_table(data, criteria = NULL, label = "Cohort")
 }
 \arguments{
 \item{data}{A data.frame (the full source population).}

@@ -4,7 +4,16 @@
 \alias{gate_check}
 \title{Evaluate a Plasmode-Simulation Gate (GO / FLAG / STOP)}
 \usage{
-gate_check(metrics, scenario_name, targets, method = "TMLE")
+gate_check(
+  metrics,
+  scenario_name = "plasmode",
+  targets = NULL,
+  method = "TMLE",
+  rmse_threshold = NULL,
+  coverage_threshold = NULL,
+  max_abs_bias = NULL,
+  se_sd_window = c(0.8, 1.2)
+)
 }
 \arguments{
 \item{metrics}{A data.frame with at least columns \code{bias}, \code{coverage},

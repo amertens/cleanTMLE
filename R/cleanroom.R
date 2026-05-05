@@ -301,7 +301,10 @@ print.cleanroom_lock <- function(x, ...) {
 #' }
 #'
 #' @export
-fit_ps_superlearner <- function(lock, ...) {
+fit_ps_superlearner <- function(lock, truncate = 0.01,
+                                 cv_folds = 10L,
+                                 cluster = NULL,
+                                 ...) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
   if (!requireNamespace("SuperLearner", quietly = TRUE))
@@ -312,17 +315,47 @@ fit_ps_superlearner <- function(lock, ...) {
   A    <- data[[lock$treatment]]
   W    <- data[, lock$covariates, drop = FALSE]
 
-  set.seed(lock$seed)
-  sl_fit <- SuperLearner::SuperLearner(
+  # Default to sequential evaluation. The "invalid connection" error
+  # observed in 0.1.0 came from a stale snow/foreach backend registered in
+  # the user's session, not from SuperLearner itself; we therefore use the
+  # plain SuperLearner() entry point unless the caller passes an explicit
+  # cluster. With cluster supplied, dispatch to snowSuperLearner().
+  sl_args <- list(
     Y          = A,
     X          = W,
     family     = binomial(),
     SL.library = lock$sl_library,
     env        = asNamespace("SuperLearner"),
-    ...
+    cvControl  = list(V = cv_folds)
   )
 
+  extra_args <- list(...)
+  sl_args[names(extra_args)] <- extra_args
+
+  set.seed(lock$seed)
+  sl_fit <- tryCatch({
+    if (!is.null(cluster)) {
+      sl_args$cluster <- cluster
+      do.call(SuperLearner::snowSuperLearner, sl_args)
+    } else {
+      do.call(SuperLearner::SuperLearner, sl_args)
+    }
+  }, error = function(e) {
+    stop("fit_ps_superlearner: SuperLearner failed (", e$message,
+         "). If the error mentions 'invalid connection', a stale ",
+         "parallel cluster is registered in the session; restart R.",
+         call. = FALSE)
+  })
+
   ps <- as.numeric(sl_fit$SL.predict)
+
+  # Truncate to [truncate, 1 - truncate] to bound subsequent IPW weights.
+  if (!is.null(truncate)) {
+    if (!is.numeric(truncate) || length(truncate) != 1L ||
+        truncate <= 0 || truncate >= 0.5)
+      stop("`truncate` must be a single numeric in (0, 0.5).", call. = FALSE)
+    ps <- pmin(pmax(ps, truncate), 1 - truncate)
+  }
 
   result <- list(
     ps         = ps,
@@ -331,6 +364,9 @@ fit_ps_superlearner <- function(lock, ...) {
     covariates = lock$covariates,
     data       = data,
     sl_library = lock$sl_library,
+    truncate   = truncate,
+    cv_folds   = cv_folds,
+    method     = "superlearner",
     call       = match.call()
   )
   class(result) <- c("ps_fit", "cr_result")
@@ -573,9 +609,25 @@ plot.ps_diagnostics <- function(x, ...) {
 tmle_candidate <- function(candidate_id, label = candidate_id,
                            g_library  = c("SL.glm"),
                            q_library  = NULL,
-                           truncation = 0.01) {
+                           truncation = 0.01,
+                           ...) {
   if (!is.character(candidate_id) || length(candidate_id) != 1L)
     stop("`candidate_id` must be a single character string.", call. = FALSE)
+
+  # Accept Q_library / Q_libraries as deprecated capital-Q aliases for
+  # q_library to match the older vignette spelling.
+  dots <- list(...)
+  alt_q <- intersect(names(dots), c("Q_library", "Q_libraries", "q_libraries"))
+  if (length(alt_q) > 0L) {
+    if (is.null(q_library)) q_library <- dots[[alt_q[1]]]
+    warning("tmle_candidate(): argument `", alt_q[1],
+            "` is deprecated; use `q_library` instead.", call. = FALSE)
+    dots[alt_q] <- NULL
+  }
+  if (length(dots) > 0L)
+    stop("Unused arguments: ", paste(names(dots), collapse = ", "),
+         call. = FALSE)
+
   if (is.null(q_library)) q_library <- g_library
 
   obj <- list(
@@ -654,7 +706,35 @@ expand_tmle_candidate_grid <- function(
     libraries   = list(
       glm      = c("SL.glm"),
       glm_mean = c("SL.glm", "SL.mean")
-    )) {
+    ),
+    ...) {
+
+  # Back-compat: accept g_libraries / Q_libraries from the older docs and
+  # treat them as a paired enumeration when both are supplied.
+  dots <- list(...)
+  if (length(dots) > 0L) {
+    if (!is.null(dots$g_libraries) && !is.null(dots$Q_libraries)) {
+      warning("expand_tmle_candidate_grid(): `g_libraries`/`Q_libraries` ",
+              "are deprecated; use a single `libraries` list (g and Q ",
+              "share the library by default).", call. = FALSE)
+      g_libs <- dots$g_libraries; q_libs <- dots$Q_libraries
+      candidates <- list()
+      for (i in seq_along(g_libs)) {
+        for (trunc in truncations) {
+          cand_id <- sprintf("tmle_lib%d_t%g", i, trunc)
+          candidates[[cand_id]] <- tmle_candidate(
+            candidate_id = cand_id, label = cand_id,
+            g_library = g_libs[[i]], q_library = q_libs[[i]],
+            truncation = trunc)
+        }
+      }
+      return(candidates)
+    }
+    extra <- setdiff(names(dots), c("g_libraries", "Q_libraries"))
+    if (length(extra) > 0L)
+      stop("Unused arguments: ", paste(extra, collapse = ", "),
+           call. = FALSE)
+  }
 
   candidates <- list()
   for (lib_name in names(libraries)) {
@@ -742,11 +822,25 @@ run_plasmode_feasibility <- function(lock,
   Y <- data[[outcome]]
   n <- nrow(data)
 
+  n_obs_y <- sum(!is.na(Y))
+  if (n_obs_y == 0L) {
+    stop("Q0 model cannot be fit: lock$data[[lock$outcome]] has zero ",
+         "non-NA observations. If the outcome is masked, call ",
+         "unmask_outcome() before run_plasmode_feasibility().",
+         call. = FALSE)
+  }
+  if (n_obs_y < length(covariates) + 1L) {
+    stop("Q0 model cannot be fit: only ", n_obs_y, " non-NA outcome ",
+         "rows available for ", length(covariates), " covariates.",
+         call. = FALSE)
+  }
+
   # Fit baseline outcome model (covariates only; outcome-blind in the
   # sense that the treatment--outcome association is not used)
   # Use complete cases for GLM fitting, then predict for all rows
   Q0_fml <- stats::reformulate(covariates, response = outcome)
-  Q0_fit <- stats::glm(Q0_fml, data = data, family = stats::binomial())
+  Q0_fit <- stats::glm(Q0_fml, data = data, family = stats::binomial(),
+                       na.action = stats::na.exclude)
   p_base <- as.numeric(stats::predict(Q0_fit, type = "response",
                                        newdata = data))
   # Handle NAs from quasi-separation or missing covariate values
@@ -1256,29 +1350,45 @@ run_iptw_workflow <- function(lock, ps_fit, trim = NULL,
   ps        <- ps_fit$ps
   n         <- nrow(data)
 
+  # Outcome NA handling (complete-case IPTW; warn; recommend IPCW for MAR)
+  na_y <- is.na(Y)
+  if (any(na_y)) {
+    warning("run_iptw_workflow: ", sum(na_y), " of ", n,
+            " outcome rows are NA; computing complete-case IPTW. ",
+            "Inference is valid under MCAR only -- consider IPCW for MAR.",
+            call. = FALSE)
+  }
+  keep <- !na_y
+  A_k  <- A[keep]; Y_k <- Y[keep]; ps_k <- ps[keep]
+  n_eff <- sum(keep)
+
   # Stabilized IPTW weights
-  p_trt <- mean(A)
-  w     <- ifelse(A == 1, p_trt / ps, (1 - p_trt) / (1 - ps))
+  p_trt <- mean(A_k)
+  w     <- ifelse(A_k == 1, p_trt / ps_k, (1 - p_trt) / (1 - ps_k))
 
   if (!is.null(trim)) {
-    lo <- quantile(w, trim)
-    hi <- quantile(w, 1 - trim)
+    lo <- stats::quantile(w, trim)
+    hi <- stats::quantile(w, 1 - trim)
     w  <- pmin(pmax(w, lo), hi)
   }
 
   # Hajek estimator
-  r1 <- weighted.mean(Y[A == 1], w[A == 1])
-  r0 <- weighted.mean(Y[A == 0], w[A == 0])
+  r1 <- stats::weighted.mean(Y_k[A_k == 1], w[A_k == 1])
+  r0 <- stats::weighted.mean(Y_k[A_k == 0], w[A_k == 0])
   rd <- r1 - r0
 
   # Linearized variance for Hajek estimator
-  se_sq_1 <- sum(w[A == 1]^2 * (Y[A == 1] - r1)^2) / sum(w[A == 1])^2
-  se_sq_0 <- sum(w[A == 0]^2 * (Y[A == 0] - r0)^2) / sum(w[A == 0])^2
+  se_sq_1 <- sum(w[A_k == 1]^2 * (Y_k[A_k == 1] - r1)^2) / sum(w[A_k == 1])^2
+  se_sq_0 <- sum(w[A_k == 0]^2 * (Y_k[A_k == 0] - r0)^2) / sum(w[A_k == 0])^2
   se      <- sqrt(se_sq_1 + se_sq_0)
 
   ci_lo <- rd - 1.96 * se
   ci_hi <- rd + 1.96 * se
-  p_val <- 2 * pnorm(-abs(rd / se))
+  p_val <- 2 * stats::pnorm(-abs(rd / se))
+
+  # Re-pad weights to length n with NA at NA-Y rows for downstream alignment
+  w_full <- rep(NA_real_, n)
+  w_full[keep] <- w
 
   result <- list(
     estimate  = rd,
@@ -1288,9 +1398,10 @@ run_iptw_workflow <- function(lock, ps_fit, trim = NULL,
     p_value   = p_val,
     r1        = r1,
     r0        = r0,
-    weights   = w,
+    weights   = w_full,
     ps        = ps,
     n         = n,
+    n_effective = n_eff,
     treatment = treatment,
     outcome   = outcome,
     call      = match.call()
@@ -1477,6 +1588,24 @@ fit_tmle_outcome_mechanism <- function(lock, g_fit, sl_library = NULL,
   Y          <- data[[outcome]]
   n          <- nrow(data)
 
+  # Outcome NA handling: SuperLearner refuses Y with NAs, but real-world
+  # observational data routinely has missing outcomes (loss to follow-up).
+  # We fit Q on complete-outcome rows and predict for ALL rows so the
+  # downstream targeting step sees a length-n Q vector. Targeting itself
+  # uses Y which may have NAs; the fluctuation glm drops them via na.action.
+  # This is a complete-case Q fit and is unbiased only under MCAR; users
+  # who suspect MAR/MNAR should weight by an inverse-probability-of-
+  # censoring model (see vignette).
+  na_y <- is.na(Y)
+  n_na_y <- sum(na_y)
+  if (n_na_y > 0L) {
+    warning("fit_tmle_outcome_mechanism: ", n_na_y, " of ", n,
+            " outcome rows are NA; fitting Q on complete cases. ",
+            "Inference is valid under MCAR only -- consider IPCW for MAR.",
+            call. = FALSE)
+  }
+  fit_idx <- which(!na_y)
+
   # Inherit cross-fitting from g_fit if present
   use_cv   <- isTRUE(g_fit$cross_fitted)
   fold_vec <- g_fit$fold_vec
@@ -1491,7 +1620,8 @@ fit_tmle_outcome_mechanism <- function(lock, g_fit, sl_library = NULL,
 
     for (k in seq_len(K)) {
       val_idx   <- which(fold_vec == k)
-      train_idx <- which(fold_vec != k)
+      train_idx <- intersect(which(fold_vec != k), fit_idx)
+      if (length(train_idx) == 0L) next
 
       set.seed(lock$seed + 1L + k)
       Q_sl_k <- SuperLearner::SuperLearner(
@@ -1515,8 +1645,8 @@ fit_tmle_outcome_mechanism <- function(lock, g_fit, sl_library = NULL,
   } else if (requireNamespace("SuperLearner", quietly = TRUE)) {
     set.seed(lock$seed + 1L)
     Q_sl <- SuperLearner::SuperLearner(
-      Y          = Y,
-      X          = AW,
+      Y          = Y[fit_idx],
+      X          = AW[fit_idx, , drop = FALSE],
       family     = binomial(),
       SL.library = sl_library,
       env        = asNamespace("SuperLearner")
@@ -1525,16 +1655,17 @@ fit_tmle_outcome_mechanism <- function(lock, g_fit, sl_library = NULL,
     AW_a0   <- AW; AW_a0[[treatment]] <- 0L
     Q_a1    <- as.numeric(predict(Q_sl, newdata = AW_a1)$pred)
     Q_a0    <- as.numeric(predict(Q_sl, newdata = AW_a0)$pred)
-    Q_aw    <- as.numeric(Q_sl$SL.predict)
+    Q_aw    <- as.numeric(predict(Q_sl, newdata = AW)$pred)
     Q_fit_o <- Q_sl
   } else {
     Q_fml   <- stats::reformulate(c(treatment, covariates), response = outcome)
-    Q_glm   <- stats::glm(Q_fml, data = data, family = stats::binomial())
+    Q_glm   <- stats::glm(Q_fml, data = data, family = stats::binomial(),
+                          na.action = stats::na.exclude)
     da1     <- data; da1[[treatment]] <- 1L
     da0     <- data; da0[[treatment]] <- 0L
     Q_a1    <- as.numeric(stats::predict(Q_glm, newdata = da1, type = "response"))
     Q_a0    <- as.numeric(stats::predict(Q_glm, newdata = da0, type = "response"))
-    Q_aw    <- as.numeric(stats::predict(Q_glm, type = "response"))
+    Q_aw    <- as.numeric(stats::predict(Q_glm, newdata = data, type = "response"))
     Q_fit_o <- Q_glm
   }
 
@@ -1667,10 +1798,19 @@ extract_tmle_estimate <- function(tmle_upd) {
   eic <- tmle_upd$eic
   n   <- tmle_upd$n
 
-  se      <- sqrt(var(eic) / n)
+  # eic may contain NAs at rows with missing outcome (complete-case Q fit
+  # plus Y NA in the (Y - Q_aw_upd) term). Use the n_eff = sum(!is.na(eic))
+  # for the IF-based SE; this is the complete-case TMLE variance estimator.
+  eic_obs <- eic[!is.na(eic)]
+  n_eff   <- length(eic_obs)
+  if (n_eff < 2L) {
+    se      <- NA_real_
+  } else {
+    se      <- sqrt(stats::var(eic_obs) / n_eff)
+  }
   ci_lo   <- psi - 1.96 * se
   ci_hi   <- psi + 1.96 * se
-  p_value <- 2 * pnorm(-abs(psi / se))
+  p_value <- 2 * stats::pnorm(-abs(psi / se))
 
   result <- list(
     estimates = list(
@@ -1984,14 +2124,53 @@ fit_tmle_candidate_set <- function(lock, candidates = NULL, ps_fit = NULL,
 #' gate_check(metrics, "Example", targets, method = "glm_t01")
 #'
 #' @export
-gate_check <- function(metrics, scenario_name, targets,
-                       method = "TMLE") {
+gate_check <- function(metrics, scenario_name = "plasmode", targets = NULL,
+                       method = "TMLE",
+                       rmse_threshold = NULL,
+                       coverage_threshold = NULL,
+                       max_abs_bias = NULL,
+                       se_sd_window = c(0.8, 1.2)) {
+  # Ergonomic dispatch: accept a plasmode_results or plasmode_dq_results
+  # object directly. The DQ path checks every degraded scenario; the
+  # baseline-only path checks the "none" row(s).
+  if (inherits(metrics, "plasmode_results")) {
+    df <- metrics$metrics
+    metrics <- df
+  } else if (inherits(metrics, "plasmode_dq_results")) {
+    df <- metrics$metrics
+    df <- df[df$scenario == "none" | is.na(df$scenario), , drop = FALSE]
+    if (nrow(df) == 0L) df <- metrics$metrics
+    metrics <- df
+  }
+
   if (!is.data.frame(metrics))
-    stop("`metrics` must be a data.frame.", call. = FALSE)
+    stop("`metrics` must be a data.frame, plasmode_results, or ",
+         "plasmode_dq_results object.", call. = FALSE)
+
+  # Build targets from the ergonomic shorthand if not supplied.
+  if (is.null(targets)) {
+    targets <- list(
+      max_abs_bias = if (!is.null(max_abs_bias)) max_abs_bias else 0.01,
+      min_coverage = if (!is.null(coverage_threshold)) coverage_threshold
+                     else 0.90,
+      se_sd_low    = se_sd_window[1],
+      se_sd_high   = se_sd_window[2]
+    )
+    if (!is.null(rmse_threshold)) targets$max_rmse <- rmse_threshold
+  }
 
   # Support both new "candidate" column and legacy "method" column
   id_col <- if ("candidate" %in% names(metrics)) "candidate" else "method"
 
+  # If the requested method/candidate isn't present, fall back to the
+  # first row -- helpful when callers pass `method = "TMLE"` against a
+  # candidate-keyed metrics frame.
+  if (!method %in% metrics[[id_col]]) {
+    available <- unique(metrics[[id_col]])
+    warning("gate_check: '", method, "' not in metrics$", id_col,
+            "; using '", available[1], "'.", call. = FALSE)
+    method <- available[1]
+  }
   if (!method %in% metrics[[id_col]])
     stop("'", method, "' not found in metrics$", id_col, ".", call. = FALSE)
 
@@ -2002,6 +2181,8 @@ gate_check <- function(metrics, scenario_name, targets,
 
   bias_ok <- abs(row$bias) < targets$max_abs_bias
   cov_ok  <- row$coverage >= targets$min_coverage
+  rmse_ok <- if (!is.null(targets$max_rmse) && "rmse" %in% names(row))
+               row$rmse <= targets$max_rmse else TRUE
 
   se_sd_ratio <- if ("mean_se" %in% names(row) && "emp_sd" %in% names(row) &&
                       !is.na(row$emp_sd) && row$emp_sd > 0) {
@@ -2015,9 +2196,9 @@ gate_check <- function(metrics, scenario_name, targets,
     FALSE
   }
 
-  decision <- if (bias_ok && cov_ok && se_cal) {
+  decision <- if (bias_ok && cov_ok && rmse_ok && se_cal) {
     "GO"
-  } else if (bias_ok && cov_ok) {
+  } else if (bias_ok && cov_ok && rmse_ok) {
     "FLAG"
   } else {
     "STOP"
@@ -2028,9 +2209,11 @@ gate_check <- function(metrics, scenario_name, targets,
     method      = method,
     bias        = round(row$bias, 5),
     coverage    = round(row$coverage, 3),
+    rmse        = if ("rmse" %in% names(row)) round(row$rmse, 5) else NA_real_,
     se_sd_ratio = if (!is.na(se_sd_ratio)) round(se_sd_ratio, 3) else NA_real_,
     bias_ok     = bias_ok,
     cov_ok      = cov_ok,
+    rmse_ok     = rmse_ok,
     se_cal      = se_cal,
     decision    = decision,
     stringsAsFactors = FALSE

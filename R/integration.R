@@ -416,6 +416,19 @@ run_matched_tmle <- function(lock, ps_fit, subset_idx,
   covariates <- lock$covariates
   n          <- nrow(data_sub)
 
+  # Outcome NA handling: SL refuses NA in Y; fit Q on complete-Y rows of
+  # the matched subset, predict for all rows.
+  na_y <- is.na(Y)
+  if (any(na_y)) {
+    warning("run_matched_tmle: ", sum(na_y), " of ", n,
+            " matched-subset outcome rows are NA; fitting Q on complete ",
+            "cases. Inference is valid under MCAR only.", call. = FALSE)
+  }
+  fit_idx <- which(!na_y)
+  if (length(fit_idx) < length(covariates) + 2L)
+    stop("run_matched_tmle: too few non-NA outcome rows in matched ",
+         "subset (", length(fit_idx), ") to fit Q.", call. = FALSE)
+
   # Resolve truncation
   trunc <- if (!is.null(lock$primary_tmle_spec))
     lock$primary_tmle_spec$truncation else 0.01
@@ -428,25 +441,27 @@ run_matched_tmle <- function(lock, ps_fit, subset_idx,
     if (requireNamespace("SuperLearner", quietly = TRUE)) {
       set.seed(lock$seed + 2L)
       sl <- SuperLearner::SuperLearner(
-        Y = Y, X = AW, family = binomial(),
+        Y = Y[fit_idx], X = AW[fit_idx, , drop = FALSE], family = binomial(),
         SL.library = sl_library,
         env = asNamespace("SuperLearner")
       )
       AW_a1 <- AW; AW_a1[[lock$treatment]] <- 1L
       AW_a0 <- AW; AW_a0[[lock$treatment]] <- 0L
       list(
-        Q_aw = as.numeric(sl$SL.predict),
+        Q_aw = as.numeric(predict(sl, newdata = AW)$pred),
         Q_a1 = as.numeric(predict(sl, newdata = AW_a1)$pred),
         Q_a0 = as.numeric(predict(sl, newdata = AW_a0)$pred)
       )
     } else {
       fml <- stats::reformulate(c(lock$treatment, covariates),
                                 response = lock$outcome)
-      glm_fit <- stats::glm(fml, data = data_sub, family = stats::binomial())
+      glm_fit <- stats::glm(fml, data = data_sub, family = stats::binomial(),
+                            na.action = stats::na.exclude)
       da1 <- data_sub; da1[[lock$treatment]] <- 1L
       da0 <- data_sub; da0[[lock$treatment]] <- 0L
       list(
-        Q_aw = as.numeric(stats::predict(glm_fit, type = "response")),
+        Q_aw = as.numeric(stats::predict(glm_fit, newdata = data_sub,
+                                          type = "response")),
         Q_a1 = as.numeric(stats::predict(glm_fit, newdata = da1,
                                           type = "response")),
         Q_a0 = as.numeric(stats::predict(glm_fit, newdata = da0,
@@ -478,7 +493,9 @@ run_matched_tmle <- function(lock, ps_fit, subset_idx,
 
   psi <- mean(Q_a1_u) - mean(Q_a0_u)
   eic <- H_aw * (Y - Q_aw_u) + (Q_a1_u - Q_a0_u) - psi
-  se  <- sqrt(var(eic) / n)
+  eic_obs <- eic[!is.na(eic)]
+  n_eff   <- length(eic_obs)
+  se  <- if (n_eff < 2L) NA_real_ else sqrt(stats::var(eic_obs) / n_eff)
 
   estimates <- list(
     ATE = list(
@@ -713,7 +730,8 @@ create_analysis_lock_from_yaml <- function(config_path, data,
 #'
 #' @export
 clever_covariate_plot <- function(tmle_update = NULL, ps_fit = NULL,
-                                  lock = NULL) {
+                                  lock = NULL, bin_extreme = FALSE,
+                                  extreme_quantile = 0.99) {
   if (!is.null(tmle_update) && !is.null(tmle_update$clever_covariate)) {
     H_aw <- tmle_update$clever_covariate
     A    <- tmle_update$data[[tmle_update$treatment]]
@@ -726,23 +744,35 @@ clever_covariate_plot <- function(tmle_update = NULL, ps_fit = NULL,
          call. = FALSE)
   }
 
+  subtitle <- NULL
+  if (isTRUE(bin_extreme)) {
+    cap_lo <- stats::quantile(H_aw, 1 - extreme_quantile, na.rm = TRUE)
+    cap_hi <- stats::quantile(H_aw,     extreme_quantile, na.rm = TRUE)
+    n_extreme <- sum(H_aw < cap_lo | H_aw > cap_hi, na.rm = TRUE)
+    H_aw <- pmin(pmax(H_aw, cap_lo), cap_hi)
+    subtitle <- sprintf("%d extreme H values bucketed at the %.0f%% range",
+                        n_extreme, 100 * (2 * extreme_quantile - 1))
+  }
+
   df <- data.frame(
     H     = H_aw,
     group = ifelse(A == 1, "Treated (A=1)", "Control (A=0)"),
     stringsAsFactors = FALSE
   )
 
-  ggplot2::ggplot(df, ggplot2::aes(x = .data$H, fill = .data$group)) +
+  p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$H, fill = .data$group)) +
     ggplot2::geom_histogram(position = "identity", alpha = 0.5, bins = 40L) +
     ggplot2::geom_vline(xintercept = 0, linetype = "dashed", colour = "grey40") +
     ggplot2::labs(
       x     = "Clever Covariate H(A,W)",
       y     = "Count",
       title = "Clever Covariate Distribution by Treatment Group",
+      subtitle = subtitle,
       fill  = NULL
     ) +
     ggplot2::theme_minimal() +
     ggplot2::theme(legend.position = "bottom")
+  p
 }
 
 
@@ -956,9 +986,60 @@ gate_all <- function(..., allow_flag = TRUE) {
 #' }
 #'
 #' @export
-attrition_table <- function(data, criteria, label = "Cohort") {
+attrition_table <- function(data, criteria = NULL, label = "Cohort") {
+  # Polymorphic dispatch:
+  #  (a) data + criteria functions: original behaviour (apply each criterion).
+  #  (b) data is a named numeric vector or list of step counts: build a
+  #      static attrition table directly (typical CONSORT-style flow).
+  #  (c) data is already a data.frame with `step` and `n` (or
+  #      `n_remaining`) columns: pass through with normalised columns.
+  if (is.list(data) && !is.data.frame(data) &&
+      !is.null(names(data)) && all(nzchar(names(data)))) {
+    nums <- vapply(data, function(x) {
+      if (is.numeric(x) && length(x) == 1L) as.numeric(x) else NA_real_
+    }, numeric(1))
+    if (all(!is.na(nums))) {
+      n_start <- nums[1]
+      out <- data.frame(
+        step          = seq_along(nums) - 1L,
+        criterion     = names(nums),
+        n_remaining   = as.integer(nums),
+        n_excluded    = c(0L, as.integer(-diff(nums))),
+        pct_remaining = round(100 * nums / max(n_start, 1), 1),
+        stringsAsFactors = FALSE
+      )
+      attr(out, "label") <- label
+      class(out) <- c("cleantmle_attrition", class(out))
+      return(out)
+    }
+  }
+  if (is.numeric(data) && !is.null(names(data)) && all(nzchar(names(data)))) {
+    return(attrition_table(as.list(data), criteria = NULL, label = label))
+  }
+  if (is.data.frame(data) && is.null(criteria)) {
+    df <- data
+    if ("n" %in% names(df) && !"n_remaining" %in% names(df))
+      df$n_remaining <- df$n
+    needed <- c("step", "n_remaining")
+    miss   <- setdiff(needed, names(df))
+    if (length(miss) > 0L)
+      stop("attrition_table(): data.frame input missing columns: ",
+           paste(miss, collapse = ", "), call. = FALSE)
+    if (!"criterion" %in% names(df) && "step" %in% names(df))
+      df$criterion <- as.character(df$step)
+    if (!"n_excluded" %in% names(df))
+      df$n_excluded <- c(0L, -diff(df$n_remaining))
+    if (!"pct_remaining" %in% names(df))
+      df$pct_remaining <- round(100 * df$n_remaining /
+                                  max(df$n_remaining[1], 1), 1)
+    attr(df, "label") <- label
+    class(df) <- c("cleantmle_attrition", class(df))
+    return(df)
+  }
+
   if (!is.data.frame(data))
-    stop("`data` must be a data.frame.", call. = FALSE)
+    stop("`data` must be a data.frame, a named numeric vector of step ",
+         "counts, or a named list of step counts.", call. = FALSE)
   if (!is.list(criteria) || length(criteria) == 0L)
     stop("`criteria` must be a non-empty named list of functions.",
          call. = FALSE)

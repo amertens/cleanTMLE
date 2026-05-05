@@ -4,7 +4,13 @@
 \alias{clever_covariate_plot}
 \title{Clever Covariate Diagnostic Plot}
 \usage{
-clever_covariate_plot(tmle_update = NULL, ps_fit = NULL, lock = NULL)
+clever_covariate_plot(
+  tmle_update = NULL,
+  ps_fit = NULL,
+  lock = NULL,
+  bin_extreme = FALSE,
+  extreme_quantile = 0.99
+)
 }
 \arguments{
 \item{tmle_update}{A \code{tmle_update} object from

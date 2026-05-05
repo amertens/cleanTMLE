@@ -24,6 +24,17 @@ make_table1 <- function(x, ...) {
 
 #' @rdname make_table1
 #' @export
+make_table1.cleanroom_lock <- function(x, vars = NULL, by = NULL,
+                                       weighted = FALSE, smd = TRUE, ...) {
+  data <- x$data
+  if (is.null(by)) by <- x$treatment
+  if (is.null(vars)) vars <- x$covariates
+  w <- rep(1, nrow(data))
+  .build_table1(data = data, vars = vars, by = by, weights = w, smd = smd)
+}
+
+#' @rdname make_table1
+#' @export
 make_table1.default <- function(x, vars = NULL, by = NULL,
                                 weighted = FALSE, smd = TRUE, ...) {
   if (is.data.frame(x)) {

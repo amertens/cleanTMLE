@@ -1,6 +1,6 @@
 Package: cleanTMLE
 Title: Staged Clean-Room Causal Analysis with Propensity Score and TMLE Workflows
-Version: 0.1.0
+Version: 0.1.1
 Authors@R: c(
     person("Andrew", "Mertens", role = c("aut", "cre"),
            email = "amertens@berkeley.edu"),

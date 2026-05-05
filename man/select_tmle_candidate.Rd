@@ -27,10 +27,10 @@ If all candidates fail, the least-bad candidate is returned with
 a warning.}
 
 \item{dq_results}{Optional \code{plasmode_dq_results} object from
-\code{\link[=run_plasmode_dq_stress]{run_plasmode_dq_stress()}}.  Required when
-\code{rule = "min_max_rmse"}: the rule then minimises the worst-case RMSE
-that each candidate exhibits across all DQ degraded scenarios (excluding
-the \code{"none"} baseline).  Ignored for the other rules.}
+\code{\link[=run_plasmode_dq_stress]{run_plasmode_dq_stress()}}.  Required when \code{rule = "min_max_rmse"}:
+the rule then minimises the worst-case RMSE that each candidate exhibits
+across all DQ degraded scenarios (excluding the \code{"none"} baseline).
+Ignored for the other rules.}
 }
 \value{
 An object of class \code{tmle_selected_spec} containing the
