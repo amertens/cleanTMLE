@@ -124,10 +124,15 @@ create_analysis_lock <- function(data, treatment, outcome, covariates,
 
 #' @keywords internal
 .compute_lock_hash <- function(params) {
+  if (requireNamespace("digest", quietly = TRUE)) {
+    return(digest::digest(params, algo = "sha256", serialize = TRUE))
+  }
+  # Fallback (digest unavailable): emit a clearly-labelled non-cryptographic
+  # checksum so callers can detect that integrity guarantees are weakened.
   s     <- paste(unlist(lapply(params, as.character)), collapse = "|")
   chars <- utf8ToInt(s)
   val   <- sum(chars * seq_along(chars)) %% 1e9
-  sprintf("%09.0f", val)
+  paste0("checksum-", sprintf("%09.0f", val))
 }
 
 
@@ -948,12 +953,19 @@ print.plasmode_results <- function(x, ...) {
 #' @param sim_results A `plasmode_results` object from
 #'   [run_plasmode_feasibility()].
 #' @param rule Character; selection criterion.  Default: \code{"min_rmse"}.
-#'   Also supports \code{"min_bias"} and \code{"max_coverage"}.
+#'   Also supports \code{"min_bias"}, \code{"max_coverage"}, and
+#'   \code{"min_max_rmse"} (minimax RMSE across DQ stress scenarios; requires
+#'   \code{dq_results}).
 #' @param thresholds Optional named list with \code{max_abs_bias},
 #'   \code{min_coverage} for pre-filtering.  Candidates failing these
 #'   thresholds are excluded before the selection rule is applied.
 #'   If all candidates fail, the least-bad candidate is returned with
 #'   a warning.
+#' @param dq_results Optional \code{plasmode_dq_results} object from
+#'   [run_plasmode_dq_stress()].  Required when \code{rule = "min_max_rmse"}:
+#'   the rule then minimises the worst-case RMSE that each candidate exhibits
+#'   across all DQ degraded scenarios (excluding the \code{"none"} baseline).
+#'   Ignored for the other rules.
 #'
 #' @return An object of class \code{tmle_selected_spec} containing the
 #'   full candidate specification, the selection rule, and the metrics
@@ -972,14 +984,34 @@ print.plasmode_results <- function(x, ...) {
 #' @export
 select_tmle_candidate <- function(sim_results,
                                    rule = c("min_rmse", "min_bias",
-                                            "max_coverage"),
-                                   thresholds = NULL) {
+                                            "max_coverage", "min_max_rmse"),
+                                   thresholds = NULL,
+                                   dq_results = NULL) {
   if (!inherits(sim_results, "plasmode_results"))
     stop("`sim_results` must be a plasmode_results object.", call. = FALSE)
   rule <- match.arg(rule)
+  if (rule == "min_max_rmse" && is.null(dq_results))
+    stop("`dq_results` is required when rule = 'min_max_rmse'.",
+         call. = FALSE)
+  if (!is.null(dq_results) && !inherits(dq_results, "plasmode_dq_results"))
+    stop("`dq_results` must be a plasmode_dq_results object.", call. = FALSE)
 
   m <- sim_results$metrics
   cands <- sim_results$tmle_candidates
+
+  # Worst-case RMSE per candidate across DQ degraded scenarios
+  worst_rmse <- NULL
+  if (!is.null(dq_results)) {
+    dqm <- dq_results$metrics
+    dqm <- dqm[dqm$scenario != "none", ]
+    if (nrow(dqm) > 0) {
+      ids <- unique(dqm$candidate)
+      worst_rmse <- vapply(ids, function(cid)
+        max(dqm$rmse[dqm$candidate == cid], na.rm = TRUE),
+        numeric(1))
+      names(worst_rmse) <- ids
+    }
+  }
 
   # Average metrics across effect sizes per candidate
   cand_ids <- unique(m$candidate)
@@ -992,6 +1024,8 @@ select_tmle_candidate <- function(sim_results,
       coverage  = mean(sub$coverage),
       emp_sd    = mean(sub$emp_sd),
       mean_se   = mean(sub$mean_se),
+      max_rmse  = if (!is.null(worst_rmse) && cid %in% names(worst_rmse))
+                    unname(worst_rmse[cid]) else NA_real_,
       stringsAsFactors = FALSE
     )
   }))
@@ -1018,7 +1052,13 @@ select_tmle_candidate <- function(sim_results,
   best_idx <- switch(rule,
     min_rmse     = which.min(pool$rmse),
     min_bias     = which.min(pool$bias),
-    max_coverage = which.max(pool$coverage)
+    max_coverage = which.max(pool$coverage),
+    min_max_rmse = {
+      if (all(is.na(pool$max_rmse)))
+        stop("dq_results contains no candidates matching sim_results.",
+             call. = FALSE)
+      which.min(pool$max_rmse)
+    }
   )
   best_id <- pool$candidate[best_idx]
 

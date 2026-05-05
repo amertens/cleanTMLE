@@ -247,6 +247,61 @@ test_that("select_tmle_candidate works with all rules", {
 })
 
 
+test_that("select_tmle_candidate min_max_rmse picks robust candidate", {
+  cand_a <- tmle_candidate("cand_a", g_library = "SL.glm", truncation = 0.01)
+  cand_b <- tmle_candidate("cand_b", g_library = "SL.glm", truncation = 0.05)
+
+  # Baseline: cand_a slightly better RMSE
+  mock_metrics <- data.frame(
+    effect_size = c(0.05, 0.05),
+    candidate   = c("cand_a", "cand_b"),
+    bias        = c(0.01, 0.012),
+    rmse        = c(0.040, 0.042),
+    coverage    = c(0.94, 0.94),
+    emp_sd      = c(0.04, 0.04),
+    mean_se     = c(0.04, 0.04),
+    stringsAsFactors = FALSE
+  )
+  mock_res <- list(metrics = mock_metrics, effect_sizes = 0.05,
+                   reps = 5L, tmle_candidates = list(cand_a, cand_b))
+  class(mock_res) <- "plasmode_results"
+
+  # DQ: cand_a is fragile (RMSE blows up under one scenario), cand_b is robust
+  dq_metrics <- data.frame(
+    scenario    = c("none", "none",
+                    "covariate_missingness", "covariate_missingness",
+                    "outcome_misclass", "outcome_misclass"),
+    level       = c("baseline", "baseline", "frac=0.20", "frac=0.20",
+                    "sens=0.90,spec=0.95", "sens=0.90,spec=0.95"),
+    effect_size = rep(0.05, 6),
+    candidate   = rep(c("cand_a", "cand_b"), 3),
+    bias        = c(0.01, 0.012, 0.03, 0.013, 0.04, 0.014),
+    rmse        = c(0.04, 0.042, 0.20, 0.05, 0.25, 0.06),
+    coverage    = rep(0.94, 6),
+    emp_sd      = rep(0.04, 6),
+    mean_se     = rep(0.04, 6),
+    se_cal      = rep(1, 6),
+    n_converged = rep(5, 6),
+    stringsAsFactors = FALSE
+  )
+  dq_res <- list(metrics = dq_metrics,
+                 scenarios = list(),
+                 baseline = dq_metrics[dq_metrics$scenario == "none", ],
+                 lock = NULL, reps = 5L, call = sys.call())
+  class(dq_res) <- "plasmode_dq_results"
+
+  expect_error(
+    select_tmle_candidate(mock_res, rule = "min_max_rmse"),
+    "dq_results.*required"
+  )
+
+  best <- select_tmle_candidate(mock_res, rule = "min_max_rmse",
+                                dq_results = dq_res)
+  expect_s3_class(best, "tmle_selected_spec")
+  expect_equal(best$candidate_id, "cand_b")
+})
+
+
 # ── run_match_workflow ────────────────────────────────────────────────────
 
 test_that("run_match_workflow returns match_result", {

@@ -6,8 +6,9 @@
 \usage{
 select_tmle_candidate(
   sim_results,
-  rule = c("min_rmse", "min_bias", "max_coverage"),
-  thresholds = NULL
+  rule = c("min_rmse", "min_bias", "max_coverage", "min_max_rmse"),
+  thresholds = NULL,
+  dq_results = NULL
 )
 }
 \arguments{
@@ -15,13 +16,21 @@ select_tmle_candidate(
 \code{\link[=run_plasmode_feasibility]{run_plasmode_feasibility()}}.}
 
 \item{rule}{Character; selection criterion.  Default: \code{"min_rmse"}.
-Also supports \code{"min_bias"} and \code{"max_coverage"}.}
+Also supports \code{"min_bias"}, \code{"max_coverage"}, and
+\code{"min_max_rmse"} (minimax RMSE across DQ stress scenarios; requires
+\code{dq_results}).}
 
 \item{thresholds}{Optional named list with \code{max_abs_bias},
 \code{min_coverage} for pre-filtering.  Candidates failing these
 thresholds are excluded before the selection rule is applied.
 If all candidates fail, the least-bad candidate is returned with
 a warning.}
+
+\item{dq_results}{Optional \code{plasmode_dq_results} object from
+\code{\link[=run_plasmode_dq_stress]{run_plasmode_dq_stress()}}.  Required when
+\code{rule = "min_max_rmse"}: the rule then minimises the worst-case RMSE
+that each candidate exhibits across all DQ degraded scenarios (excluding
+the \code{"none"} baseline).  Ignored for the other rules.}
 }
 \value{
 An object of class \code{tmle_selected_spec} containing the

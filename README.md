@@ -106,8 +106,15 @@ richer applied analyses.
   define TMLE specs varying truncation / library (`tmle_candidate()`,
   `expand_tmle_candidate_grid()`), evaluate on plasmode simulations
   (`run_plasmode_feasibility()`), select via prespecified rule
-  (`select_tmle_candidate()`), lock the chosen spec
-  (`lock_primary_tmle_spec()`)
+  (`select_tmle_candidate()`, with rules `min_rmse`, `min_bias`,
+  `max_coverage`, and `min_max_rmse` for minimax RMSE across DQ
+  stress scenarios), lock the chosen spec (`lock_primary_tmle_spec()`)
+- **Plasmode data-quality stress test** --- extends the outcome-blind
+  plasmode loop with four degradation mechanisms (covariate
+  missingness, treatment misclassification, outcome misclassification,
+  unmeasured confounding) and produces per-candidate degradation
+  gradients of bias, RMSE, and coverage
+  (`run_plasmode_dq_stress()`, `summarize_dq_degradation()`)
 - **Gate decision** --- structured GO / FLAG / STOP based on bias,
   coverage, and SE calibration from plasmode results (`gate_check()`)
 - **Modular TMLE** --- intentionally separated so each step runs at the
