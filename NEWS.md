@@ -5,6 +5,23 @@ Rescue.Co Kenya Trauma Registry (n = 1,693 ambulance patients with 22.8 %
 outcome missingness). Most of the changes are real-data robustness fixes
 and ergonomics improvements; a few extend the public API.
 
+## New: IPCW-TMLE for missing-outcome sensitivity
+
+* **`run_ipcw_tmle(lock, ps_fit, ...)`** is a new estimator for the
+  full-cohort marginal risk difference when the outcome `Y` has
+  missing-at-random rows (e.g., loss to follow-up). It fits a
+  SuperLearner response model `P(R = 1 | A, W)`, builds stabilised
+  inverse-probability-of-censoring weights with a 99th-percentile cap,
+  and runs `tmle::tmle()` with `Delta = R` so the targeting step uses
+  the censoring weights internally rather than dropping incomplete
+  rows. Falls back to a complete-case TMLE weighted by the IPCW when
+  the installed `tmle` version doesn't accept the `Delta` argument.
+  The returned object is a `tmle_fit` and works with
+  `summarize_cleanroom_results()`, `forest_plot()`, and `make_table2()`.
+* **`run_crude_workflow()` and `run_match_workflow()`** now warn and
+  compute on complete cases when `Y` has NAs; previously they silently
+  returned `NA`.
+
 ## Real-data robustness (the marquee fixes)
 
 * **`run_plasmode_feasibility()` and `run_plasmode_dq_stress()` no longer

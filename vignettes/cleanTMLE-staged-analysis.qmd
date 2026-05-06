@@ -530,7 +530,7 @@ audit <- record_checkpoint(audit, cp3)
 ### TMLE-based negative controls (doubly robust)
 
 The default `run_negative_control()` uses IPTW.
-`run_negative_control_tmle()` uses the full modular TMLE pipeline,
+`run_negative_control_tmle()` uses the four-step TMLE pipeline,
 which is doubly robust and more appropriate for a package built
 around TMLE.
 
@@ -638,16 +638,16 @@ iptw_fit <- run_iptw_workflow(lock, ps_fit)
 print(iptw_fit)
 ```
 
-### Modular TMLE (primary estimator)
+### TMLE in four steps (primary estimator)
 
 TMLE is the prespecified primary estimator, using the specification
-selected at Stage 2b and locked into the analysis lock.
-The locked truncation threshold and learner libraries are applied
-automatically by the modular TMLE functions --- no manual
-specification is needed at this stage.
+selected at Stage 2b and locked into the analysis lock.  The locked
+truncation threshold and learner libraries are applied automatically
+by the four TMLE functions --- no manual specification is needed at
+this stage.
 
-The package separates the TMLE procedure into explicit steps aligned
-with the clean-room stages:
+The package separates the TMLE procedure into four explicit steps
+aligned with the clean-room stages:
 
 1. **Treatment mechanism** ($g$-model): estimated at Stage 2 without
    outcome access.  The locked truncation is applied automatically.
@@ -702,6 +702,26 @@ matched_tmle_fit <- run_matched_tmle(lock, ps_fit,
   subset_idx = matched_idx)
 print(matched_tmle_fit)
 ```
+
+### IPCW-weighted TMLE (missing-outcome sensitivity)
+
+When the outcome is missing for a non-trivial fraction of the
+analytic cohort and the analyst suspects the missingness mechanism
+is at-random rather than completely-at-random, `run_ipcw_tmle()`
+fits a SuperLearner response model
+$P(R = 1 \mid A, W)$, builds stabilised inverse-probability-of-
+censoring weights, and runs TMLE with the censoring weights so the
+ATE targets the full-cohort marginal estimand rather than the
+complete-case subset.
+
+```{r ipcw-tmle}
+ipcw_fit <- run_ipcw_tmle(lock, ps_fit)
+print(ipcw_fit)
+```
+
+The returned object is a `tmle_fit` and can be combined with the
+other estimators in [`summarize_cleanroom_results()`] or
+[`forest_plot()`] for a side-by-side comparison.
 
 ### TMLE diagnostics
 

@@ -19,8 +19,9 @@ elements include: the model-specification DSL (`specify_models`,
 `forest_plot`, `compare_fits`, `re_estimate`, `hr_data`).
 Functions unique to cleanTMLE (the analysis lock, outcome masking,
 plasmode feasibility and DQ stress, audit and decision logs, the
-modular TMLE primitives, and the GO/FLAG/STOP gate) are
-documented as cleanTMLE-original in the corresponding `.Rd` files.
+four-step TMLE functions, IPCW-TMLE for missing outcomes, and the
+GO/FLAG/STOP gate) are documented as cleanTMLE-original in the
+corresponding `.Rd` files.
 We thank the causalRisk authors for the MIT-licensed code that
 made this attribution-based reuse possible.
 
@@ -117,12 +118,17 @@ richer applied analyses.
   (`run_plasmode_dq_stress()`, `summarize_dq_degradation()`)
 - **Gate decision** --- structured GO / FLAG / STOP based on bias,
   coverage, and SE calibration from plasmode results (`gate_check()`)
-- **Modular TMLE** --- intentionally separated so each step runs at the
-  correct clean-room stage:
+- **TMLE in four explicit steps** --- intentionally separated so each
+  step runs at the correct clean-room stage:
   1. Treatment mechanism / g-step (`fit_tmle_treatment_mechanism()`)
   2. Outcome mechanism / Q-step (`fit_tmle_outcome_mechanism()`)
   3. Targeting / fluctuation step (`run_tmle_targeting_step()`)
   4. Final estimate extraction (`extract_tmle_estimate()`)
+- **Matched-cohort TMLE** --- `run_matched_tmle()` runs the four-step
+  pipeline on a matched subset without creating a separate lock
+- **IPCW-weighted TMLE** --- `run_ipcw_tmle()` adds inverse-probability-
+  of-censoring weights for missing-at-random outcomes; targets the
+  full-cohort marginal estimand rather than the complete-case subset
 - **Convenience wrappers** --- `fit_final_workflows()` runs matching,
   IPTW, and TMLE in a single call; `fit_tmle_candidate_set()` fits
   multiple TMLE specifications on real data
@@ -282,19 +288,23 @@ crude <- run_crude_workflow(lock)
 match_fit <- run_match_workflow(lock, ps_fit)
 iptw_fit  <- run_iptw_workflow(lock, ps_fit)
 
-# Primary: modular TMLE using locked specification
+# Primary: TMLE in four steps using the locked specification
 g_fit    <- fit_tmle_treatment_mechanism(lock, ps_fit)   # uses locked truncation
 Q_fit    <- fit_tmle_outcome_mechanism(lock, g_fit)      # uses locked Q-library
 tmle_upd <- run_tmle_targeting_step(g_fit, Q_fit)
 tmle_fit <- extract_tmle_estimate(tmle_upd)
 print(tmle_fit)
 
+# Sensitivity for missing outcomes (MAR)
+ipcw_fit <- run_ipcw_tmle(lock, ps_fit)
+
 # Or use the convenience wrapper:
 # all_fits <- fit_final_workflows(lock, ps_fit)
 
 # Cross-estimator comparison
 summary_tbl <- summarize_cleanroom_results(
-  list(Matching = match_fit, IPTW = iptw_fit, TMLE = tmle_fit)
+  list(Matching = match_fit, IPTW = iptw_fit,
+       TMLE = tmle_fit, `IPCW-TMLE` = ipcw_fit)
 )
 print(summary_tbl)
 
@@ -483,10 +493,11 @@ in a structured way:
   selection target.
 - The audit trail from specification to final estimate is preserved.
 
-The modular TMLE API directly mirrors the clean-room design: the
-treatment mechanism can be estimated in Stage 2 without outcome access;
-the outcome mechanism is first estimated on real data in Stage 4; the
-targeting step follows only after both nuisance estimates are in hand.
+The four-step TMLE design directly mirrors the clean-room workflow:
+the treatment mechanism can be estimated in Stage 2 without outcome
+access; the outcome mechanism is first estimated on real data in
+Stage 4; the targeting step follows only after both nuisance
+estimates are in hand.
 This separation makes the stage boundaries explicit in the code itself.
 
 ## Notes on Nuisance Estimation
