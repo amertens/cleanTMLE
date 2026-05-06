@@ -4,7 +4,13 @@
 \alias{define_negative_control}
 \title{Define a Negative Control Outcome}
 \usage{
-define_negative_control(lock, variable, type = "outcome", description = NULL)
+define_negative_control(
+  lock,
+  variable,
+  type = "outcome",
+  description = NULL,
+  domain = NULL
+)
 }
 \arguments{
 \item{lock}{A \code{cleanroom_lock}.}
@@ -18,6 +24,13 @@ in \code{lock$data}.}
 
 \item{description}{Character; optional description of why this variable
 serves as a negative control.}
+
+\item{domain}{Character; optional Muntner et al. (2024) negative-control
+domain. One of \code{"confounding_by_indication"},
+\code{"functional_status"}, \code{"health_seeking_behavior"},
+\code{"access_to_healthcare"}, or \code{"other"}. Recording the
+domain helps reviewers see that the registered NCs span the four
+confounding domains recommended in the staging-and-clean-room paper.}
 }
 \value{
 Modified \code{cleanroom_lock} with element
@@ -38,6 +51,7 @@ dat  <- sim_func1(n = 200, seed = 1)
 lock <- create_analysis_lock(dat, "treatment", "event_24",
                              c("age", "sex", "biomarker"), seed = 1)
 lock <- define_negative_control(lock, "nc_outcome",
-  description = "Outcome known to be unrelated to treatment")
+  description = "Outcome known to be unrelated to treatment",
+  domain = "confounding_by_indication")
 
 }

@@ -413,6 +413,12 @@ checkpoint_balance <- function(ps_diag,
 #'   (negative control exposure). Default: \code{"outcome"}.
 #' @param description Character; optional description of why this variable
 #'   serves as a negative control.
+#' @param domain Character; optional Muntner et al. (2024) negative-control
+#'   domain. One of \code{"confounding_by_indication"},
+#'   \code{"functional_status"}, \code{"health_seeking_behavior"},
+#'   \code{"access_to_healthcare"}, or \code{"other"}. Recording the
+#'   domain helps reviewers see that the registered NCs span the four
+#'   confounding domains recommended in the staging-and-clean-room paper.
 #'
 #' @return Modified \code{cleanroom_lock} with element
 #'   \code{negative_controls}.
@@ -422,21 +428,29 @@ checkpoint_balance <- function(ps_diag,
 #' lock <- create_analysis_lock(dat, "treatment", "event_24",
 #'                              c("age", "sex", "biomarker"), seed = 1)
 #' lock <- define_negative_control(lock, "nc_outcome",
-#'   description = "Outcome known to be unrelated to treatment")
+#'   description = "Outcome known to be unrelated to treatment",
+#'   domain = "confounding_by_indication")
 #'
 #' @export
 define_negative_control <- function(lock, variable, type = "outcome",
-                                    description = NULL) {
+                                    description = NULL, domain = NULL) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
   type <- match.arg(type, c("outcome", "exposure"))
   if (!variable %in% names(lock$data))
     stop("Variable '", variable, "' not found in lock data.", call. = FALSE)
+  if (!is.null(domain)) {
+    valid_domains <- c("confounding_by_indication", "functional_status",
+                       "health_seeking_behavior", "access_to_healthcare",
+                       "other")
+    domain <- match.arg(domain, valid_domains)
+  }
 
   nc <- list(
     variable    = variable,
     type        = type,
-    description = description
+    description = description,
+    domain      = domain
   )
 
   if (is.null(lock$negative_controls)) lock$negative_controls <- list()

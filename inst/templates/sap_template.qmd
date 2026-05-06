@@ -1,0 +1,136 @@
+---
+title: "Statistical Analysis Plan: STUDY TITLE"
+subtitle: "Targeted-Learning RWE study, prespecified before outcome unblinding"
+author: "ANALYST NAME"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    self-contained: true
+    number-sections: true
+---
+
+<!--
+SAP template aligned with:
+
+- Gruber, Phillips, Lee, Ho, van der Laan & Petersen (2022).
+  "Developing a Targeted Learning-Based Statistical Analysis Plan."
+- Dang, Gruber, Phillips et al. (2023). "A causal roadmap for
+  generating high-quality real-world evidence."
+- Muntner, Brookhart, et al. (2024). "Staging and clean room: ..."
+- Gatto et al. (2023). "A structured process to identify
+  fit-for-purpose study design and data" (SPIFD2).
+
+Replace each placeholder (UPPER_CASE) with study-specific text and
+delete the comments. Lock the document, run it through the cleanTMLE
+clean-room workflow, and archive a hash of the locked file alongside
+the analysis lock RDS.
+-->
+
+# 1. Estimand specification (ICH E9(R1) attributes)
+
+| Attribute | Specification |
+|-----------|---------------|
+| Population | DESCRIBE INCLUSION/EXCLUSION |
+| Treatment / exposure | TREATMENT_LABEL vs CONTROL_LABEL |
+| Endpoint / outcome | OUTCOME (scale: binary / continuous / time-to-event) |
+| Summary measure | RISK DIFFERENCE / RISK RATIO / HAZARD RATIO / OTHER |
+| Intercurrent events | TREATMENT-POLICY / WHILE-ON-TREATMENT / ETC. |
+
+**Causal estimand:** $\Psi =$ FORMULA, e.g. $E\{Y(1)\} - E\{Y(0)\}$.
+
+**Statistical estimand under identification:** $\Psi = E_W\{E[Y \mid A=1, W] - E[Y \mid A=0, W]\}$.
+
+# 2. Identifiability assumptions and threats
+
+For each assumption: state plausibility, pre-specified diagnostic, and
+the SPIFD2 / data-quality scenario that probes it.
+
+| Assumption | Plausibility | Diagnostic | DQ stress scenario |
+|------------|--------------|-----------|-------------------|
+| Conditional exchangeability | DESCRIBE | Negative-control outcomes | unmeasured_confounding |
+| Positivity | DESCRIBE | PS overlap, ESS, weight summary | (truncation grid) |
+| Consistency / SUTVA | DESCRIBE | Exposure-algorithm validation | treatment_misclass |
+| Outcome measurement | DESCRIBE | PPV / sensitivity literature | outcome_misclass |
+| Covariate completeness | DESCRIBE | Missingness summary | covariate_missingness |
+| Correctly specified nuisances | DESCRIBE | Plasmode candidate selection | (baseline plasmode) |
+
+# 3. Pre-specified candidate grid (Stage 2b)
+
+```r
+candidates <- list(
+  tmle_candidate("glm_t01",   "GLM PS, trunc=0.01",
+                 g_library = "SL.glm",     truncation = 0.01),
+  tmle_candidate("glmnet_t01","glmnet PS, trunc=0.01",
+                 g_library = "SL.glmnet",  truncation = 0.01),
+  tmle_candidate("glmnet_t05","glmnet PS, trunc=0.05",
+                 g_library = "SL.glmnet",  truncation = 0.05)
+)
+```
+
+**SuperLearner library justification (Phillips et al. 2023):**
+state effective sample size, recommended $V$, library composition.
+Use `validate_superlearner_spec(n, n_events, library)` to document the
+heuristic check.
+
+# 4. Pre-outcome gate thresholds
+
+| Threshold | Value | Rationale |
+|-----------|-------|-----------|
+| `max_abs_bias` | 0.01 | Plasmode candidate-selection target |
+| `min_coverage` | 0.90 | Minimum acceptable 95% CI coverage |
+| `se_sd_window` | (0.8, 1.2) | SE-calibration band |
+| `max_rmse` | 0.05 | Optional RMSE ceiling |
+| Negative-control pass | $|RD| < 0.01$ and p > 0.05 on all registered NCs | Residual confounding screen |
+
+# 5. Negative-control outcomes (Muntner et al. 2024 domains)
+
+Document at least one NC per domain when feasible.
+
+| Variable | Domain | Rationale |
+|----------|--------|-----------|
+| NC_VAR_1 | confounding_by_indication | DESCRIBE |
+| NC_VAR_2 | functional_status         | DESCRIBE |
+| NC_VAR_3 | health_seeking_behavior   | DESCRIBE |
+| NC_VAR_4 | access_to_healthcare      | DESCRIBE |
+
+Register via `define_negative_control(lock, var, domain = "...")`.
+
+# 6. Sensitivity analyses (Stage 5 / post-outcome)
+
+- **E-value** (`compute_evalue()`) on the primary effect estimate.
+- **Tipping-point bound** (`tipping_point_sensitivity()`).
+- **Causal-gap sensitivity** (Diaz & van der Laan 2013) if the
+  unmeasured-confounding scenario in Stage 2b suggested vulnerability.
+- **Quantitative bias analysis** (Lash et al. 2014) for the dominant
+  threat from SPIFD2.
+- **Sensitivity truncation grid** (`sensitivity_truncation()`) over
+  the prespecified grid in §3.
+
+# 7. Decision log
+
+Use `init_decision_log()` and `record_decision_log_entry()` at every
+stage transition to record:
+
+- Pre-specified choices (lock creation, candidate grid, gate thresholds)
+- Diagnostic results (cohort adequacy, balance, NC coverage)
+- Protocol deviations (with rationale and the lock hash at the time of
+  the deviation)
+- Gate decision and authorisation token
+
+Export the log with `export_decision_log()` and archive alongside the
+`save_lock()` / `save_audit()` artifacts.
+
+# 8. Reporting checklist
+
+- ☐ Estimand stated (§1)
+- ☐ Identifying assumptions and DQ scenarios (§2)
+- ☐ Candidate grid locked (§3)
+- ☐ SuperLearner library justified (§3)
+- ☐ Gate thresholds locked (§4)
+- ☐ NCs registered with domains (§5)
+- ☐ Sensitivity plan (§6)
+- ☐ Decision log archived (§7)
+- ☐ Lock fingerprint recorded
+- ☐ Plasmode + DQ stress test results before unblinding
