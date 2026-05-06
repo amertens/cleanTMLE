@@ -45,8 +45,8 @@ and whether it accesses the real outcome.
 
 | Stage | Function | Outcome? | Purpose |
 |-------|----------|:--------:|---------|
-| Util | `expit()`, `logit()` | -- | Inverse-logit / logit transforms |
-| Data | `sim_func1()` | -- | Simulate causal-inference data |
+| Util | `expit()`, `logit()` | n/a | Inverse-logit / logit transforms |
+| Data | `sim_func1()` | n/a | Simulate causal-inference data |
 | 1a | `create_analysis_lock()` | No | Lock analytic specification |
 | 1a | `validate_analysis_lock()` | No | Verify lock integrity |
 | 1a | `attach_estimand()` | No | Attach estimand metadata |
@@ -83,16 +83,16 @@ and whether it accesses the real outcome.
 | 4 | `fit_tmle_candidate_set()` | **Yes** | Fit multiple TMLE specs |
 | 4 | `fit_final_workflows()` | **Yes** | Run all Stage 4 workflows |
 | 4 | `sensitivity_truncation()` | **Yes** | Truncation sensitivity |
-| -- | `compute_evalue()` | No | E-value for unmeasured confounding |
-| -- | `summarize_cleanroom_results()` | No | Cross-workflow comparison table |
-| -- | `record_decision_log_entry()` | No | Add structured decision log entry |
-| -- | `export_decision_log()` | No | Export decision log as data frame |
-| -- | `summarize_stage_path()` | No | Compact stage narrative |
-| -- | `create_audit_log()` | No | Initialise audit trail |
-| -- | `record_stage()` | No | Append stage entry |
-| -- | `record_checkpoint()` | No | Append checkpoint entry |
-| -- | `export_audit_trail()` | No | Export trail as data frame |
-| -- | `build_stage_manifest()` | No | Print stage path summary |
+| Any |`compute_evalue()` | No | E-value for unmeasured confounding |
+| Any |`summarize_cleanroom_results()` | No | Cross-workflow comparison table |
+| Any |`record_decision_log_entry()` | No | Add structured decision log entry |
+| Any |`export_decision_log()` | No | Export decision log as data frame |
+| Any |`summarize_stage_path()` | No | Compact stage narrative |
+| Any |`create_audit_log()` | No | Initialise audit trail |
+| Any |`record_stage()` | No | Append stage entry |
+| Any |`record_checkpoint()` | No | Append checkpoint entry |
+| Any |`export_audit_trail()` | No | Export trail as data frame |
+| Any |`build_stage_manifest()` | No | Print stage path summary |
 | Util | `mask_outcome()` | No | Mask outcome column with NA |
 | Util | `unmask_outcome()` | No | Restore masked outcome |
 | Wrapper | `run_clean_tmle()` | **Yes** | Full staged clean-room pipeline |

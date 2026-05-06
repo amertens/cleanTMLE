@@ -34,7 +34,7 @@ and ergonomics improvements; a few extend the public API.
   `fit_tmle_outcome_mechanism()`, `run_iptw_workflow()`, and
   `run_matched_tmle()` now subset to complete-Y rows for the Q-fit /
   IPTW estimator and emit a one-line warning ("inference is valid under
-  MCAR only -- consider IPCW for MAR"). `extract_tmle_estimate()` uses
+  MCAR only; consider IPCW for MAR"). `extract_tmle_estimate()` uses
   `n_eff = sum(!is.na(eic))` for the influence-function variance.
 * **`fit_ps_superlearner()` no longer crashes with `"invalid connection"`
   when no parallel cluster is registered** (issue #3). Defaults to
