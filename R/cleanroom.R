@@ -1588,6 +1588,12 @@ fit_tmle_outcome_mechanism <- function(lock, g_fit, sl_library = NULL,
   Y          <- data[[outcome]]
   n          <- nrow(data)
 
+  # SuperLearner requires Y to be a numeric vector. Locks built from real
+  # data often store the outcome as integer or labelled-integer (haven /
+  # data.table conventions); coerce explicitly.
+  if (is.factor(Y) || is.character(Y)) Y <- as.numeric(as.character(Y))
+  Y <- as.numeric(Y)
+
   # Outcome NA handling: SuperLearner refuses Y with NAs, but real-world
   # observational data routinely has missing outcomes (loss to follow-up).
   # We fit Q on complete-outcome rows and predict for ALL rows so the

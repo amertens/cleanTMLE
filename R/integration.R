@@ -416,6 +416,11 @@ run_matched_tmle <- function(lock, ps_fit, subset_idx,
   covariates <- lock$covariates
   n          <- nrow(data_sub)
 
+  # SuperLearner requires numeric Y; coerce defensively (real-data locks
+  # often carry integer / labelled-integer outcomes).
+  if (is.factor(Y) || is.character(Y)) Y <- as.numeric(as.character(Y))
+  Y <- as.numeric(Y)
+
   # Outcome NA handling: SL refuses NA in Y; fit Q on complete-Y rows of
   # the matched subset, predict for all rows.
   na_y <- is.na(Y)
