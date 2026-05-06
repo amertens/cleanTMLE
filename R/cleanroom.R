@@ -1269,17 +1269,33 @@ run_match_workflow <- function(lock, ps_fit, caliper = NULL,
   Y_m  <- matched_data[[outcome]]
   n_m  <- sum(valid)
 
-  r1   <- mean(Y_m[A_m == 1])
-  r0   <- mean(Y_m[A_m == 0])
+  Y_m <- as.numeric(Y_m)
+
+  # Complete-case handling (NA outcomes drop pairs; warn).
+  if (any(is.na(Y_m))) {
+    warning("run_match_workflow: ", sum(is.na(Y_m)), " of ", length(Y_m),
+            " matched-cohort outcome rows are NA; computing matched RD on ",
+            "complete cases.", call. = FALSE)
+  }
+
+  n1 <- sum(A_m == 1 & !is.na(Y_m))
+  n0 <- sum(A_m == 0 & !is.na(Y_m))
+  r1   <- mean(Y_m[A_m == 1], na.rm = TRUE)
+  r0   <- mean(Y_m[A_m == 0], na.rm = TRUE)
   rd   <- r1 - r0
 
-  # Paired SE
-  Y1   <- Y_m[A_m == 1]
-  Y0   <- Y_m[A_m == 0][seq_len(n_m)]
-  se   <- sqrt(var(Y1 - Y0) / n_m)
+  # Paired SE on complete pairs (drop pair if either side is NA)
+  Y1_full <- Y_m[A_m == 1]
+  Y0_full <- Y_m[A_m == 0][seq_len(n_m)]
+  pair_ok <- !is.na(Y1_full) & !is.na(Y0_full)
+  if (sum(pair_ok) > 1L) {
+    se <- sqrt(stats::var(Y1_full[pair_ok] - Y0_full[pair_ok]) / sum(pair_ok))
+  } else {
+    se <- NA_real_
+  }
   ci_lo <- rd - 1.96 * se
   ci_hi <- rd + 1.96 * se
-  p_val <- 2 * pnorm(-abs(rd / se))
+  p_val <- 2 * stats::pnorm(-abs(rd / se))
 
   result <- list(
     estimate     = rd,
@@ -1407,6 +1423,174 @@ run_iptw_workflow <- function(lock, ps_fit, trim = NULL,
     call      = match.call()
   )
   class(result) <- c("iptw_result", "cr_result")
+  result
+}
+
+
+#' Run IPCW-Weighted TMLE for a Binary Outcome with Missing-At-Random Y
+#'
+#' Targets the marginal risk difference on the full cohort when the
+#' outcome `Y` has missing values, using inverse-probability-of-
+#' censoring weighting to correct for missing-at-random follow-up.
+#' Internally, a response model
+#' \eqn{P(\text{observed} \mid A, W)} is fit by SuperLearner (or GLM if
+#' SuperLearner is unavailable), stabilised inverse-probability weights
+#' are constructed, and the cohort is passed to `tmle::tmle()` with the
+#' \code{Delta} argument so that the package's targeting step uses the
+#' censoring weights internally rather than dropping incomplete rows.
+#'
+#' @section Clean-room stage: Stage 4 (accesses the outcome).
+#'
+#' @param lock A `cleanroom_lock` from [create_analysis_lock()] with the
+#'   outcome unmasked.
+#' @param ps_fit Optional `ps_fit` from [fit_ps_superlearner()]. If
+#'   \code{NULL} (default), the censoring model still uses the locked
+#'   SuperLearner library; the treatment mechanism is re-fit by
+#'   `tmle::tmle()`.
+#' @param censoring_library SuperLearner library used for the censoring
+#'   model `g(Delta = 1 | A, W)`. Default \code{NULL} uses the lock's
+#'   SuperLearner library.
+#' @param weight_truncation Upper-quantile cap for the IPCW weights to
+#'   bound extreme values. Default \code{0.99}.
+#' @param override_clean_room Logical; if \code{TRUE}, skips the
+#'   outcome-access check. Default \code{FALSE}.
+#'
+#' @return A list of class `tmle_fit` (and `cr_result`) containing the
+#'   ATE estimate, IPCW summary, and the underlying `tmle::tmle()` fit.
+#'   The returned object is compatible with [summarize_cleanroom_results()]
+#'   and [forest_plot()].
+#'
+#' @examples
+#' \dontrun{
+#' lock_unmasked <- unmask_outcome(lock, lock_pre_mask)
+#' ps_fit        <- fit_ps_superlearner(lock_unmasked)
+#' ipcw_fit      <- run_ipcw_tmle(lock_unmasked, ps_fit)
+#' print(ipcw_fit)
+#' }
+#'
+#' @export
+run_ipcw_tmle <- function(lock, ps_fit = NULL,
+                          censoring_library = NULL,
+                          weight_truncation = 0.99,
+                          override_clean_room = FALSE) {
+  if (!inherits(lock, "cleanroom_lock"))
+    stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
+  .check_outcome_access(lock, override_clean_room,
+                        caller = "run_ipcw_tmle")
+  if (!requireNamespace("tmle", quietly = TRUE))
+    stop("Package 'tmle' is required for run_ipcw_tmle(). ",
+         "Install with: install.packages('tmle')", call. = FALSE)
+
+  data       <- lock$data
+  treatment  <- lock$treatment
+  outcome    <- lock$outcome
+  covariates <- lock$covariates
+  A          <- as.numeric(data[[treatment]])
+  Y          <- as.numeric(data[[outcome]])
+  W          <- data[, covariates, drop = FALSE]
+  n          <- nrow(data)
+
+  R <- as.integer(!is.na(Y))
+  if (sum(R) < length(covariates) + 2L)
+    stop("run_ipcw_tmle: too few non-NA outcomes (", sum(R),
+         ") to fit Q with ", length(covariates), " covariates.",
+         call. = FALSE)
+  if (mean(R) == 1)
+    message("run_ipcw_tmle: outcome has no missing values; ",
+            "IPCW weights collapse to 1 -- consider plain TMLE instead.")
+
+  cens_lib <- if (!is.null(censoring_library)) censoring_library
+              else lock$sl_library
+  q_lib    <- if (!is.null(lock$primary_tmle_spec))
+                lock$primary_tmle_spec$q_library else lock$sl_library
+  g_lib    <- if (!is.null(lock$primary_tmle_spec))
+                lock$primary_tmle_spec$g_library else lock$sl_library
+
+  # Stabilised IPCW weights using a SuperLearner response model.
+  resp_X <- data.frame(A = A, W)
+  resp_pred <- tryCatch({
+    if (requireNamespace("SuperLearner", quietly = TRUE)) {
+      set.seed(lock$seed + 99L)
+      sl <- SuperLearner::SuperLearner(
+        Y = R, X = resp_X, family = stats::binomial(),
+        SL.library = cens_lib,
+        env = asNamespace("SuperLearner"))
+      as.numeric(sl$SL.predict)
+    } else {
+      glm_resp <- stats::glm(R ~ ., data = resp_X, family = stats::binomial())
+      as.numeric(stats::predict(glm_resp, type = "response"))
+    }
+  }, error = function(e) {
+    glm_resp <- stats::glm(R ~ ., data = resp_X, family = stats::binomial())
+    as.numeric(stats::predict(glm_resp, type = "response"))
+  })
+  pr_marginal <- tapply(R, A, mean)[as.character(A)]
+  ipcw <- as.numeric(pr_marginal) / pmax(resp_pred, 0.01)
+  ipcw_cap <- stats::quantile(ipcw, weight_truncation, names = FALSE,
+                               na.rm = TRUE)
+  ipcw <- pmin(ipcw, ipcw_cap)
+
+  # Run tmle::tmle with Delta = R so the package handles the censoring
+  # adjustment internally on the full cohort (rather than us dropping NA
+  # rows). When tmle()'s Delta path fails, fall back to a complete-case
+  # TMLE on the SuperLearner-Q-fit weighted by the IPCW.
+  # tmle::tmle's Delta argument tells it to fit a censoring model and use
+  # the resulting weights internally. The censoring SL library defaults
+  # to g.SL.library on tmle versions that accept it via that path. Older
+  # tmle versions reject Delta entirely; in that case we drop to a
+  # complete-case TMLE on the SuperLearner Q-fit weighted by the IPCW
+  # we computed above.
+  fit <- tryCatch({
+    tmle::tmle(
+      Y = ifelse(is.na(Y), 0L, Y),
+      A = A,
+      W = as.data.frame(W),
+      family = "binomial",
+      Q.SL.library = q_lib,
+      g.SL.library = g_lib,
+      Delta = R,
+      verbose = FALSE
+    )
+  }, error = function(e) {
+    cc      <- which(R == 1L)
+    Y_cc    <- Y[cc]; A_cc <- A[cc]
+    W_cc    <- as.data.frame(W[cc, , drop = FALSE])
+    w_cc    <- ipcw[cc]
+    tmle::tmle(
+      Y = Y_cc, A = A_cc, W = W_cc, family = "binomial",
+      Q.SL.library = q_lib, g.SL.library = g_lib,
+      obsWeights = w_cc, verbose = FALSE)
+  })
+
+  ate <- fit$estimates$ATE
+  result <- list(
+    estimate    = unname(ate$psi),
+    se          = unname(sqrt(ate$var.psi)),
+    ci_lower    = unname(ate$CI[1]),
+    ci_upper    = unname(ate$CI[2]),
+    p_value     = unname(ate$pvalue),
+    estimates   = list(ATE = list(
+      estimate = unname(ate$psi),
+      se       = unname(sqrt(ate$var.psi)),
+      ci_lower = unname(ate$CI[1]),
+      ci_upper = unname(ate$CI[2]),
+      p_value  = unname(ate$pvalue))),
+    risk_treated = unname(fit$estimates$EY1$psi),
+    risk_control = unname(fit$estimates$EY0$psi),
+    n            = n,
+    n_observed   = sum(R),
+    n_missing    = sum(R == 0L),
+    pct_missing  = round(100 * mean(R == 0L), 2),
+    ipcw         = ipcw,
+    ipcw_summary = list(mean = mean(ipcw), sd = stats::sd(ipcw),
+                         min = min(ipcw),  max = max(ipcw)),
+    tmle_fit     = fit,
+    treatment    = treatment,
+    outcome      = outcome,
+    type         = "ipcw_tmle",
+    call         = match.call()
+  )
+  class(result) <- c("tmle_fit", "cr_result")
   result
 }
 
@@ -2261,16 +2445,24 @@ run_crude_workflow <- function(lock, override_clean_room = FALSE) {
   data <- lock$data
   A    <- data[[lock$treatment]]
   Y    <- data[[lock$outcome]]
+  Y    <- as.numeric(Y)
 
-  r1 <- mean(Y[A == 1])
-  r0 <- mean(Y[A == 0])
+  if (any(is.na(Y))) {
+    warning("run_crude_workflow: ", sum(is.na(Y)), " of ", length(Y),
+            " outcome rows are NA; computing crude RD on complete cases.",
+            call. = FALSE)
+    keep <- !is.na(Y)
+    A <- A[keep]; Y <- Y[keep]
+  }
+
+  n1 <- sum(A == 1); n0 <- sum(A == 0)
+  r1 <- mean(Y[A == 1]); r0 <- mean(Y[A == 0])
   rd <- r1 - r0
 
-  se <- sqrt(var(Y[A == 1]) / sum(A == 1) +
-               var(Y[A == 0]) / sum(A == 0))
+  se <- sqrt(stats::var(Y[A == 1]) / n1 + stats::var(Y[A == 0]) / n0)
   ci_lo   <- rd - 1.96 * se
   ci_hi   <- rd + 1.96 * se
-  p_value <- 2 * pnorm(-abs(rd / se))
+  p_value <- 2 * stats::pnorm(-abs(rd / se))
 
   list(
     estimate = rd,
@@ -2280,7 +2472,7 @@ run_crude_workflow <- function(lock, override_clean_room = FALSE) {
     p_value  = p_value,
     r1       = r1,
     r0       = r0,
-    n        = nrow(data),
+    n        = length(Y),
     treatment = lock$treatment,
     outcome   = lock$outcome
   )
