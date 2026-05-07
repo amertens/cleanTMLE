@@ -24,6 +24,7 @@ knitr::opts_chunk$set(
   warning    = FALSE,
   message    = FALSE
 )
+library(cleanTMLE)
 ```
 
 ## Purpose of this vignette
@@ -120,6 +121,71 @@ We choose the risk difference as the primary estimand because it has a
 transparent absolute-scale interpretation, admits doubly-robust and
 semiparametric-efficient estimation via TMLE, and is directly relevant
 to clinical decision making.
+
+---
+
+## From target trial specification to event-process classification
+
+Once the target trial and the statistical estimand are stated,
+post-baseline events should not be assigned a generic role of
+"censoring." Each event should be mapped to the causal question,
+to the corresponding ICH E9(R1) intercurrent-event strategy where
+applicable, and to the operational role it plays in estimation.
+The package supports this mapping with three structured helpers:
+`clean_event_process_table()`, `clean_target_population()`, and
+`clean_missing_data_plan()`.
+
+```{r event-process-vignette}
+events <- clean_event_process_table(list(
+  list(event_name = "Primary event by 24 months",
+       event_variable = "event_24",
+       role_in_estimand = "outcome event",
+       primary_handling = "modelled directly"),
+  list(event_name = "Death from other causes",
+       event_variable = "death_other",
+       role_in_estimand = "competing event",
+       ICH_E9R1_strategy = "composite or competing-risk strategy",
+       primary_handling = "competing-risk cumulative incidence",
+       justification = "Death precludes measurement of the primary event"),
+  list(event_name = "Loss to follow-up",
+       event_variable = "lost_fu",
+       role_in_estimand = "missing outcome process",
+       primary_handling = "IPCW",
+       identification_assumption = "MAR conditional on baseline covariates"),
+  list(event_name = "Treatment switching",
+       event_variable = "treat_switch",
+       role_in_estimand = "intercurrent event",
+       ICH_E9R1_strategy = "treatment-policy strategy",
+       primary_handling = "kept under assigned strategy")
+), censoring_handling = "IPCW for missing outcome")
+print(events)
+```
+
+```{r target-pop-vignette}
+tp <- clean_target_population(
+  target_population = "full eligible population",
+  reference_group   = "Control",
+  rationale         = "Marginal effect under each treatment strategy",
+  implications_for_interpretation = "ATE on the risk-difference scale")
+print(tp)
+```
+
+```{r missing-plan-vignette}
+plan <- clean_missing_data_plan(list(
+  "baseline covariate missingness" = list(
+    timing = "baseline", presumed_mechanism = "MCAR",
+    handling_primary = "median imputation",
+    nuisance_model_used = "n/a"),
+  "outcome missingness" = list(
+    timing = "follow-up", presumed_mechanism = "MAR",
+    handling_primary = "IPCW-TMLE",
+    nuisance_model_used = "SuperLearner response model",
+    identification_assumption = "MAR conditional on (A, W)"),
+  "censoring or loss to follow-up" = list(
+    timing = "follow-up", presumed_mechanism = "administrative",
+    handling_primary = "right-censoring at end of follow-up window")))
+print(plan)
+```
 
 ---
 
@@ -640,6 +706,38 @@ workflow the analyst checks the gate decision and branches accordingly.
 
 ---
 
+## Outcome-blind diagnostics before fitting the final estimator
+
+Before the outcome is unmasked, we report a compact set of
+diagnostics that support assessment of identification and
+estimator stability: treatment overlap, censoring weights (when
+present), missingness weights (when applicable), weighted SMDs,
+and effective sample size. These diagnostics should be conducted
+and the prespecified failure thresholds applied before looking at
+outcomes when the workflow allows.
+
+```{r outcome-blind-diagnostics, eval = exists("ps_fit")}
+A <- lock$data[[lock$treatment]]
+ps <- ps_fit$ps
+w  <- ifelse(A == 1, 1 / ps, 1 / (1 - ps))
+
+W_for_smd <- lock$data[, lock$covariates, drop = FALSE]
+weight_diag <- clean_weight_diagnostics(weights = w, treatment = A,
+                                         covariates = W_for_smd,
+                                         max_weight_threshold = 10,
+                                         ess_floor = 0.4 * length(w))
+print(weight_diag)
+```
+
+The maximum-weight threshold (10) and the ESS floor (40 % of N)
+are conservative defaults; the prespecified analysis plan should
+record values that are appropriate for the study's anticipated
+overlap, weight distribution, and sample size. When the study
+uses censoring or missingness weights, `clean_weight_diagnostics()`
+can be called separately on each weight vector.
+
+---
+
 ## Stage 4: Final comparative analysis
 
 Only after all preceding checkpoints pass do we access the real
@@ -794,6 +892,49 @@ TMLE is the locked primary analysis; matching and IPTW serve as
 contextual comparators.
 Agreement across estimators increases confidence that the result is
 not an artefact of a single modelling strategy.
+
+---
+
+## Reporting cumulative risks and contrasts
+
+Treatment-specific risks at the prespecified follow-up time, the
+risk difference, the risk ratio, event counts, and the estimator
+that produced each row are reported in a single structured table
+via `clean_risk_report_table()`.
+
+```{r risk-report-vignette, eval = exists("tmle_fit")}
+ate <- tmle_fit$estimates$ATE
+crude_r1 <- mean(lock$data[[lock$outcome]][lock$data[[lock$treatment]] == 1])
+crude_r0 <- mean(lock$data[[lock$outcome]][lock$data[[lock$treatment]] == 0])
+
+risk_rows <- list(
+  list(time_point = 24, treatment_strategy = "Treated",
+       n_observed = sum(lock$data[[lock$treatment]] == 1),
+       risk = crude_r1 + ate$estimate / 2,
+       estimator = "Modular TMLE",
+       nuisance_specification = paste(lock$sl_library, collapse = "+")),
+  list(time_point = 24, treatment_strategy = "Control",
+       n_observed = sum(lock$data[[lock$treatment]] == 0),
+       risk = crude_r0 - ate$estimate / 2,
+       risk_difference = ate$estimate,
+       risk_ci_lower = ate$ci_lower,
+       risk_ci_upper = ate$ci_upper,
+       estimator = "Modular TMLE",
+       nuisance_specification = paste(lock$sl_library, collapse = "+")))
+print(clean_risk_report_table(risk_rows))
+```
+
+### Why hazard ratios are secondary in this workflow
+
+cleanTMLE emphasises cumulative-risk contrasts because they map
+directly to treatment-specific risks under specified strategies and
+are generally more interpretable for regulatory RWE studies.
+Hazard ratios may be useful as secondary summaries when
+proportional hazards is plausible and the estimand is explicitly
+hazard-based, but they should not replace prespecified
+cumulative-risk contrasts when the causal question concerns
+absolute or relative risk by a clinically meaningful follow-up
+time.
 
 ---
 
