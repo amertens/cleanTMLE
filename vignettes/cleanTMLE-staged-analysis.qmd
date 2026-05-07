@@ -1,6 +1,6 @@
 ---
-title: "A Staged Clean-Room TMLE Analysis"
-subtitle: "Worked Example with cleanTMLE"
+title: "A Staged Outcome-Blind TMLE Workflow with cleanTMLE"
+subtitle: "Worked Example"
 author: "cleanTMLE Authors"
 date: today
 format:
@@ -10,7 +10,7 @@ format:
     code-fold: false
     self-contained: true
 vignette: >
-  %\VignetteIndexEntry{A Staged Clean-Room TMLE Analysis}
+  %\VignetteIndexEntry{A Staged Outcome-Blind TMLE Workflow with cleanTMLE}
   %\VignetteEngine{quarto::html}
   %\VignetteEncoding{UTF-8}
 ---
@@ -26,40 +26,66 @@ knitr::opts_chunk$set(
 )
 ```
 
-## Why staged clean-room analysis?
+## Purpose of this vignette
 
-Observational comparative effectiveness studies are vulnerable to analytic
-decisions that --- consciously or not --- are influenced by preliminary
-knowledge of the treatment--outcome association.
-Muntner et al. (2020) proposed a staged "clean-room" workflow in which
-design decisions (variable selection, model specification, estimator
-choice) are locked *before* the investigator accesses the observed
-outcome data.
-The approach enforces outcome blinding through software-mediated stage
-gates, reducing degrees of freedom in the final comparative analysis.
+This vignette demonstrates a staged workflow for an observational
+comparative-effectiveness analysis on a simulated dataset. Design
+and estimator-selection decisions are made before the observed
+treatment-outcome association is examined; the goal is reproducible
+prespecification and a structured documentation of analytic
+decisions that an external reviewer can follow.
 
-**cleanTMLE** operationalises this workflow in R.
-It is not a full protocol template or a regulatory submission tool;
-it is a package that encodes estimand-oriented, stage-gated
-causal analyses with TMLE as the primary estimator.
-This vignette demonstrates the package on a simulated dataset,
-walking through each stage from analytic specification to final
-inference.
+In this manuscript and vignette, *outcome-blind* means that
+decisions about cohort construction, candidate estimators,
+simulation scenarios, decision thresholds, and primary-estimator
+selection are made without inspecting the observed
+treatment-outcome association. Synthetic outcomes generated for
+plasmode simulations may be used; the marginal mean of the
+observed outcome on covariates is also used internally to fit the
+plasmode generator. The *pre-outcome decision point* is the
+juncture at which the prespecified diagnostics are reviewed and the
+analysis is classified as proceed, pause for review, or stop
+before the observed outcome is unmasked for the comparative
+analysis.
 
-The stages follow the Muntner framework:
+cleanTMLE is not a substitute for target-trial design, source-data
+validation, phenotype validation, independent oversight, or
+subject-matter assessment of identification assumptions. The
+worked example below shows reproducible prespecification, not a
+regulatory submission template.
+
+## Conceptual workflow
+
+The vignette proceeds in eight conceptual steps:
+
+1. Define the causal question and statistical estimand.
+2. Record the prespecified analysis specification.
+3. Assess cohort feasibility.
+4. Assess treatment-arm comparability.
+5. Run an outcome-blind plasmode simulation to evaluate candidate
+   estimators.
+6. Apply the prespecified decision criteria, classifying the
+   analysis as proceed, pause for review, or stop.
+7. Conduct the prespecified final outcome analysis.
+8. Report diagnostics and sensitivity analyses, and archive the
+   analysis record.
+
+The Muntner et al. (2020) staging framework is the source of the
+checkpoint structure; cleanTMLE supplies the analytic
+specification, plasmode evaluation, decision rule, and audit
+machinery. The compact stage labels are:
+
 ```
-Stage 1a  Specify the analytic plan and lock it
-Stage 1b  Assess cohort adequacy                   (Check Point 1)
+Stage 1a  Specify the analytic plan and record it
+Stage 1b  Assess cohort adequacy                    (Check Point 1)
 Stage 2   Assess treatment-arm comparability via PS (Check Point 2)
-Stage 3   Assess residual bias via negative controls(Check Point 3)
-Gate      Pre-outcome authorization                 (Go / No-Go)
-Stage 4   Conduct the comparative analysis
+Stage 3   Assess residual bias via negative controls (Check Point 3)
+          Pre-outcome decision: proceed, pause, or stop
+Stage 4   Conduct the prespecified comparative analysis
 ```
 
-Each checkpoint produces a structured GO / FLAG / STOP decision.
-The analysis may proceed to the next stage only after all preceding
-checkpoints have been evaluated.
-An audit trail accumulates entries automatically.
+We use *proceed*, *pause for review*, and *stop* in prose; the
+software shorthand for the same labels is GO, FLAG, and STOP.
 
 ---
 
@@ -97,7 +123,14 @@ to clinical decision making.
 
 ---
 
-## Stage 1a: Analysis specification and lock
+## Record the analysis specification
+
+The analysis specification records the treatment, outcome,
+covariates, candidate estimators, learner library, simulation
+settings, and random seed. Later steps refer back to this object
+so that the final analysis can be compared with the prespecified
+plan, and so that an external reviewer can reconcile the recorded
+inputs with the analyses that were run.
 
 ```{r stage1a}
 library(cleanTMLE)
@@ -105,12 +138,6 @@ set.seed(42)
 
 dat <- sim_func1(n = 400, seed = 42)
 ```
-
-The analysis lock captures the full specification --- treatment, outcome,
-covariates, learner library, plasmode settings, and seed --- as an
-immutable object.
-Any downstream function that receives the lock can verify its integrity
-against the stored hash.
 
 ### Covariate sanitisation
 
@@ -546,18 +573,20 @@ we proceed to the pre-outcome authorization gate.
 
 ---
 
-## Pre-outcome authorization gate
+## Pre-outcome decision
 
-Before any code touches the real outcome we run a formal go/no-go
-check.
-`authorize_outcome_analysis()` inspects the audit trail and verifies
-that every required checkpoint has been recorded with a GO (or, if
-`allow_flag = TRUE`, a FLAG) decision.
-If any checkpoint is missing or returned STOP, the gate refuses to
-authorize and the analysis cannot proceed to Stage 4.
+The pre-outcome decision summarises whether the prespecified
+diagnostics support proceeding to outcome analysis, require
+additional review, or indicate that the study should stop or be
+redesigned. `authorize_outcome_analysis()` inspects the audit
+trail and verifies that every required checkpoint has been
+recorded with a *proceed* (GO) or, when `allow_flag = TRUE`,
+*pause for review* (FLAG) classification. If any checkpoint is
+missing or returned *stop* (STOP), the prespecified workflow is
+not complete and outcome-analysis functions will not run.
 
-Alternatively, `gate_all()` evaluates all checkpoint objects at once
-and returns a single composite decision:
+`gate_all()` evaluates all checkpoint objects at once and returns
+the composite classification:
 
 ```{r gate-all}
 composite <- gate_all(cp1, cp2, cp3, allow_flag = TRUE)
@@ -572,15 +601,15 @@ audit <- record_checkpoint(audit, gate)
 
 ```{r dlog-gate}
 audit <- record_decision_log_entry(audit,
-  stage         = "Pre-outcome gate",
+  stage         = "Pre-outcome decision",
   decision_type = "authorization",
-  description   = paste("Outcome analysis authorized:", gate$decision),
-  rationale     = "All preceding checkpoints passed; gate opened automatically"
+  description   = paste("Outcome analysis classification:", gate$decision),
+  rationale     = "All preceding checkpoints passed."
 )
 ```
 
-The gate decision is **`r gate$decision`** --- outcome data may now
-be accessed.
+The pre-outcome classification is **`r gate$decision`**, and
+outcome-analysis functions may now run on the unmasked data.
 
 ### What if a checkpoint fails?
 
@@ -845,34 +874,36 @@ knitr::kable(dlog_df, caption = "Decision log for the staged analysis.")
 
 ## Summary
 
-This vignette demonstrated how **cleanTMLE** operationalises a staged
-clean-room analysis:
+The worked example illustrates the eight conceptual steps:
 
-1. Covariates were sanitised with `sanitize_covariates()` before locking.
-2. The causal question and statistical estimand were defined first.
-3. The analytic specification was locked and serialised with `save_lock()`.
-4. Cohort adequacy, treatment comparability, and residual bias were
-   assessed through structured checkpoints with prespecified
-   decision thresholds.
-5. Design precision and event support diagnostics confirmed the
-   study was adequately powered.
-6. The primary estimator (TMLE) was selected via outcome-blind
-   plasmode simulation.
-7. TMLE-based negative controls (`run_negative_control_tmle()`)
-   provided doubly-robust residual-bias assessment.
-8. A formal pre-outcome authorization gate --- including the
-   composite `gate_all()` --- verified that all checkpoints passed.
-9. The final comparative analysis included full-cohort TMLE,
-   matched-cohort TMLE (`run_matched_tmle()`), IPTW, and matching.
-10. Clever covariate and influence-curve diagnostics confirmed
-    the TMLE update behaved as expected.
-11. Sensitivity analysis and an E-value were computed as prespecified.
-12. An audit trail, stage path narrative, and decision log document
-    the full analytic path and the rationale behind key choices.
-13. The plasmode DQ stress test (`run_plasmode_dq_stress()`,
-    `summarize_dq_degradation()`) is available for sites that want
-    to combine candidate selection with a quantitative data-fitness
-    check before the outcome is unblinded.
+1. Define the causal question and statistical estimand.
+2. Record the prespecified analysis plan (covariates, candidate
+   estimators, learner library, simulation settings, and seed).
+3. Assess cohort feasibility (sample size, event support, design
+   precision).
+4. Assess treatment-arm comparability (propensity-score overlap,
+   balance, effective sample size).
+5. Evaluate candidate estimators using synthetic outcomes
+   (outcome-blind plasmode simulation, with an optional
+   data-quality stress test) and apply the prespecified
+   selection rule.
+6. Document the pre-outcome decision (proceed, pause for review,
+   or stop) using the recorded checkpoint results.
+7. Run the prespecified final outcome analysis on the unmasked
+   data.
+8. Report diagnostics and sensitivity analyses, and archive the
+   analysis record (the analysis specification, audit trail, and
+   decision log).
+
+The package includes additional functions used along the way:
+`sanitize_covariates()` for covariate preparation,
+`run_negative_control_tmle()` for residual-bias screening, the
+composite `gate_all()` for evaluating checkpoint objects together,
+`run_matched_tmle()` and the four-step TMLE pipeline for the final
+analysis, `compute_evalue()` and `sensitivity_truncation()` for
+sensitivity analyses, and `run_plasmode_dq_stress()` with
+`summarize_dq_degradation()` for studies that want to combine
+candidate selection with a quantitative pre-outcome stress test.
 
 ### Integration with real-world pipelines
 
