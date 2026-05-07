@@ -2,28 +2,28 @@
 
 **Staged Clean-Room Causal Analysis with TMLE**
 
-## Attribution
+## Relation to causalRisk
 
-cleanTMLE reuses the cohort-specification API and several
-estimator/reporting functions from the
-[**causalRisk**](https://github.com/CausalInference/causalRisk)
+The proprietary [`causalRisk`](https://github.com/CausalInference/causalRisk)
 package by M. Alan Brookhart, Alexander Breskin, and Bassim
-Eledath, under the MIT licence and with attribution. Reused
-elements include: the model-specification DSL (`specify_models`,
+Eledath is an alternative implementation of related
+cumulative-risk estimators with which cleanTMLE shares conceptual
+structure. The two packages do not share code: cleanTMLE
+implements its cohort-specification interface (`specify_models`,
 `identify_treatment`, `identify_outcome`, `identify_censoring`,
 `identify_competing_risk`, `identify_subject`, `identify_interval`,
-`identify_missing`); the IPW / G-computation / AIPW estimators
+`identify_missing`), its IPW / G-computation / AIPW estimators
 (`estimate_ipwrisk`, `estimate_gcomprisk`, `estimate_aipwrisk`,
-`estimate_ipwhr`); and the reporting helpers (`make_table1`,
+`estimate_ipwhr`), and its reporting helpers (`make_table1`,
 `make_table2`, `extreme_weights`, `inspect_ipw_weights`,
-`forest_plot`, `compare_fits`, `re_estimate`, `hr_data`).
-Functions unique to cleanTMLE (the analysis lock, outcome masking,
-plasmode feasibility and DQ stress, audit and decision logs, the
-four-step TMLE functions, IPCW-TMLE for missing outcomes, and the
-GO/FLAG/STOP gate) are documented as cleanTMLE-original in the
-corresponding `.Rd` files.
-We thank the causalRisk authors for the MIT-licensed code that
-made this attribution-based reuse possible.
+`forest_plot`, `compare_fits`, `re_estimate`, `hr_data`)
+independently. The analysis lock, outcome masking, plasmode
+feasibility and DQ stress, audit and decision logs, four-step TMLE
+functions, IPCW-TMLE for missing outcomes, and the staged
+pre-outcome decision rule are also independent implementations.
+We acknowledge `causalRisk` as the closest alternative
+implementation in the R ecosystem and recommend it as a reference
+point for analysts comparing approaches.
 
 ## Overview
 

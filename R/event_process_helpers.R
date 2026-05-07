@@ -632,3 +632,112 @@ print.cleantmle_risk_report <- function(x, ...) {
   print.data.frame(show, row.names = FALSE)
   invisible(x)
 }
+
+
+# ---------------------------------------------------------------------
+# G. Weight-diagnostics checkpoint that plugs into the gate
+# ---------------------------------------------------------------------
+
+#' Pre-Outcome Weight Checkpoint
+#'
+#' Wraps [clean_weight_diagnostics()] in a structured checkpoint object
+#' compatible with [gate_all()] and [authorize_outcome_analysis()]. Useful
+#' when the weights themselves (treatment, censoring, or their product)
+#' should be a formal pre-outcome diagnostic, not just a side note.
+#'
+#' Decision logic:
+#' \itemize{
+#'   \item \code{STOP} when ESS falls below \code{ess_floor} or the
+#'     maximum weight exceeds \code{max_weight_threshold} *and* the
+#'     proportion of extreme weights exceeds \code{extreme_prop_threshold};
+#'   \item \code{FLAG} when either ESS or extreme-weight criteria fail
+#'     individually but not jointly;
+#'   \item \code{GO} otherwise.
+#' }
+#' Thresholds are user-supplied and should be prespecified.
+#'
+#' @section Clean-room stage: Stage 2 (treatment weights) or Stage 4
+#'   pre-flight (censoring or missingness weights).
+#'
+#' @param weights Numeric vector of inverse-probability weights.
+#' @param treatment Optional treatment indicator (0/1 or factor) of the
+#'   same length as \code{weights}.
+#' @param weight_type Character label for the weight family (e.g.
+#'   \code{"treatment"}, \code{"censoring"}, \code{"missingness"},
+#'   \code{"treatment x censoring"}). Default \code{"treatment"}.
+#' @param max_weight_threshold,ess_floor See [clean_weight_diagnostics()].
+#' @param extreme_prop_threshold Maximum acceptable proportion of
+#'   observations with weight greater than \code{max_weight_threshold}.
+#'   Default \code{0.01}.
+#' @param lock_hash Optional character; lock fingerprint to attach to
+#'   the checkpoint for traceability.
+#'
+#' @return A \code{cleantmle_checkpoint} suitable for
+#'   [gate_all()] / [record_checkpoint()].
+#'
+#' @examples
+#' set.seed(2)
+#' n <- 400
+#' A <- rbinom(n, 1, 0.4)
+#' ps <- plogis(0.2 * rnorm(n))
+#' w  <- ifelse(A == 1, 1 / ps, 1 / (1 - ps))
+#' cp <- checkpoint_weights(w, treatment = A,
+#'                          max_weight_threshold = 10,
+#'                          ess_floor = 0.4 * n)
+#' print(cp)
+#'
+#' @export
+checkpoint_weights <- function(weights, treatment = NULL,
+                                weight_type = "treatment",
+                                max_weight_threshold = 10,
+                                ess_floor = NULL,
+                                extreme_prop_threshold = 0.01,
+                                lock_hash = NA_character_) {
+  diag <- clean_weight_diagnostics(weights = weights,
+                                    treatment = treatment,
+                                    max_weight_threshold = max_weight_threshold,
+                                    ess_floor = ess_floor)
+
+  ess <- diag$ess$overall
+  ess_fail <- diag$flags$low_ess
+  ext_n <- diag$extreme_weights$n
+  ext_p <- diag$extreme_weights$prop
+  max_w <- diag$percentiles$overall[["max"]]
+
+  ext_fail <- ext_p > extreme_prop_threshold
+  decision <- if (ess_fail && ext_fail) "STOP"
+              else if (ess_fail || ext_fail) "FLAG"
+              else "GO"
+
+  metrics <- data.frame(
+    weight_type             = weight_type,
+    n                       = diag$n,
+    ess                     = round(ess, 1),
+    max_weight              = round(max_w, 3),
+    pct_extreme             = round(100 * ext_p, 2),
+    max_weight_threshold    = max_weight_threshold,
+    extreme_prop_threshold  = extreme_prop_threshold,
+    stringsAsFactors        = FALSE)
+
+  rationale <- sprintf(paste0(
+    "Weight checkpoint (%s): ESS = %.1f (floor %.1f); ",
+    "max weight = %.2f (threshold %.1f); ",
+    "%% extreme = %.2f%% (threshold %.2f%%)."),
+    weight_type, ess,
+    if (is.null(ess_floor)) 0.3 * diag$n else ess_floor,
+    max_w, max_weight_threshold,
+    100 * ext_p, 100 * extreme_prop_threshold)
+
+  cp <- new_checkpoint(
+    stage      = paste0("Weight checkpoint (", weight_type, ")"),
+    decision   = decision,
+    metrics    = metrics,
+    thresholds = list(max_weight_threshold = max_weight_threshold,
+                      ess_floor = if (is.null(ess_floor)) 0.3 * diag$n
+                                  else ess_floor,
+                      extreme_prop_threshold = extreme_prop_threshold),
+    rationale  = rationale,
+    lock_hash  = lock_hash)
+  cp$diagnostics <- diag
+  cp
+}
