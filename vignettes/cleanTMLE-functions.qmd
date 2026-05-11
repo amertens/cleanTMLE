@@ -27,9 +27,9 @@ knitr::opts_chunk$set(
 ```
 
 This article is a compact index of every exported function in
-**cleanTMLE**, organised by clean-room stage.
+**cleanTMLE**, organised by outcome-blind stage.
 For a narrative worked example, see the companion vignette
-*A Staged Clean-Room TMLE Analysis*.
+*A Staged Outcome-Blind TMLE Workflow with cleanTMLE*.
 
 ```{r load}
 library(cleanTMLE)
@@ -38,10 +38,32 @@ dat <- sim_func1(n = 400, seed = 42)
 
 ---
 
+## Outcome-access taxonomy
+
+The function index below labels each exported function by what it
+uses internally from the outcome side of the data:
+
+- **No outcome access** --- uses W, A, metadata, lock objects,
+  synthetic outcomes, or diagnostics not involving Y.
+- **Design-stage marginal outcome access** --- uses event counts or
+  marginal outcome support, without estimating the A--Y association.
+- **Negative-control outcome access** --- uses prespecified
+  negative-control outcomes, not the primary outcome.
+- **Primary outcome access** --- estimates the observed
+  treatment--primary-outcome association and requires authorization.
+
+The package cannot enforce personnel-level blinding or prevent a
+user with raw data access from inspecting outcomes outside the
+package. The outcome-access labels describe what the exported
+functions use internally. Regulatory-grade implementation still
+requires external role separation and access controls.
+
+---
+
 ## Function Index
 
-The table below lists every exported function, its clean-room stage,
-and whether it accesses the real outcome.
+The table below lists every exported function, its outcome-blind
+stage, and what it uses from the outcome side of the data.
 
 | Stage | Function | Outcome? | Purpose |
 |-------|----------|:--------:|---------|
@@ -52,9 +74,9 @@ and whether it accesses the real outcome.
 | 1a | `attach_estimand()` | No | Attach estimand metadata |
 | 1a | `declare_sensitivity_plan()` | No | Declare a sensitivity plan |
 | 1a | `define_negative_control()` | No | Register a negative control variable |
-| 1b | `checkpoint_cohort_adequacy()` | Yes* | Check Point 1: sample size / events |
-| 1b | `estimate_design_precision()` | Yes* | Design-stage precision/MDD |
-| 1b | `summarize_event_support()` | Yes* | Event counts by arm |
+| 1b | `checkpoint_cohort_adequacy()` | Marginal Y only | Check Point 1: sample size / events |
+| 1b | `estimate_design_precision()` | Marginal Y only | Design-stage precision/MDD |
+| 1b | `summarize_event_support()` | Marginal Y only | Event counts by arm |
 | 2 | `fit_ps_glm()` | No | Logistic regression PS |
 | 2 | `fit_ps_superlearner()` | No | SuperLearner PS |
 | 2 | `compute_ps_diagnostics()` | No | Overlap, ESS, SMDs |
@@ -62,27 +84,27 @@ and whether it accesses the real outcome.
 | 2b | `tmle_candidate()` | No | Define a TMLE candidate specification |
 | 2b | `expand_tmle_candidate_grid()` | No | Generate candidate grid |
 | 2b | `validate_tmle_candidates()` | No | Validate candidate list |
-| 2b | `run_plasmode_feasibility()` | No† | Plasmode simulation evaluation |
+| 2b | `run_plasmode_feasibility()` | Synthetic Y only | Plasmode simulation evaluation |
 | 2b | `summarize_plasmode_results()` | No | Print plasmode metrics |
 | 2b | `select_tmle_candidate()` | No | Select best TMLE specification |
 | 2b | `lock_primary_tmle_spec()` | No | Lock selected spec in the lock |
 | 2b | `get_primary_tmle_spec()` | No | Retrieve locked spec |
 | 2b | `gate_check()` | No | GO / FLAG / STOP for plasmode |
-| 3 | `run_negative_control()` | Yes‡ | Negative control analysis |
-| 3 | `run_residual_confounding_stage()` | Yes‡ | Stage 3 wrapper |
+| 3 | `run_negative_control()` | Negative-control Y only | Negative control analysis |
+| 3 | `run_residual_confounding_stage()` | Negative-control Y only | Stage 3 wrapper |
 | 3 | `checkpoint_residual_bias()` | No | Check Point 3: residual bias |
 | Gate | `authorize_outcome_analysis()` | No | Pre-outcome GO/STOP gate |
 | Gate | `assert_outcome_authorized()` | No | Gate assertion (errors if not GO) |
-| 4 | `run_crude_workflow()` | **Yes** | Unadjusted risk difference |
-| 4 | `run_match_workflow()` | **Yes** | PS matching |
-| 4 | `run_iptw_workflow()` | **Yes** | Stabilised IPTW |
+| 4 | `run_crude_workflow()` | Primary Y | Unadjusted risk difference |
+| 4 | `run_match_workflow()` | Primary Y | PS matching |
+| 4 | `run_iptw_workflow()` | Primary Y | Stabilised IPTW |
 | 4 | `fit_tmle_treatment_mechanism()` | No | TMLE g-step (re-uses PS) |
-| 4 | `fit_tmle_outcome_mechanism()` | **Yes** | TMLE Q-step |
-| 4 | `run_tmle_targeting_step()` | **Yes** | TMLE targeting / fluctuation |
-| 4 | `extract_tmle_estimate()` | **Yes** | Final TMLE estimate |
-| 4 | `fit_tmle_candidate_set()` | **Yes** | Fit multiple TMLE specs |
-| 4 | `fit_final_workflows()` | **Yes** | Run all Stage 4 workflows |
-| 4 | `sensitivity_truncation()` | **Yes** | Truncation sensitivity |
+| 4 | `fit_tmle_outcome_mechanism()` | Primary Y | TMLE Q-step |
+| 4 | `run_tmle_targeting_step()` | Primary Y | TMLE targeting / fluctuation |
+| 4 | `extract_tmle_estimate()` | Primary Y | Final TMLE estimate |
+| 4 | `fit_tmle_candidate_set()` | Primary Y | Fit multiple TMLE specs |
+| 4 | `fit_final_workflows()` | Primary Y | Run all Stage 4 workflows |
+| 4 | `sensitivity_truncation()` | Primary Y | Truncation sensitivity |
 | Any |`compute_evalue()` | No | E-value for unmeasured confounding |
 | Any |`summarize_cleanroom_results()` | No | Cross-workflow comparison table |
 | Any |`record_decision_log_entry()` | No | Add structured decision log entry |
@@ -95,7 +117,7 @@ and whether it accesses the real outcome.
 | Any |`build_stage_manifest()` | No | Print stage path summary |
 | Util | `mask_outcome()` | No | Mask outcome column with NA |
 | Util | `unmask_outcome()` | No | Restore masked outcome |
-| Wrapper | `run_clean_tmle()` | **Yes** | Full staged clean-room pipeline |
+| Wrapper | `run_clean_tmle()` | Primary Y | Full staged clean-room pipeline |
 | Wrapper | `init_decision_log()` | No | Create empty decision log |
 | Wrapper | `log_decision_entry()` | No | Append row to decision log |
 | Wrapper | `save_decision_log()` | No | Write decision log to CSV |
@@ -105,8 +127,8 @@ and whether it accesses the real outcome.
 | Integ | `fit_ps_parallel()` | No | SuperLearner PS with parallel cluster |
 | Integ | `save_lock()` / `load_lock()` | No | Serialise / deserialise lock to RDS |
 | Integ | `save_audit()` / `load_audit()` | No | Serialise / deserialise audit log |
-| 3 | `run_negative_control_tmle()` | Yes‡ | TMLE-based negative control (doubly robust) |
-| 4 | `run_matched_tmle()` | **Yes** | Modular TMLE on a matched subset |
+| 3 | `run_negative_control_tmle()` | Negative-control Y only | TMLE-based negative control (doubly robust) |
+| 4 | `run_matched_tmle()` | Primary Y | Modular TMLE on a matched subset |
 | Integ | `sanitize_covariates()` | No | Clean covariates for SuperLearner |
 | Integ | `create_analysis_lock_from_yaml()` | No | Lock from YAML config file |
 | Plot | `clever_covariate_plot()` | No | H(A,W) distribution by group |
@@ -114,14 +136,15 @@ and whether it accesses the real outcome.
 | Integ | `compute_matched_smds()` | No | SMDs on a matched subset |
 | 1 | `attrition_table()` | No | Cohort flow / attrition documentation |
 | 1 | `get_final_cohort()` | No | Extract filtered data from attrition table |
-| 2b | `refine_ps_after_nco()` | Yes‡ | Iterative PS refinement after NCO signal |
-| 2b | `run_plasmode_dq_stress()` | No† | DQ stress test (missingness, misclass, U) |
+| 2b | `refine_ps_after_nco()` | Negative-control Y only | Iterative PS refinement after NCO signal |
+| 2b | `run_plasmode_dq_stress()` | Synthetic Y only | DQ stress test (missingness, misclass, U) |
 | 2b | `summarize_dq_degradation()` | No | DQ degradation comparison table |
 | Gate | `gate_all()` | No | Composite GO/FLAG/STOP across checkpoints |
 
-\* Accesses event counts only.
-† Generates simulated outcomes; does not use the real outcome association.
-‡ Accesses the negative control outcome, not the primary outcome.
+**Marginal Y only**: accesses event counts or marginal outcome support, not the A--Y association.
+**Synthetic Y only**: generates simulated outcomes; does not use the real outcome association.
+**Negative-control Y only**: accesses prespecified negative-control outcomes, not the primary outcome.
+**Primary Y**: estimates the observed treatment--primary-outcome association and requires authorization.
 
 ---
 
@@ -237,6 +260,59 @@ print(plas)
 selected <- select_tmle_candidate(plas, rule = "min_rmse")
 lock <- lock_primary_tmle_spec(lock, selected)
 print(selected)
+```
+
+### Plasmode DQ Stress Test (Stage 2c)
+
+`run_plasmode_dq_stress()` perturbs the synthetic outcome under
+locked data-quality severity ranges. The severity values are not
+chosen here; they come from external sources (validation studies,
+data profiling, or expert elicitation) and are locked before the
+stress test runs. The example below shows two scenarios with
+locked severity values and the downstream summarisation and
+gating calls.
+
+```{r dq-stress-example, eval = FALSE}
+# Severity values below are illustrative. In practice they are
+# locked before this chunk runs and come from:
+#   - validation studies (e.g. measured sens/spec for the outcome
+#     phenotype against a gold-standard chart review),
+#   - data profiling (e.g. observed missingness fractions), or
+#   - expert elicitation (e.g. plausible OR ranges for an
+#     unmeasured confounder).
+
+dq_results <- run_plasmode_dq_stress(
+  lock,
+  tmle_candidates = candidates,
+  effect_sizes    = c(0.05),
+  reps            = 30L,
+  data_quality_scenarios = list(
+    # Scenario 1: outcome misclassification, two (sens, spec) pairs
+    outcome_misclass = list(
+      sensitivity = c(0.95, 0.90),
+      specificity = c(0.99, 0.95)
+    ),
+    # Scenario 2: unmeasured confounding, two beta (OR) values
+    unmeasured_confounding = list(
+      U_prevalence   = 0.20,
+      U_treatment_OR = c(1.5, 2.0),
+      U_outcome_OR   = c(1.5, 2.0)
+    )
+  ),
+  verbose = FALSE
+)
+
+# Summarise degradation relative to the baseline plasmode
+deg <- summarize_dq_degradation(dq_results)
+head(deg)
+
+# Score all checkpoints together (GO / FLAG / STOP)
+composite <- gate_all(cp1, cp2, cp3, allow_flag = TRUE)
+print(composite)
+
+# Or check the audit-trail-based pre-outcome gate
+gate <- authorize_outcome_analysis(audit)
+print(gate)
 ```
 
 ---

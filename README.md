@@ -1,6 +1,40 @@
 # cleanTMLE
 
-**Staged Clean-Room Causal Analysis with TMLE**
+**Outcome-Blind Staged Workflow for TMLE**
+
+## What problem does cleanTMLE solve?
+
+In real-world evidence studies, protocol design, fit-for-purpose data
+review, and estimator choice are often documented separately.
+cleanTMLE helps analysts lock and audit the estimator-selection
+portion of the causal roadmap before outcome access. It provides an
+analysis-lock object, an audit and decision log, a baseline plasmode
+candidate selector, a data-quality stress test, and a prespecified
+GO/FLAG/STOP rule that the workflow checks before the primary outcome
+analysis runs.
+
+```
+Lock estimand and candidates
+  -> PS / design diagnostics
+  -> Baseline plasmode candidate selection
+  -> DQ stress test
+  -> GO / FLAG / STOP
+  -> Authorized primary analysis
+  -> Sensitivity analyses / reporting
+```
+
+The data-quality stress test is a quantitative supplement to
+fit-for-purpose data review, not a substitute for it.
+
+## What cleanTMLE does not do
+
+- does not automate target-trial design
+- does not validate source data or phenotypes
+- does not guarantee causal identification
+- does not replace clean-room personnel governance, role separation,
+  or access controls
+- does not remove the need for post-outcome sensitivity analyses
+  (E-value, QBA, causal-gap)
 
 ## Relation to causalRisk
 
@@ -27,13 +61,15 @@ point for analysts comparing approaches.
 
 ## Overview
 
-`cleanTMLE` supports a structured, outcome-blinded workflow for
+`cleanTMLE` supports a structured, outcome-blind staged workflow for
 observational causal analysis based on targeted minimum loss-based
-estimation (TMLE). The package implements the scaffolding needed to plan
-and execute a staged clean-room analysis in which analytic
-decisions --- including the estimand, nuisance-model specifications, and
-estimator selection rules --- are locked before any investigator accesses
-the study outcome data.
+estimation (TMLE). The package implements the software layer that
+operationalizes the estimator-selection portion of the analysis (the
+estimand, nuisance-model specifications, and estimator selection
+rules are locked before any investigator accesses the study outcome
+data). It sits within, but does not replace, the broader clean-room
+governance construct of Muntner et al. (2020), which also covers
+personnel separation and data-access controls.
 
 The workflow follows the Muntner et al. (2020) staged design:
 
@@ -96,7 +132,8 @@ richer applied analyses.
   (`mask_outcome()`, `unmask_outcome()`)
 - **Stage 4 outcome guard** --- all Stage 4 functions check for outcome
   masking and refuse to run on masked data unless
-  `override_clean_room = TRUE` is explicitly set
+  `override_clean_room = TRUE` is explicitly set (the argument retains
+  its historical name; the check operationalizes outcome blinding)
 - **SuperLearner-based propensity-score estimation and diagnostics** ---
   ensemble learning PS (`fit_ps_superlearner()`) or logistic regression
   (`fit_ps_glm()`); overlap plots, effective sample size, and
@@ -119,7 +156,7 @@ richer applied analyses.
 - **Gate decision** --- structured GO / FLAG / STOP based on bias,
   coverage, and SE calibration from plasmode results (`gate_check()`)
 - **TMLE in four explicit steps** --- intentionally separated so each
-  step runs at the correct clean-room stage:
+  step runs at the correct workflow stage:
   1. Treatment mechanism / g-step (`fit_tmle_treatment_mechanism()`)
   2. Outcome mechanism / Q-step (`fit_tmle_outcome_mechanism()`)
   3. Targeting / fluctuation step (`run_tmle_targeting_step()`)
@@ -473,13 +510,14 @@ export_decision_log(audit)          # returns decision log data.frame
 
 ## Package Philosophy
 
-The clean-room workflow enforces outcome blinding through
-software-mediated stage gates, reducing analytic degrees of freedom.
-Traditional diagnostics (overlap, balance, weight distributions) are
-necessary but insufficient: a good-looking PS overlap plot does not
-guarantee that a particular TMLE specification will have low bias in
-the sample at hand. Conversely, marginal overlap does not necessarily
-imply that a targeted estimator will perform poorly.
+The outcome-blind staged workflow records outcome blinding through
+software-mediated stage gates, documenting analytic degrees of freedom
+for review. Traditional diagnostics (overlap, balance, weight
+distributions) are necessary but insufficient: a good-looking PS
+overlap plot does not by itself indicate that a particular TMLE
+specification will have low bias in the sample at hand. Conversely,
+marginal overlap does not necessarily imply that a targeted estimator
+will perform poorly.
 
 Plasmode simulation bridges this gap. By evaluating the full estimator
 pipeline on outcome-blind simulations derived from the real covariate
@@ -493,18 +531,18 @@ in a structured way:
   selection target.
 - The audit trail from specification to final estimate is preserved.
 
-The four-step TMLE design directly mirrors the clean-room workflow:
-the treatment mechanism can be estimated in Stage 2 without outcome
-access; the outcome mechanism is first estimated on real data in
-Stage 4; the targeting step follows only after both nuisance
-estimates are in hand.
-This separation makes the stage boundaries explicit in the code itself.
+The four-step TMLE design directly mirrors the outcome-blind staged
+workflow: the treatment mechanism can be estimated in Stage 2 without
+outcome access; the outcome mechanism is first estimated on real
+data in Stage 4; the targeting step follows only after both nuisance
+estimates are in hand. This separation makes the stage boundaries
+explicit in the code itself.
 
 ## Notes on Nuisance Estimation
 
 `cleanTMLE` uses SuperLearner as the default propensity-score estimation
-strategy. In clean-room workflows, flexible treatment-model estimation
-is often desirable: the covariate set may be high-dimensional,
+strategy. In outcome-blind staged workflows, flexible treatment-model
+estimation is often desirable: the covariate set may be high-dimensional,
 relationships may be nonlinear, and it can be difficult to pre-specify
 a correctly-specified parametric PS model before the outcome is
 examined. SuperLearner provides a principled, data-adaptive approach
@@ -518,10 +556,10 @@ be changed after outcome data are accessed.
 
 ## Relationship to Existing R Packages
 
-`cleanTMLE` provides the workflow scaffolding --- staged specification,
-blinded diagnostics, simulation-based validation, and structured
-output --- that underlying estimation packages do not themselves
-enforce. Estimation functionality may be delegated to:
+`cleanTMLE` provides the workflow scaffolding (staged specification,
+outcome-blind diagnostics, simulation-based candidate review, and
+structured output) that underlying estimation packages do not
+themselves provide. Estimation functionality may be delegated to:
 
 - [`tmle`](https://cran.r-project.org/package=tmle) --- point-treatment TMLE
 - [`SuperLearner`](https://cran.r-project.org/package=SuperLearner) ---
