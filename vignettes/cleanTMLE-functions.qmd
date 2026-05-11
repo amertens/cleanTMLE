@@ -45,18 +45,18 @@ uses internally from the outcome side of the data:
 
 - **No outcome access** --- uses W, A, metadata, lock objects,
   synthetic outcomes, or diagnostics not involving Y.
-- **Design-stage marginal outcome access** --- uses event counts or
-  marginal outcome support, without estimating the A--Y association.
-- **Negative-control outcome access** --- uses prespecified
-  negative-control outcomes, not the primary outcome.
-- **Primary outcome access** --- estimates the observed
-  treatment--primary-outcome association and requires authorization.
+- **Marginal Y only** --- uses event counts or marginal outcome
+  support (no estimation of the A--Y association).
+- **Synthetic Y only** --- uses plasmode-generated outcomes; no
+  observed Y.
+- **Negative-control Y only** --- uses prespecified NC outcomes,
+  not the primary outcome.
+- **Primary Y** --- estimates the observed
+  treatment-primary-outcome association; requires authorization.
 
-The package cannot enforce personnel-level blinding or prevent a
-user with raw data access from inspecting outcomes outside the
-package. The outcome-access labels describe what the exported
-functions use internally. Regulatory-grade implementation still
-requires external role separation and access controls.
+These labels describe what exported package functions use
+internally, not what a user with raw data access could inspect
+outside the package.
 
 ---
 

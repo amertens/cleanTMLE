@@ -4,37 +4,43 @@
 
 ## What problem does cleanTMLE solve?
 
-In real-world evidence studies, protocol design, fit-for-purpose data
-review, and estimator choice are often documented separately.
-cleanTMLE helps analysts lock and audit the estimator-selection
-portion of the causal roadmap before outcome access. It provides an
-analysis-lock object, an audit and decision log, a baseline plasmode
-candidate selector, a data-quality stress test, and a prespecified
-GO/FLAG/STOP rule that the workflow checks before the primary outcome
-analysis runs.
+In RWE studies, protocol design, fit-for-purpose data review, and
+estimator choice are often documented separately. cleanTMLE helps
+analysts lock, audit, and review the estimator-selection portion
+of the causal roadmap before primary outcome access, using
+baseline diagnostics, outcome-blind plasmode simulation, and
+prespecified data-quality stress scenarios. It provides an
+analysis-lock object, an audit and decision log, a baseline
+plasmode candidate selector, a data-quality stress test, and a
+prespecified GO / FLAG / STOP rule that the workflow checks
+before the primary outcome analysis runs.
 
 ```
 Lock estimand and candidates
+  -> Cohort adequacy / event support
   -> PS / design diagnostics
   -> Baseline plasmode candidate selection
   -> DQ stress test
+  -> Optional negative-control checks
   -> GO / FLAG / STOP
   -> Authorized primary analysis
   -> Sensitivity analyses / reporting
 ```
 
-The data-quality stress test is a quantitative supplement to
-fit-for-purpose data review, not a substitute for it.
+The data-quality stress test is a quantitative pre-outcome
+supplement to fit-for-purpose data review, not a formal QBA and
+not a substitute for source-data validation.
 
 ## What cleanTMLE does not do
 
 - does not automate target-trial design
-- does not validate source data or phenotypes
-- does not guarantee causal identification
-- does not replace clean-room personnel governance, role separation,
-  or access controls
-- does not remove the need for post-outcome sensitivity analyses
-  (E-value, QBA, causal-gap)
+- does not validate source data
+- does not guarantee exchangeability or positivity
+- does not replace phenotype validation
+- does not replace clean-room personnel governance
+- does not replace post-outcome sensitivity analyses
+- does not guarantee that synthetic-outcome rankings generalize to
+  the realized outcome process
 
 ## Relation to causalRisk
 
@@ -71,16 +77,20 @@ data). It sits within, but does not replace, the broader clean-room
 governance construct of Muntner et al. (2020), which also covers
 personnel separation and data-access controls.
 
-The workflow follows the Muntner et al. (2020) staged design:
+The workflow follows the Muntner et al. (2020) staged design.
+"Clean room" in the broader sense refers to that personnel and
+governance framework; cleanTMLE is the software layer only:
 
 ```
-Stage 1a  Specify the estimand, lock the analytic plan
-Stage 1b  Assess cohort adequacy + design precision      (Check Point 1)
-Stage 2   Estimate propensity scores, assess overlap     (Check Point 2)
-Stage 2b  Plasmode simulation: select TMLE specification (pre-outcome)
-Stage 3   Residual confounding via negative controls     (Check Point 3)
-  Gate    Pre-outcome authorization (GO / STOP)
-Stage 4   Conduct the comparative analysis (outcome unblinded)
+Stage 0   Feasibility, target-trial spec, protocol / SAP (precondition)
+Stage 1a  Lock estimand, covariates, learners, candidate grid, thresholds
+Stage 1b  Cohort adequacy and marginal event support     (Check Point 1)
+Stage 2a  PS, balance, overlap, ESS, design diagnostics  (Check Point 2)
+Stage 2b  Baseline plasmode candidate selection          (pre-outcome)
+Stage 2c  DQ stress testing                              (pre-outcome)
+Stage 3   Optional negative-control outcome checks       (Check Point 3)
+  Gate    Pre-outcome decision (GO / FLAG / STOP)
+Stage 4   Authorized primary outcome analysis
 ```
 
 Each checkpoint produces a structured **GO / FLAG / STOP** decision.

@@ -57,40 +57,45 @@ regulatory submission template.
 
 ## Conceptual workflow
 
-The vignette proceeds in eight conceptual steps:
+The vignette proceeds in the following conceptual steps:
 
-1. Define the causal question and statistical estimand.
-2. Record the prespecified analysis specification (target-trial and
-   estimand metadata, analysis lock).
-3. Assess design diagnostics (propensity score, overlap, balance,
-   cohort adequacy; optional negative-control screen).
-4. Select a baseline plasmode estimator from prespecified candidates.
-5. Run the plasmode data-quality (DQ) stress test as a quantitative
-   supplement to the fit-for-purpose review.
-6. Apply the prespecified pre-outcome decision rule, classifying
-   the analysis as proceed (GO), proceed-with-qualification (FLAG),
-   or do-not-run (STOP).
-7. Conduct the prespecified locked primary outcome analysis.
-8. Report post-outcome sensitivity analyses and interpretation, and
-   archive the analysis record.
+1. **Stage 0 (precondition)**: feasibility assessment, target-trial
+   specification, and protocol / SAP drafting. This is largely
+   external work conducted before any cleanTMLE code is run.
+2. **Stage 1a**: lock the estimand, covariates, learners, candidate
+   grid, and decision thresholds.
+3. **Stage 1b**: assess cohort adequacy and marginal event support.
+4. **Stage 2a**: propensity score, balance, overlap, ESS, and
+   design diagnostics.
+5. **Stage 2b**: baseline plasmode candidate selection.
+6. **Stage 2c**: plasmode data-quality (DQ) stress testing as a
+   quantitative pre-outcome supplement to the fit-for-purpose review.
+7. **Stage 3 (optional)**: negative-control outcome checks.
+8. **Pre-outcome decision**: GO / FLAG / STOP.
+9. **Stage 4**: authorized primary outcome analysis.
+10. Post-outcome sensitivity analyses, interpretation, and archived
+    analysis record.
 
 The Muntner et al. (2020) clean-room governance framework
 (role separation, restricted access, protocols, audit) is the
-source of the staging idea. cleanTMLE is the *software layer* of
-that workflow: it operationalizes target-trial metadata, design
-diagnostics, plasmode evaluation, the DQ stress test, the
-pre-outcome decision rule, and audit machinery. It does not by
-itself implement clean-room governance. The canonical stage labels
-used throughout this vignette are:
+source of the staging idea and is the broader notion of a clean
+room. cleanTMLE is the *software layer* of that workflow: it
+operationalizes target-trial metadata, design diagnostics,
+plasmode evaluation, the DQ stress test, the pre-outcome decision
+rule, and audit machinery. It does not by itself implement
+clean-room personnel governance. The canonical stage labels used
+throughout this vignette are:
 
 ```
-Stage 1    Target-trial / estimand metadata and analysis lock
-Stage 2a   Propensity score, overlap, balance, design diagnostics
-           (optional pre-outcome negative-control screen)
-Stage 2b   Baseline plasmode estimator selection
-Stage 2c   Plasmode DQ stress testing (also referred to as Stage 3)
+Stage 0    Feasibility, target-trial specification, protocol / SAP drafting
+Stage 1a   Lock estimand, covariates, learners, candidate grid, thresholds
+Stage 1b   Cohort adequacy and marginal event support
+Stage 2a   PS, balance, overlap, ESS, design diagnostics
+Stage 2b   Baseline plasmode candidate selection
+Stage 2c   DQ stress testing
+Stage 3    Optional negative-control outcome checks
 Pre-outcome decision: GO / FLAG / STOP
-Stage 4    Locked primary outcome analysis
+Stage 4    Authorized primary outcome analysis
 Post-outcome: sensitivity analyses and interpretation
 ```
 
@@ -99,10 +104,22 @@ in prose; the software shorthand for the same labels is GO, FLAG,
 and STOP.
 
 ::: {.callout-warning}
-The vignette demonstrates the software workflow. It does not by
-itself establish exchangeability, measurement validity, or
-fit-for-purpose data.
+This vignette demonstrates the software workflow. It does not
+establish exchangeability, measurement validity, phenotype
+validity, linkage accuracy, or regulatory acceptability.
 :::
+
+### Stage 0 as precondition
+
+Stage 0 covers the feasibility assessment, target-trial
+specification, and protocol / SAP drafting that precede any
+analytic code. These activities are typically conducted outside
+the software layer, often involving subject-matter experts, data
+custodians, and study sponsors. cleanTMLE assumes Stage 0 is
+complete: the causal question, eligible population, treatment
+strategies, follow-up window, and primary estimand are already
+specified in a written protocol before Stage 1a begins. The
+remainder of this vignette demonstrates Stages 1a through 4.
 
 ---
 
@@ -205,7 +222,7 @@ print(plan)
 
 ---
 
-## Record the analysis specification
+## Stage 1a: Record the analysis specification (lock)
 
 The analysis specification records the treatment, outcome,
 covariates, candidate estimators, learner library, simulation
@@ -301,7 +318,7 @@ stage is recorded.
 
 ```{r audit-init}
 audit <- create_audit_log(lock)
-audit <- record_stage(audit, "Stage 1",
+audit <- record_stage(audit, "Stage 1a",
                       "Analysis lock created and estimand attached")
 ```
 
@@ -340,7 +357,7 @@ rationale behind key analytic choices.
 
 ```{r dlog-lock}
 audit <- record_decision_log_entry(audit,
-  stage         = "Stage 1",
+  stage         = "Stage 1a",
   decision_type = "specification",
   description   = "Analysis lock created with GLM + Mean SL library and 40 plasmode reps",
   rationale     = "Minimal library chosen for vignette reproducibility"
@@ -349,7 +366,7 @@ audit <- record_decision_log_entry(audit,
 
 ---
 
-## Stage 2a (cohort adequacy): Check Point 1
+## Stage 1b: Cohort adequacy and marginal event support (Check Point 1)
 
 Before any modelling, we confirm that the cohort has adequate size,
 event counts, and positivity to support the planned analysis.
@@ -402,7 +419,7 @@ print(es)
 
 ---
 
-## Stage 2a (PS and balance): Check Point 2
+## Stage 2a: PS, balance, overlap, ESS, design diagnostics (Check Point 2)
 
 Stage 2a estimates the propensity score and evaluates overlap, balance,
 and effective sample size.
@@ -526,34 +543,20 @@ This specification is now locked into the analysis lock and will be
 used automatically by `fit_tmle_treatment_mechanism()` and
 `fit_tmle_outcome_mechanism()`.
 
-### Plasmode data-quality stress test (Stage 2c)
+## Stage 2c: Plasmode data-quality stress test
 
-The DQ stress test is a **quantitative supplement to the
-fit-for-purpose review**, not a substitute for source-data
-validation or post-outcome quantitative bias analysis (QBA). The
-intended sequence is:
+The DQ stress test is a **quantitative pre-outcome supplement to
+the fit-for-purpose review**, not a formal quantitative bias
+analysis (QBA) and not a substitute for source-data validation or
+post-outcome QBA. The intended sequence is:
 
-1. **Fit-for-purpose review** (typically using a SPIFD2-style
-   narrative) identifies the plausible data-quality threats for the
-   study cohort.
-2. **Threats are translated into numerical severity ranges**
-   (e.g., a sensitivity / specificity range for outcome
-   misclassification, a treatment-by-outcome odds-ratio range for
-   unmeasured confounding).
-3. **The severity ranges are locked** into the analysis lock before
-   any plasmode runs, alongside the prespecified GO / FLAG / STOP
-   thresholds.
-4. **Synthetic outcomes are generated and perturbed** according to
-   the locked threats: `run_plasmode_dq_stress()` extends the
-   plasmode loop with controlled DQ degradations applied on top of
-   the same Q0-generated synthetic outcomes used by the baseline
-   plasmode.
-5. **Candidate estimators are evaluated using the same metrics as
-   the baseline plasmode** (bias, RMSE, coverage), so the degraded
-   results sit on the same scale as the Stage 2b output.
-6. **The pre-outcome decision rule (GO / FLAG / STOP) applies the
-   prespecified thresholds** to the resulting bias, RMSE, and
-   coverage curves.
+1. Fit-for-purpose review identifies plausible threats.
+2. Threats are translated into quantitative severity ranges.
+3. Severity ranges are locked before primary outcome access.
+4. Synthetic outcomes are generated and perturbed.
+5. Candidates are evaluated using the same metrics as baseline
+   plasmode selection.
+6. The same GO / FLAG / STOP rule is applied.
 
 The DQ stress test documents how candidate estimators behave under
 the locked threat range; it does not validate the data or replace
@@ -635,13 +638,11 @@ audit <- record_decision_log_entry(audit,
 
 ---
 
-## Optional pre-outcome negative-control screen (Stage 2a diagnostic)
+## Stage 3 (optional): Negative-control outcome checks
 
-A negative-control outcome (NCO) screen is one possible pre-outcome
-diagnostic that can be slotted into Stage 2a (design diagnostics) or
-performed alongside the Stage 2c DQ stress test. It is not the
-canonical Stage 3 in this workflow; the DQ stress test occupies the
-Stage 2c / Stage 3 slot. The NCO screen assesses residual
+A negative-control outcome (NCO) screen is an optional pre-outcome
+checkpoint that sits between the Stage 2c DQ stress test and the
+pre-outcome decision. The NCO screen assesses residual
 confounding using a negative-control outcome --- a variable that is
 known (or strongly believed) to be unaffected by treatment.
 If the same analytic pipeline detects an association with the negative
@@ -1060,25 +1061,27 @@ knitr::kable(dlog_df, caption = "Decision log for the staged analysis.")
 
 The worked example illustrates the canonical stages:
 
-1. **Stage 1** --- target-trial / estimand metadata and analysis lock
-   (covariates, candidate estimators, learner library, simulation
-   settings, and seed).
-2. **Stage 2a** --- propensity score, overlap, balance, and design
-   diagnostics (sample size, event support, design precision; with
-   the optional negative-control screen available as a pre-outcome
-   diagnostic).
-3. **Stage 2b** --- baseline plasmode estimator selection using the
+1. **Stage 0** --- feasibility, target-trial specification, and
+   protocol / SAP drafting (precondition, external to the package).
+2. **Stage 1a** --- lock the estimand, covariates, learners,
+   candidate grid, and decision thresholds.
+3. **Stage 1b** --- cohort adequacy and marginal event support
+   (Check Point 1, with design-precision diagnostics).
+4. **Stage 2a** --- propensity score, balance, overlap, ESS, and
+   design diagnostics (Check Point 2).
+5. **Stage 2b** --- baseline plasmode candidate selection using the
    prespecified rule.
-4. **Stage 2c (Stage 3)** --- plasmode DQ stress testing on the
-   locked severity ranges from the fit-for-purpose review.
-5. **Pre-outcome decision** --- GO (proceed),
+6. **Stage 2c** --- plasmode DQ stress testing on the locked
+   severity ranges from the fit-for-purpose review.
+7. **Stage 3 (optional)** --- negative-control outcome checks.
+8. **Pre-outcome decision** --- GO (proceed),
    FLAG (proceed-with-qualification), or STOP (do-not-run), based
    on the recorded checkpoint results.
-6. **Stage 4** --- locked primary outcome analysis on the unmasked
-   data.
-7. **Post-outcome** --- sensitivity analyses, interpretation, and
-   archived analysis record (analysis specification, audit trail,
-   and decision log).
+9. **Stage 4** --- authorized primary outcome analysis on the
+   unmasked data.
+10. **Post-outcome** --- sensitivity analyses, interpretation, and
+    archived analysis record (analysis specification, audit trail,
+    and decision log).
 
 The package includes additional functions used along the way:
 `sanitize_covariates()` for covariate preparation,
