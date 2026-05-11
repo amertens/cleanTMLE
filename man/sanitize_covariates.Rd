@@ -27,6 +27,6 @@ A list with elements:
 \description{
 Cleans a covariate matrix/data.frame for safe use with SuperLearner:
 replaces \code{NA}/\code{NaN}/\code{Inf} with column medians,
-drops zero-variance columns, and ensures column names are
+drops zero-variance columns, and rewrites column names so they are
 formula-safe.
 }

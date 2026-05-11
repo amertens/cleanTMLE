@@ -2,7 +2,7 @@
 % Please edit documentation in R/cleanroom.R
 \name{validate_tmle_candidates}
 \alias{validate_tmle_candidates}
-\title{Validate a List of TMLE Candidate Specifications}
+\title{Check a List of TMLE Candidate Specifications}
 \usage{
 validate_tmle_candidates(candidates)
 }

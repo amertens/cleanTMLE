@@ -166,8 +166,8 @@ fit_ps_parallel <- function(lock, cluster = NULL, truncate = NULL, ...) {
 #'
 #' @param lock A \code{cleanroom_lock}.
 #' @param path Character; file path (must end in \code{.rds}).
-#' @param validate Logical; if \code{TRUE} (default), validates the
-#'   lock before saving to ensure integrity.
+#' @param validate Logical; if \code{TRUE} (default), checks the
+#'   lock hash before saving to verify integrity.
 #'
 #' @return Invisibly returns \code{path}.
 #'
@@ -535,7 +535,7 @@ run_matched_tmle <- function(lock, ps_fit, subset_idx,
 #'
 #' Cleans a covariate matrix/data.frame for safe use with SuperLearner:
 #' replaces \code{NA}/\code{NaN}/\code{Inf} with column medians,
-#' drops zero-variance columns, and ensures column names are
+#' drops zero-variance columns, and rewrites column names so they are
 #' formula-safe.
 #'
 #' @param data A data.frame.
@@ -890,11 +890,26 @@ love_plot_threeway <- function(ps_diag, matched_smds, threshold = 0.10) {
 
 # ── P2: Composite Gate ──────────────────────────────────────────────────
 
-#' Composite Go/Flag/Stop Gate
+#' Composite GO / FLAG / STOP Gate
 #'
 #' Evaluates all checkpoint objects and returns a single GO / FLAG /
 #' STOP decision.  Useful as a unified pre-outcome gate when the
 #' analysis has multiple checkpoint stages.
+#'
+#' @section Decision rule:
+#' Any STOP among the supplied checkpoints yields STOP. Otherwise, any
+#' FLAG yields FLAG when \code{allow_flag = TRUE} (the default, interpreted
+#' as conditional GO) and is escalated to STOP when
+#' \code{allow_flag = FALSE}. Only an input set with no STOP and no
+#' escalated FLAG yields GO.
+#'
+#' @section Override handling:
+#' This gate aggregates checkpoint evidence; it does not itself accept an
+#' override. A documented decision to proceed past a STOP or FLAG belongs
+#' in the decision log (see
+#' \code{\link{record_decision_log_entry}} with
+#' \code{decision_type = "override"}) and does not erase the composite
+#' decision returned here.
 #'
 #' @param ... One or more \code{cleantmle_checkpoint} objects.
 #' @param allow_flag Logical; if \code{TRUE} (default), FLAG decisions

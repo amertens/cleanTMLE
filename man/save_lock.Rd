@@ -11,8 +11,8 @@ save_lock(lock, path, validate = TRUE)
 
 \item{path}{Character; file path (must end in \code{.rds}).}
 
-\item{validate}{Logical; if \code{TRUE} (default), validates the
-lock before saving to ensure integrity.}
+\item{validate}{Logical; if \code{TRUE} (default), checks the
+lock hash before saving to verify integrity.}
 }
 \value{
 Invisibly returns \code{path}.

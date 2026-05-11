@@ -45,9 +45,9 @@ plasmode simulations may be used; the marginal mean of the
 observed outcome on covariates is also used internally to fit the
 plasmode generator. The *pre-outcome decision point* is the
 juncture at which the prespecified diagnostics are reviewed and the
-analysis is classified as proceed, pause for review, or stop
-before the observed outcome is unmasked for the comparative
-analysis.
+analysis is classified GO, FLAG (proceed only with documented
+review), or STOP before the observed outcome is unmasked for the
+comparative analysis.
 
 cleanTMLE is not a substitute for target-trial design, source-data
 validation, phenotype validation, independent oversight, or
@@ -510,6 +510,25 @@ estimand objects, and the truncation rule is recorded in the
 analysis lock alongside the learner library so the
 estimand-vs-estimator distinction remains auditable.
 
+#### Estimator selection versus estimand feasibility
+
+A useful mental check before locking the candidate grid:
+
+- If candidates differ only by nuisance learner, screening step,
+  or seed, candidate selection is *estimator* selection. The
+  causal estimand is the same across candidates.
+- If candidates differ by PS truncation, overlap restriction, or
+  eligibility filter, they may target *different* effective
+  populations. Selection then has an *estimand* component as well.
+
+In the second case, the prespecified rationale should record the
+estimand implication for each candidate before any outcome access.
+If the staged workflow shows that only candidates with severe
+truncation meet the operating-characteristic thresholds, the
+practical conclusion is that the original target population may
+not be supported by the data and the estimand itself needs
+revision, not just the nuisance fit.
+
 ### Define TMLE candidates
 
 ```{r tmle-candidates}
@@ -753,8 +772,8 @@ cat(sprintf("Rationale: %s\n", fake_composite$rationale))
 ```
 
 When the gate returns STOP, no outcome code should execute.
-In `run_clean_tmle()` this is enforced automatically; in the modular
-workflow the analyst checks the gate decision and branches accordingly.
+In `run_clean_tmle()` this is checked automatically; in the modular
+workflow the analyst inspects the gate decision and branches accordingly.
 
 ---
 

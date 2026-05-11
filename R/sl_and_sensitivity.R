@@ -1,4 +1,4 @@
-#' Validate and Suggest a SuperLearner Specification
+#' Check and Suggest a SuperLearner Specification
 #'
 #' Implements the practical-considerations checklist of
 #' Phillips et al. (2023) for SuperLearner library specification: given
@@ -26,7 +26,7 @@
 #'   binary outcomes. When supplied, the heuristic is applied to the
 #'   smaller of \code{n} and \code{n_events}.
 #' @param library Optional character vector of SuperLearner learner
-#'   names to validate. If supplied, the function warns when the library
+#'   names to check. If supplied, the function warns when the library
 #'   is degenerate (a single GLM) or omits a flexible learner.
 #'
 #' @return A list with elements:

@@ -21,8 +21,8 @@
 \code{invisible(TRUE)} if access is permitted.
 }
 \description{
-Internal helper used by Stage 4 functions to enforce
+Internal helper used by Stage 4 functions to operationalise
 the clean-room gate.  Checks for outcome masking and optionally
-for an \code{audit} attribute carrying authorization status.
+for an \code{audit} attribute carrying authorisation status.
 }
 \keyword{internal}

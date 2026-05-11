@@ -15,7 +15,7 @@ set to \code{NA} and \code{lock$.outcome_masked} set to \code{TRUE}.
 }
 \description{
 Returns a modified copy of the lock in which the outcome column is
-replaced with \code{NA}.  This enforces the clean-room principle of
+replaced with \code{NA}.  This operationalises the clean-room principle of
 keeping analysts blind to outcome data during the design stage.
 }
 \section{Clean-room stage}{

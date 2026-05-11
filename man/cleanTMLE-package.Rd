@@ -6,7 +6,7 @@
 \alias{cleanTMLE-package}
 \title{cleanTMLE: Staged Clean-Room Causal Analysis with Propensity Score and TMLE Workflows}
 \description{
-Provides workflow scaffolding for staged, outcome-blinded observational causal analyses. Supports three workflow families: conventional propensity-score methods (matching and IPTW), fixed-specification targeted minimum loss-based estimation (TMLE), and simulation-selected TMLE in which candidate nuisance strategies are evaluated on plasmode simulations before real-outcome access. The package implements a modular TMLE API with separate functions for fitting the treatment mechanism, fitting the outcome mechanism, performing the targeting step, and extracting the final estimate, so that each step can be executed at the appropriate clean-room stage. The plasmode loop is extended with a data-quality stress test ('run_plasmode_dq_stress') that evaluates each prespecified TMLE candidate under controlled covariate-missingness, treatment-misclassification, outcome- misclassification, and unmeasured-confounding scenarios, producing a degradation gradient that the GO/FLAG/STOP gate can consume on the same scale as the baseline plasmode metrics. SuperLearner ensemble learning is the default and recommended propensity-score estimation strategy; simpler regression models are also supported. The cohort-specification DSL ('specify_models', 'identify_*'), the reporting helpers ('make_table1', 'make_table2', 'extreme_weights', 'inspect_ipw_weights', 'forest_plot'), and the IPW / G-computation / AIPW estimators ('estimate_ipwrisk', 'estimate_gcomprisk', 'estimate_aipwrisk', 'estimate_ipwhr') are reused under MIT-licence attribution from the causalRisk package by Brookhart, Breskin, and Eledath. Functions unique to cleanTMLE (the analysis lock, outcome masking, plasmode feasibility and DQ stress, audit and decision logs, the modular TMLE primitives, and the GO/FLAG/STOP gate) are documented as such in the individual help pages. Integrates with the 'tmle', 'SuperLearner', 'survtmle', and 'lmtp' packages for targeted-learning estimation.
+Provides workflow scaffolding for staged, outcome-blinded observational causal analyses. Supports three workflow families: conventional propensity-score methods (matching and IPTW), fixed-specification targeted minimum loss-based estimation (TMLE), and simulation-selected TMLE in which candidate nuisance strategies are evaluated on plasmode simulations before real-outcome access. The package implements a modular TMLE API with separate functions for fitting the treatment mechanism, fitting the outcome mechanism, performing the targeting step, and extracting the final estimate, so that each step can be executed at the appropriate clean-room stage. The plasmode loop is extended with a data-quality stress test ('run_plasmode_dq_stress') that evaluates each prespecified TMLE candidate under controlled covariate-missingness, treatment-misclassification, outcome- misclassification, and unmeasured-confounding scenarios, producing a degradation gradient that the GO/FLAG/STOP gate can consume on the same scale as the baseline plasmode metrics. SuperLearner ensemble learning is the default and recommended propensity-score estimation strategy; simpler regression models are also supported. cleanTMLE provides a cohort-specification interface ('specify_models', 'identify_*'), reporting helpers ('make_table1', 'make_table2', 'extreme_weights', 'inspect_ipw_weights', 'forest_plot'), and IPW / G-computation / AIPW estimators ('estimate_ipwrisk', 'estimate_gcomprisk', 'estimate_aipwrisk', 'estimate_ipwhr') alongside the analysis lock, outcome masking, plasmode feasibility and DQ stress, audit and decision logs, the modular TMLE primitives, and the staged pre-outcome decision rule. The proprietary 'causalRisk' package is an alternative implementation of related cumulative-risk estimators; the two packages do not share code. Integrates with the 'tmle', 'SuperLearner', 'survtmle', and 'lmtp' packages for targeted-learning estimation.
 }
 \seealso{
 Useful links:
@@ -19,16 +19,12 @@ Useful links:
 \author{
 \strong{Maintainer}: Andrew Mertens \email{amertens@berkeley.edu}
 
-Authors:
-\itemize{
-  \item M. Alan Brookhart (Author of the causalRisk package, whose cohort-specification API and several estimator functions are reused here under MIT licence.) [copyright holder]
-  \item Alexander Breskin (Author of the causalRisk package, whose cohort-specification API and several estimator functions are reused here under MIT licence.) [copyright holder]
-  \item Bassim Eledath (Author of the causalRisk package, whose cohort-specification API and several estimator functions are reused here under MIT licence.) [copyright holder]
-}
-
 Other contributors:
 \itemize{
   \item cleanTMLE Contributors [contributor]
+  \item M. Alan Brookhart (Author of the proprietary causalRisk package, an alternative implementation of related cumulative-risk estimators that informed the design of several diagnostic helpers in cleanTMLE.) [contributor]
+  \item Alexander Breskin (Author of the proprietary causalRisk package, an alternative implementation of related cumulative-risk estimators that informed the design of several diagnostic helpers in cleanTMLE.) [contributor]
+  \item Bassim Eledath (Author of the proprietary causalRisk package, an alternative implementation of related cumulative-risk estimators that informed the design of several diagnostic helpers in cleanTMLE.) [contributor]
 }
 
 }

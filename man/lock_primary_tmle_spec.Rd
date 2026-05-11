@@ -25,6 +25,18 @@ so that downstream Stage 4 functions automatically use it.
  Stage 2b (after candidate selection).
 }
 
+\section{Lock-hash impact}{
+
+Attaching the primary TMLE spec extends \code{lock$primary_tmle_spec}
+but does not recompute the original \code{lock_hash} captured by
+\code{\link{create_analysis_lock}}. The hash continues to fingerprint
+the prespecified analytic plan (treatment, outcome, covariates,
+SuperLearner library, seed, data shape). The selected candidate is
+recorded as a downstream choice made under the locked candidate grid
+and selection rule; switching the spec is logged in the audit trail
+rather than by re-hashing the lock.
+}
+
 \examples{
 dat  <- sim_func1(n = 200, seed = 1)
 lock <- create_analysis_lock(dat, "treatment", "event_24",

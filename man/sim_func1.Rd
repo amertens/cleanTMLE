@@ -19,9 +19,9 @@ A data.frame matching the structure of \link{example1}.
 \description{
 Generates a simulated dataset with baseline covariates, confounded
 treatment assignment, time-to-event outcome with censoring, and
-competing risks. The data generation process ensures that treatment
-is confounded by baseline covariates, making it suitable for
-demonstrating causal inference methods.
+competing risks. The data generation process is constructed so that
+treatment is confounded by baseline covariates, making it suitable
+for demonstrating causal inference methods.
 }
 \details{
 \subsection{Data generation process}{

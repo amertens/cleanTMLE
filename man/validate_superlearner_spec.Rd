@@ -2,7 +2,7 @@
 % Please edit documentation in R/sl_and_sensitivity.R
 \name{validate_superlearner_spec}
 \alias{validate_superlearner_spec}
-\title{Validate and Suggest a SuperLearner Specification}
+\title{Check and Suggest a SuperLearner Specification}
 \usage{
 validate_superlearner_spec(n, n_events = NULL, library = NULL)
 }
@@ -14,7 +14,7 @@ binary outcomes. When supplied, the heuristic is applied to the
 smaller of \code{n} and \code{n_events}.}
 
 \item{library}{Optional character vector of SuperLearner learner
-names to validate. If supplied, the function warns when the library
+names to check. If supplied, the function warns when the library
 is degenerate (a single GLM) or omits a flexible learner.}
 }
 \value{

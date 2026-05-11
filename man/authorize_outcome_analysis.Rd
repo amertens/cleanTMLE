@@ -30,13 +30,36 @@ A \code{cleantmle_checkpoint} of subclass
 \code{authorized}.
 }
 \description{
-Scans the audit log to verify that all required stage checkpoints have
+Scans the audit log to check that all required stage checkpoints have
 been recorded and none resulted in an unconditional STOP.  Returns a
-\code{pre_outcome_gate} checkpoint summarising the go/no-go decision.
+\code{pre_outcome_gate} checkpoint summarising the GO / FLAG / STOP
+decision.
 }
 \section{Clean-room stage}{
  Pre-Outcome Gate (between Stage 3 and
 Stage 4).
+}
+
+\section{GO / FLAG / STOP rule}{
+
+For each required stage the most recent recorded decision is read from
+the audit. A missing required stage yields STOP. Any STOP decision yields
+STOP. Otherwise, any FLAG decision yields FLAG when
+\code{allow_flag = TRUE} (the default, treated as conditional GO) and is
+escalated to STOP when \code{allow_flag = FALSE}. Only an audit with all
+required stages present and no STOP or escalated FLAG yields GO.
+}
+
+\section{Overrides and audit}{
+
+The gate does not itself accept an override flag; it reports the
+decision implied by recorded checkpoint evidence. A downstream Stage 4
+function called with \code{override_clean_room = TRUE} can still proceed
+against a STOP or FLAG, but the gate's recorded result is preserved.
+Callers should document such overrides via
+\code{\link{record_decision_log_entry}} with
+\code{decision_type = "override"} so the audit retains both the gate
+decision and the rationale for proceeding past it.
 }
 
 \examples{

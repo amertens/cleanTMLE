@@ -2,7 +2,7 @@
 % Please edit documentation in R/integration.R
 \name{gate_all}
 \alias{gate_all}
-\title{Composite Go/Flag/Stop Gate}
+\title{Composite GO / FLAG / STOP Gate}
 \usage{
 gate_all(..., allow_flag = TRUE)
 }
@@ -20,3 +20,22 @@ Evaluates all checkpoint objects and returns a single GO / FLAG /
 STOP decision.  Useful as a unified pre-outcome gate when the
 analysis has multiple checkpoint stages.
 }
+\section{Decision rule}{
+
+Any STOP among the supplied checkpoints yields STOP. Otherwise, any
+FLAG yields FLAG when \code{allow_flag = TRUE} (the default, interpreted
+as conditional GO) and is escalated to STOP when
+\code{allow_flag = FALSE}. Only an input set with no STOP and no
+escalated FLAG yields GO.
+}
+
+\section{Override handling}{
+
+This gate aggregates checkpoint evidence; it does not itself accept an
+override. A documented decision to proceed past a STOP or FLAG belongs
+in the decision log (see
+\code{\link{record_decision_log_entry}} with
+\code{decision_type = "override"}) and does not erase the composite
+decision returned here.
+}
+

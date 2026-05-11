@@ -36,11 +36,63 @@ An object of class \code{cleanroom_lock} containing all specified
 analysis parameters plus a reproducibility fingerprint (\code{lock_hash}).
 }
 \description{
-Captures the full analytic specification—data, variable names, SuperLearner
-library, and plasmode simulation settings—as a locked object. The lock
-is created before the outcome is examined to enforce the pre-specified
-analytic plan across all subsequent stages.
+Captures the full analytic specification (data, variable names, SuperLearner
+library, and plasmode simulation settings) as a locked object. The lock
+is created before the outcome is examined to operationalise the
+pre-specified analytic plan across all subsequent stages.
 }
+\section{What is fingerprinted in the lock hash}{
+
+The \code{lock_hash} is a sha256 digest (via \pkg{digest}; with a
+clearly-labelled non-cryptographic checksum fallback) computed over the
+treatment name, outcome name, sorted covariate vector, SuperLearner library,
+integer seed, and the row count, column count, and sorted column names of
+\code{data}. Changing any of these fields (estimand variables, covariate
+set, candidate-grid library, severity ranges that re-enter as part of the
+lock metadata, decision thresholds bound into the candidate selection
+rule) invalidates the hash.
+}
+
+\section{What does NOT invalidate the lock}{
+
+Audit-log entries, decision-log entries, recorded checkpoint objects, and
+user-supplied notes are kept separately (e.g. in the
+\code{cleantmle_audit}) and do not feed into the lock hash. They are
+recorded for traceability but the lock fingerprint is unchanged.
+}
+
+\section{Outcome-access taxonomy}{
+
+The workflow distinguishes pre-outcome access (no Y, marginal Y summaries
+used only for design-stage precision, synthetic Y from plasmode simulation,
+and negative-control Y) from post-outcome access (primary Y). Stage 4
+functions check \code{lock$.outcome_masked} via the internal outcome guard
+and refuse to run on the primary Y until the gate authorises it or the
+caller passes \code{override_clean_room = TRUE}.
+}
+
+\section{GO / FLAG / STOP decisions}{
+
+Checkpoint functions (\code{\link{checkpoint_cohort_adequacy}},
+\code{\link{checkpoint_balance}}, \code{\link{checkpoint_residual_bias}})
+each return a \code{cleantmle_checkpoint} with a \code{decision} of
+GO, FLAG, or STOP. \code{\link{authorize_outcome_analysis}} and
+\code{\link{gate_all}} combine these: any STOP yields an overall STOP;
+any FLAG yields FLAG when \code{allow_flag = TRUE} (the default,
+interpreted as conditional GO) and is escalated to STOP when
+\code{allow_flag = FALSE}.
+}
+
+\section{Manual overrides}{
+
+An \code{override_clean_room = TRUE} call to a Stage 4 function bypasses
+the outcome guard for that call. The override does not erase the STOP or
+FLAG result recorded in the audit log; it records a documented decision
+to proceed despite that result. Analysts should additionally call
+\code{\link{record_decision_log_entry}} with
+\code{decision_type = "override"} to capture the rationale.
+}
+
 \examples{
 dat <- sim_func1(n = 200, seed = 1)
 lock <- create_analysis_lock(
