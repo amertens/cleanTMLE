@@ -80,10 +80,10 @@ The Muntner et al. (2020) clean-room governance framework
 (role separation, restricted access, protocols, audit) is the
 source of the staging idea and is the broader notion of a clean
 room. cleanTMLE is the *software layer* of that workflow: it
-operationalizes target-trial metadata, design diagnostics,
-plasmode evaluation, the DQ stress test, the pre-outcome decision
-rule, and audit machinery. It does not by itself implement
-clean-room personnel governance. The canonical stage labels used
+records the analysis lock, runs the design diagnostics and the
+plasmode evaluation, executes the DQ stress test, applies the
+pre-outcome decision rule, and writes the audit trail. It does
+not by itself implement clean-room personnel governance. The canonical stage labels used
 throughout this vignette are:
 
 ```
@@ -408,8 +408,8 @@ This is expected --- the vignette uses a deliberately small dataset
 for fast rendering.
 In practice you would either increase sample size or relax the
 target MDD.
-Importantly, the MDD check is **informational** and does not trigger a
-STOP gate; the pipeline continues.
+The MDD check is **informational** and does not trigger STOP; the
+pipeline continues.
 :::
 
 ```{r event-support}

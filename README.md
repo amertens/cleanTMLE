@@ -69,13 +69,13 @@ point for analysts comparing approaches.
 
 `cleanTMLE` supports a structured, outcome-blind staged workflow for
 observational causal analysis based on targeted minimum loss-based
-estimation (TMLE). The package implements the software layer that
-operationalizes the estimator-selection portion of the analysis (the
-estimand, nuisance-model specifications, and estimator selection
-rules are locked before any investigator accesses the study outcome
-data). It sits within, but does not replace, the broader clean-room
-governance construct of Muntner et al. (2020), which also covers
-personnel separation and data-access controls.
+estimation (TMLE). The package is the software layer of that
+workflow: the estimand, nuisance-model specifications, and
+estimator-selection rules are locked before any investigator
+accesses the study outcome data. It sits within, but does not
+replace, the broader clean-room governance construct of Muntner et
+al. (2020), which also covers personnel separation and data-access
+controls.
 
 The workflow follows the Muntner et al. (2020) staged design.
 "Clean room" in the broader sense refers to that personnel and
@@ -142,8 +142,8 @@ richer applied analyses.
   (`mask_outcome()`, `unmask_outcome()`)
 - **Stage 4 outcome guard** --- all Stage 4 functions check for outcome
   masking and refuse to run on masked data unless
-  `override_clean_room = TRUE` is explicitly set (the argument retains
-  its historical name; the check operationalizes outcome blinding)
+  `override_clean_room = TRUE` is set (the argument name is
+  historical; the check enforces outcome blinding inside the package)
 - **SuperLearner-based propensity-score estimation and diagnostics** ---
   ensemble learning PS (`fit_ps_superlearner()`) or logistic regression
   (`fit_ps_glm()`); overlap plots, effective sample size, and
