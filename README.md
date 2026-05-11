@@ -2,29 +2,41 @@
 
 **Outcome-Blind Staged Workflow for TMLE**
 
-## What problem does cleanTMLE solve?
+cleanTMLE provides software infrastructure for an outcome-blind
+staged workflow in targeted-learning analyses. It helps analysts
+define an analysis lock, specify candidate TMLE estimators, run
+design diagnostics, compare candidates using baseline plasmode
+simulation, stress-test candidates under prespecified
+data-quality threats, record GO / FLAG / STOP checkpoint
+decisions, and authorise the locked primary analysis.
+
+## What problem does cleanTMLE address?
 
 In RWE studies, protocol design, fit-for-purpose data review, and
-estimator choice are often documented separately. cleanTMLE helps
-analysts lock, audit, and review the estimator-selection portion
-of the causal roadmap before primary outcome access, using
-baseline diagnostics, outcome-blind plasmode simulation, and
-prespecified data-quality stress scenarios. It provides an
-analysis-lock object, an audit and decision log, a baseline
-plasmode candidate selector, a data-quality stress test, and a
-prespecified GO / FLAG / STOP rule that the workflow checks
-before the primary outcome analysis runs.
+estimator choice are often documented separately. Standard
+diagnostics assess overlap, balance, and effective sample size,
+but they do not characterise the full operating characteristics
+of a candidate TMLE specification on the cohort at hand.
+cleanTMLE provides an auditable software layer for pre-outcome
+estimator evaluation and prespecified data-quality stress
+testing, with a structured record of the analysis lock, the
+diagnostics, the candidate comparison, and the GO / FLAG / STOP
+decisions. It is intended to support, not replace, careful
+causal design and broader clean-room governance.
+
+## Workflow
 
 ```
-Lock estimand and candidates
-  -> Cohort adequacy / event support
-  -> PS / design diagnostics
-  -> Baseline plasmode candidate selection
-  -> DQ stress test
-  -> Optional negative-control checks
-  -> GO / FLAG / STOP
-  -> Authorized primary analysis
-  -> Sensitivity analyses / reporting
+Stage 0   Target-trial / protocol specification (external precondition)
+Stage 1a  Lock estimand, candidates, learners, truncation, thresholds
+Stage 1b  Cohort adequacy and marginal event support
+Stage 2a  Design diagnostics (PS, overlap, balance, ESS)
+Stage 2b  Baseline plasmode candidate selection
+Stage 2c  Data-quality stress testing
+Stage 3   Optional negative-control checks
+  Gate    Pre-outcome decision (GO / FLAG / STOP)
+Stage 4   Authorised primary analysis
+Post-outcome: sensitivity analyses and interpretation
 ```
 
 The data-quality stress test is a quantitative pre-outcome
@@ -33,14 +45,30 @@ not a substitute for source-data validation.
 
 ## What cleanTMLE does not do
 
-- does not automate target-trial design
+- does not automate target-trial design or protocol specification
 - does not validate source data
-- does not guarantee exchangeability or positivity
-- does not replace phenotype validation
-- does not replace clean-room personnel governance
-- does not replace post-outcome sensitivity analyses
-- does not guarantee that synthetic-outcome rankings generalize to
-  the realized outcome process
+- does not validate phenotypes or outcome definitions
+- does not establish exchangeability
+- does not establish positivity
+- does not guarantee that synthetic-outcome rankings generalise
+  to the realised outcome process
+- does not implement personnel role separation
+- does not control raw-data access
+- does not replace negative-control or post-outcome sensitivity
+  analyses
+- does not perform formal identification-region quantitative
+  bias analysis
+
+## When to use this package
+
+- methods development around outcome-blind workflows
+- outcome-blind estimator selection in observational studies
+- protocol and SAP development for RWE analyses
+- exploratory or lower-stakes RWE workflows where structured
+  pre-outcome review is useful
+- high-stakes confirmatory RWE only when embedded inside
+  external clean-room governance (role separation, data-access
+  controls, independent checkpoint review, archived audit trail)
 
 ## Relation to causalRisk
 
@@ -67,36 +95,20 @@ point for analysts comparing approaches.
 
 ## Overview
 
-`cleanTMLE` supports a structured, outcome-blind staged workflow for
-observational causal analysis based on targeted minimum loss-based
-estimation (TMLE). The package is the software layer of that
-workflow: the estimand, nuisance-model specifications, and
-estimator-selection rules are locked before any investigator
-accesses the study outcome data. It sits within, but does not
-replace, the broader clean-room governance construct of Muntner et
-al. (2020), which also covers personnel separation and data-access
-controls.
+`cleanTMLE` is the software layer for an outcome-blind staged
+workflow around targeted minimum loss-based estimation (TMLE).
+The estimand, nuisance-model specifications, and
+estimator-selection rules are recorded in an analysis lock before
+the observed primary treatment-outcome association is read by the
+package. The package sits within, but does not replace, the
+broader clean-room governance construct of Muntner et al. (2020),
+which also covers role separation, restricted data access, and
+independent checkpoint review.
 
-The workflow follows the Muntner et al. (2020) staged design.
-"Clean room" in the broader sense refers to that personnel and
-governance framework; cleanTMLE is the software layer only:
-
-```
-Stage 0   Feasibility, target-trial spec, protocol / SAP (precondition)
-Stage 1a  Lock estimand, covariates, learners, candidate grid, thresholds
-Stage 1b  Cohort adequacy and marginal event support     (Check Point 1)
-Stage 2a  PS, balance, overlap, ESS, design diagnostics  (Check Point 2)
-Stage 2b  Baseline plasmode candidate selection          (pre-outcome)
-Stage 2c  DQ stress testing                              (pre-outcome)
-Stage 3   Optional negative-control outcome checks       (Check Point 3)
-  Gate    Pre-outcome decision (GO / FLAG / STOP)
-Stage 4   Authorized primary outcome analysis
-```
-
-Each checkpoint produces a structured **GO / FLAG / STOP** decision.
-The analysis may proceed only after all preceding checkpoints have been
-evaluated. An audit trail accumulates entries automatically and can be
-exported for review.
+Each checkpoint records a structured **GO / FLAG / STOP** decision.
+Subsequent stages run only after all preceding checkpoints have
+been evaluated. An audit trail accumulates entries automatically
+and can be exported for review.
 
 The package covers three workflow families:
 
@@ -143,7 +155,7 @@ richer applied analyses.
 - **Stage 4 outcome guard** --- all Stage 4 functions check for outcome
   masking and refuse to run on masked data unless
   `override_clean_room = TRUE` is set (the argument name is
-  historical; the check enforces outcome blinding inside the package)
+  historical; the check records the outcome-blind state inside the package)
 - **SuperLearner-based propensity-score estimation and diagnostics** ---
   ensemble learning PS (`fit_ps_superlearner()`) or logistic regression
   (`fit_ps_glm()`); overlap plots, effective sample size, and
@@ -223,10 +235,8 @@ reference, see `vignette("cleanTMLE-functions")`.
 ```r
 library(cleanTMLE)
 
-# ── Stage 1a: Specify and lock the analysis ───────────────────────────────
-
-dat <- sim_func1(n = 2000, seed = 42)
-
+# Stage 1a: lock the analysis specification
+dat  <- sim_func1(n = 2000, seed = 42)
 lock <- create_analysis_lock(
   data          = dat,
   treatment     = "treatment",
@@ -236,138 +246,45 @@ lock <- create_analysis_lock(
   plasmode_reps = 200L,
   seed          = 42L
 )
-
-# Attach estimand, sensitivity plan, and negative control declaration
-lock <- attach_estimand(lock,
-  description          = "Effect of treatment on 24-month event risk",
-  population           = "Adults with simulated disease",
-  treatment_strategies = c("Treatment", "Control"),
-  outcome_label        = "Primary event by 24 months",
-  followup             = "24 months",
-  contrast             = "risk_difference",
-  statistical_estimand = "E_W[E(Y|A=1,W) - E(Y|A=0,W)]"
-)
-
-lock <- declare_sensitivity_plan(lock, "truncation",
-  description = "Vary PS truncation",
-  settings    = list(thresholds = c(0.01, 0.05, 0.10))
-)
-
-lock <- define_negative_control(lock, "nc_outcome",
-  description = "Outcome driven by covariates only, no treatment effect"
-)
-
-validate_analysis_lock(lock)
-
-# Initialise audit trail
+lock  <- attach_estimand(lock, contrast = "risk_difference",
+            statistical_estimand = "E_W[E(Y|A=1,W) - E(Y|A=0,W)]")
 audit <- create_audit_log(lock)
-audit <- record_stage(audit, "Stage 1a", "Lock created, estimand attached")
 
-# ── Stage 1b / Check Point 1: Cohort adequacy ────────────────────────────
+# Stage 1b / 2a: cohort adequacy and design diagnostics
+cp1    <- checkpoint_cohort_adequacy(lock, min_n_per_arm = 50, min_events = 30)
+ps_fit <- fit_ps_superlearner(lock)
+cp2    <- checkpoint_balance(compute_ps_diagnostics(ps_fit),
+                             lock_hash = lock$lock_hash)
 
-cp1 <- checkpoint_cohort_adequacy(lock, min_n_per_arm = 50, min_events = 30)
-print(cp1)                          # GO / FLAG / STOP
-audit <- record_checkpoint(audit, cp1)
-
-# Design-stage precision diagnostics
-dp <- estimate_design_precision(lock, target_mdd = 0.05)
-print(dp)
-summarize_event_support(lock)
-
-# ── Stage 2 / Check Point 2: PS overlap and balance ──────────────────────
-
-ps_fit <- fit_ps_superlearner(lock)  # or fit_ps_glm(lock) for speed
-diag   <- compute_ps_diagnostics(ps_fit)
-print(diag)                          # ESS, SMDs, overlap plot
-plot(diag)                           # propensity score overlap
-
-cp2 <- checkpoint_balance(diag, max_smd = 0.10, min_ess_pct = 50,
-                          lock_hash = lock$lock_hash)
-print(cp2)
-audit <- record_checkpoint(audit, cp2)
-
-# ── Stage 2b: Plasmode TMLE candidate selection ──────────────────────────
-
+# Stage 2b: define candidates and screen on baseline plasmode
 candidates <- list(
-  tmle_candidate("glm_t01", "GLM, trunc=0.01",
-                 g_library = c("SL.glm"), truncation = 0.01),
-  tmle_candidate("glm_t05", "GLM, trunc=0.05",
-                 g_library = c("SL.glm"), truncation = 0.05),
-  tmle_candidate("glm_t10", "GLM, trunc=0.10",
-                 g_library = c("SL.glm"), truncation = 0.10)
+  tmle_candidate("glm_t01", "GLM, trunc=0.01", truncation = 0.01),
+  tmle_candidate("glm_t05", "GLM, trunc=0.05", truncation = 0.05),
+  tmle_candidate("glm_t10", "GLM, trunc=0.10", truncation = 0.10)
 )
-
-plas <- run_plasmode_feasibility(lock, tmle_candidates = candidates,
-                                 effect_sizes = c(0.05, 0.10))
-print(plas)                          # bias, RMSE, coverage per candidate
-
+plas     <- run_plasmode_feasibility(lock, tmle_candidates = candidates,
+                                     effect_sizes = c(0.05, 0.10))
 selected <- select_tmle_candidate(plas, rule = "min_rmse")
-lock <- lock_primary_tmle_spec(lock, selected)  # lock into the analysis
-print(selected)
+lock     <- lock_primary_tmle_spec(lock, selected)
 
-# Gate check: GO / FLAG / STOP
-gate <- gate_check(plas$metrics, "Feasibility",
-  targets = list(max_abs_bias = 0.02, min_coverage = 0.90,
-                 se_sd_low = 0.8, se_sd_high = 1.2),
-  method = selected$candidate_id
-)
-cat("Gate decision:", gate$decision, "\n")
+# Stage 2c: data-quality stress test on the locked severity ranges
+# dq <- run_plasmode_dq_stress(lock, tmle_candidates = candidates, ...)
 
-# ── Stage 3 / Check Point 3: Residual confounding ────────────────────────
-
+# Stage 3 (optional) and pre-outcome decision: GO / FLAG / STOP
 stage3 <- run_residual_confounding_stage(lock, ps_fit)
-print(stage3)
-cp3 <- stage3$checkpoint
-audit <- record_checkpoint(audit, cp3)
+audit  <- record_checkpoint(audit, cp1)
+audit  <- record_checkpoint(audit, cp2)
+audit  <- record_checkpoint(audit, stage3$checkpoint)
+gate   <- authorize_outcome_analysis(audit)
 
-# ── Pre-Outcome Authorization Gate ───────────────────────────────────────
+# Stage 4: authorised primary analysis on the locked specification
+g_fit    <- fit_tmle_treatment_mechanism(lock, ps_fit)
+Q_fit    <- fit_tmle_outcome_mechanism(lock, g_fit)
+tmle_fit <- extract_tmle_estimate(run_tmle_targeting_step(g_fit, Q_fit))
 
-gate_result <- authorize_outcome_analysis(audit)
-print(gate_result)                  # GO / FLAG / STOP
-audit <- record_checkpoint(audit, gate_result)
-
-# ── Stage 4: Final estimation (outcome unblinded) ────────────────────────
-
-# Crude benchmark
-crude <- run_crude_workflow(lock)
-
-# PS matching and IPTW (secondary comparators)
-match_fit <- run_match_workflow(lock, ps_fit)
-iptw_fit  <- run_iptw_workflow(lock, ps_fit)
-
-# Primary: TMLE in four steps using the locked specification
-g_fit    <- fit_tmle_treatment_mechanism(lock, ps_fit)   # uses locked truncation
-Q_fit    <- fit_tmle_outcome_mechanism(lock, g_fit)      # uses locked Q-library
-tmle_upd <- run_tmle_targeting_step(g_fit, Q_fit)
-tmle_fit <- extract_tmle_estimate(tmle_upd)
-print(tmle_fit)
-
-# Sensitivity for missing outcomes (MAR)
-ipcw_fit <- run_ipcw_tmle(lock, ps_fit)
-
-# Or use the convenience wrapper:
-# all_fits <- fit_final_workflows(lock, ps_fit)
-
-# Cross-estimator comparison
-summary_tbl <- summarize_cleanroom_results(
-  list(Matching = match_fit, IPTW = iptw_fit,
-       TMLE = tmle_fit, `IPCW-TMLE` = ipcw_fit)
-)
-print(summary_tbl)
-
-# ── Sensitivity analysis ─────────────────────────────────────────────────
-
+# Post-outcome: sensitivity analyses and audit export
 sensitivity_truncation(lock, thresholds = c(0.01, 0.05, 0.10))
-compute_evalue(1.3, ci_bound = 1.05)
-
-# ── Audit trail ──────────────────────────────────────────────────────────
-
-audit <- record_stage(audit, "Stage 4", "Final estimation complete")
-print(audit)
-build_stage_manifest(audit)
-summarize_stage_path(audit)         # compact narrative
-export_audit_trail(audit)           # returns a data.frame
-export_decision_log(audit)          # returns decision log data.frame
+export_audit_trail(audit)
 ```
 
 ## Function Reference
@@ -399,7 +316,7 @@ export_decision_log(audit)          # returns decision log data.frame
 | `compute_ps_diagnostics()` | Overlap plots, ESS, standardised mean differences |
 | `checkpoint_balance()` | GO / FLAG / STOP based on balance and ESS |
 
-### Stage 2b: TMLE candidate selection via plasmode
+### Stage 2b: Baseline plasmode TMLE candidate selection
 
 | Function | Purpose |
 |----------|---------|
@@ -412,6 +329,13 @@ export_decision_log(audit)          # returns decision log data.frame
 | `get_primary_tmle_spec()` | Retrieve the locked spec |
 | `gate_check()` | GO / FLAG / STOP from plasmode metrics |
 | `summarize_plasmode_results()` | Print plasmode performance summary |
+
+### Stage 2c: Data-quality stress testing
+
+| Function | Purpose |
+|----------|---------|
+| `run_plasmode_dq_stress()` | Perturb synthetic outcomes under locked DQ severity ranges (missingness, misclassification, unmeasured confounding) |
+| `summarize_dq_degradation()` | Per-candidate degradation gradients (bias, RMSE, coverage) versus the baseline plasmode |
 
 ### Stage 3: Residual confounding (Check Point 3)
 

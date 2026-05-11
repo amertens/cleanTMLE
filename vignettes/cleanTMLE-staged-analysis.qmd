@@ -104,10 +104,43 @@ in prose; the software shorthand for the same labels is GO, FLAG,
 and STOP.
 
 ::: {.callout-warning}
-This vignette demonstrates the software workflow. It does not
+This vignette demonstrates the package workflow. It does not
 establish exchangeability, measurement validity, phenotype
 validity, linkage accuracy, or regulatory acceptability.
 :::
+
+### Why TMLE fits this workflow
+
+TMLE is well suited to an outcome-blind staged workflow for a
+small number of inter-related reasons:
+
+- The estimand is declared in advance and the estimator is
+  defined as the targeted update of an initial outcome model
+  toward that estimand, so the analysis target is separable from
+  the nuisance fits.
+- The nuisance library, the propensity-score truncation, and the
+  targeting step can all be prespecified and recorded in the
+  analysis lock.
+- Targeting decouples the bias of the final estimator from the
+  quality of any single nuisance fit, allowing the use of
+  adaptive learners without driving the choice from the observed
+  outcome association.
+- The candidate grid is enumerable: different libraries and
+  truncation rules define distinct candidates that can be
+  screened on synthetic outcomes before authorisation.
+- Inference is based on the efficient influence function, which
+  provides a transparent variance estimate compatible with the
+  diagnostics computed at earlier stages.
+
+### What each diagnostic answers
+
+| Diagnostic | Question answered | What it does not answer |
+|---|---|---|
+| PS / overlap / balance / ESS | Empirical design feasibility | Operating characteristics of any specific TMLE candidate |
+| Baseline plasmode | Estimator behaviour under a locked synthetic outcome model | Behaviour under the realised outcome process |
+| DQ stress testing | Stability under prespecified fit-for-purpose threats | True bias magnitude under unobserved threats |
+| Negative-control outcomes | Residual bias through a different channel | Primary-estimator behaviour under stress |
+| Post-outcome sensitivity | Robustness to deviations after unblinding | Pre-outcome decisions |
 
 ### Stage 0 as precondition
 
@@ -633,6 +666,13 @@ deg <- summarize_dq_degradation(dq_results)
 head(deg)
 ```
 
+The *degradation gradient* is the curve of estimator performance
+against the severity of a prespecified data-quality threat. It is
+analogous to a dose-response curve for estimator fragility. A
+shallow gradient suggests a candidate is stable across plausible
+severities. A cliff suggests that small increases in degradation
+move performance outside the locked criteria.
+
 `summarize_dq_degradation()` returns a long table comparing each
 degraded run with the baseline (no degradation): bias change, RMSE
 ratio, coverage drop. A robust candidate produces a flat curve; a
@@ -711,6 +751,22 @@ we proceed to the pre-outcome authorization gate.
 ---
 
 ## Pre-outcome decision
+
+### Interpreting GO / FLAG / STOP
+
+The three labels record the result of a prespecified checkpoint,
+not a judgement about the underlying assumptions:
+
+- **GO**: every prespecified threshold for this checkpoint was
+  met. The workflow may proceed to the next stage.
+- **FLAG**: at least one threshold was not met but the result
+  does not block progression. The workflow may proceed under
+  documented review.
+- **STOP**: at least one threshold was not met and the checkpoint
+  blocks progression under the locked rule.
+
+An override does not erase the checkpoint result. It records a
+documented decision to proceed despite the checkpoint result.
 
 The pre-outcome decision summarises whether the prespecified
 diagnostics support proceeding to outcome analysis, require

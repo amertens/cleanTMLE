@@ -216,7 +216,7 @@ summarize_event_support(lock)
 
 ---
 
-## Stage 2: Propensity Score and Balance (Check Point 2)
+## Stage 2a: Design diagnostics (Check Point 2)
 
 ```{r ps}
 ps_fit <- fit_ps_glm(lock, truncate = 0.01)
@@ -235,7 +235,7 @@ print(cp2)
 
 ---
 
-## Stage 2b: TMLE Candidate Selection via Plasmode
+## Stage 2b: Baseline plasmode candidate selection
 
 ```{r candidates}
 # Define TMLE candidate specifications
@@ -262,7 +262,9 @@ lock <- lock_primary_tmle_spec(lock, selected)
 print(selected)
 ```
 
-### Plasmode DQ Stress Test (Stage 2c)
+---
+
+## Stage 2c: Data-quality stress testing
 
 `run_plasmode_dq_stress()` perturbs the synthetic outcome under
 locked data-quality severity ranges. The severity values are not
@@ -315,9 +317,21 @@ gate <- authorize_outcome_analysis(audit)
 print(gate)
 ```
 
+::: {.callout-warning}
+## Common misuse
+
+- Do not use DQ stress testing to claim causal validity.
+- Do not interpret low-replicate examples inferentially.
+- Do not treat truncation as purely numerical when it changes
+  the effective target population.
+- Do not use the package audit log as a substitute for
+  institutional audit trails.
+- Do not interpret a GO decision as proof that assumptions hold.
+:::
+
 ---
 
-## Stage 3: Negative Control (Check Point 3)
+## Stage 3: Negative-control checks (Check Point 3)
 
 ```{r nc}
 nc  <- run_negative_control(lock, "nc_outcome", ps_fit)
@@ -338,7 +352,7 @@ audit <- record_checkpoint(audit, cp2)
 audit <- record_checkpoint(audit, cp3)
 ```
 
-## Pre-Outcome Authorization Gate
+## Gate and authorisation
 
 ```{r gate}
 gate <- authorize_outcome_analysis(audit)
@@ -347,7 +361,7 @@ print(gate)
 
 ---
 
-## Stage 4: Estimation
+## Stage 4: Authorised primary analysis
 
 ```{r crude}
 run_crude_workflow(lock)
