@@ -139,9 +139,9 @@ stage, and what it uses from the outcome side of the data.
 | 1 | `clean_event_process_table()` | No outcome access | Event-process classification table |
 | 1 | `clean_check_event_processes()` | No outcome access | Verify event-process specification |
 | 2 | `clean_weight_diagnostics()` | No outcome access | Weight ESS, percentiles, max-weight thresholds |
-| 2b | `refine_ps_after_nco()` | Negative-control Y only | Iterative PS refinement after NCO signal |
-| 2b | `run_plasmode_dq_stress()` | Synthetic Y only | DQ stress test (missingness, misclass, U) |
-| 2b | `summarize_dq_degradation()` | No | DQ degradation comparison table |
+| 3  | `refine_ps_after_nco()` | Negative-control Y only | Iterative PS refinement after NCO signal |
+| 2c | `run_plasmode_dq_stress()` | Synthetic Y only | DQ stress test (missingness, misclass, U) |
+| 2c | `summarize_dq_degradation()` | No | DQ degradation comparison table |
 | Gate | `gate_all()` | No | Composite GO/FLAG/STOP across checkpoints |
 
 **Marginal Y only**: accesses event counts or marginal outcome support, not the A--Y association.
@@ -273,9 +273,41 @@ print(selected)
 locked data-quality severity ranges. The severity values are not
 chosen here; they come from external sources (validation studies,
 data profiling, or expert elicitation) and are locked before the
-stress test runs. The example below shows two scenarios with
-locked severity values and the downstream summarisation and
-gating calls.
+stress test runs.
+
+### Outcome-blind DGP mode
+
+The plasmode + DQ stress test runs in one of three
+data-generating-process modes, following the FIORD outcome-blind
+simulation spectrum [@nance2026fiord]. The DGP mode is recorded
+in the analysis lock alongside the candidates and severity ranges,
+and the audit log surfaces which mode was used:
+
+- **`dgp_mode = "investigator_specified"`** — fully external DGP,
+  for example a structural-equation specification using
+  `simcausal`. Strictly outcome-blind because no part of the
+  generator is fit to the study data. Highest risk of
+  mis-specification; lowest risk of unblinding.
+- **`dgp_mode = "hybrid"`** (current cleanTMLE default) — uses
+  the empirical covariate distribution and the fitted
+  treatment / censoring mechanism, with an investigator-specified
+  or covariate-only marginal outcome model $E[Y \mid W]$. The
+  joint $(A, Y) \mid W$ relationship is *not* used. This is the
+  middle of the FIORD spectrum and the recommended default for
+  most RWE studies.
+- **`dgp_mode = "full_empirical"`** — uses a parametric bootstrap
+  from the fitted joint $(W, A, Y)$. **Not strictly outcome-blind
+  unless run on held-out or external data**, because the outcome
+  mechanism is fit to the study data the analyst can still see.
+  Documented as a power-user option and labelled non-outcome-blind
+  in the audit log.
+
+The current release implements the hybrid mode; the
+investigator-specified and full-empirical modes are documented as
+planned extensions (see *Planned helpers* below).
+
+The example below shows two scenarios with locked severity values
+and the downstream summarisation and gating calls.
 
 ```{r dq-stress-example, eval = FALSE}
 # Severity values below are illustrative. In practice they are

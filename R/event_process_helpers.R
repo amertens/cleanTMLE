@@ -1,9 +1,9 @@
 # Diagnostic helpers for event-process classification, target population,
 # missing-data planning, weight diagnostics, competing-risk coherence,
 # and cumulative-risk reporting. These helpers do not change the cleanTMLE
-# estimator. They are documentation and diagnostic utilities motivated by
-# the causalRisk vignette workflow and ICH E9(R1) intercurrent-event
-# language.
+# estimator. They are documentation and diagnostic utilities aligned with
+# the ICH E9(R1) intercurrent-event language and pharmacoepidemiology
+# cumulative-risk reporting practice.
 
 # ---------------------------------------------------------------------
 # A. Event-process classification table

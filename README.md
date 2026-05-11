@@ -138,12 +138,16 @@ The package covers three workflow families:
   outcome-blind plasmode simulations, and a prespecified rule selects
   the best specification before the real outcome is accessed.
 
-In addition, the package provides a **model-specification DSL** and
-**time-to-event helpers** (IPW risk curves, g-computation,
-augmented IPW, IPW hazard ratios, survival TMLE, and LMTP) as
-experimental extensions; the v0.1 staged-workflow primitives are
-tested on binary point exposure with binary outcome and the
-marginal risk-difference estimand.
+The **v0.1 tested scope** is intentionally narrow: binary point
+exposure, binary outcome, marginal risk difference, outcome
+missingness handled through complete-case and IPCW sensitivity
+paths under prespecified missingness assumptions. The package
+also ships a **model-specification DSL** and a set of
+**time-to-event helpers** (`estimate_ipwrisk`, `estimate_gcomprisk`,
+`estimate_aipwrisk`, `estimate_ipwhr`, `estimate_surv_tmle`,
+`estimate_lmtp`), but these are **experimental** and are not part
+of the v0.1 tested scope; see *Experimental / planned extensions*
+below.
 
 ## Key Features
 
@@ -226,16 +230,35 @@ marginal risk-difference estimand.
   (`summarize_stage_path()`)
 - **Cross-workflow comparison** --- `summarize_cleanroom_results()`
   produces a side-by-side table of estimates across all fitted workflows
-- **Model specification DSL** --- pipe-friendly interface for
-  time-to-event analyses (`specify_models()`, `identify_outcome()`,
-  `identify_treatment()`, `identify_censoring()`, `identify_subject()`)
-- **Time-to-event estimators** --- `estimate_ipwrisk()`,
-  `estimate_gcomprisk()`, `estimate_aipwrisk()`, `estimate_ipwhr()`,
-  `estimate_surv_tmle()`, `estimate_lmtp()`,
-  `estimate_tmle_risk_point()`
 - **Reporting helpers** --- `make_table1()`, `make_table2()`,
   `make_wt_summary_table()`, `extreme_weights()`, `compare_fits()`,
   `forest_plot()`
+
+## Experimental / planned extensions
+
+The following are **experimental** and are **not part of the v0.1
+tested scope**. They are exported so that adventurous users can
+start exercising them, but they are not yet validated through the
+staged workflow:
+
+- **Model-specification DSL** for time-to-event analyses
+  (`specify_models()`, `identify_outcome()`, `identify_treatment()`,
+  `identify_censoring()`, `identify_subject()`)
+- **Time-to-event estimators** --- `estimate_ipwrisk()`,
+  `estimate_gcomprisk()`, `estimate_aipwrisk()`, `estimate_ipwhr()`,
+  `estimate_surv_tmle()` (via `survtmle`), `estimate_lmtp()` (via
+  `lmtp`), `estimate_tmle_risk_point()`. Survival, competing-risk,
+  and longitudinal estimands are on the cleanTMLE 0.2 roadmap.
+- **FIORD two-stage candidate selector** (`select_tmle_candidate(rule = "fiord_two_stage")`)
+  -- planned; current rules collapse the FIORD two stages into a
+  single-step minimax. See *TODO.md* for the full development plan.
+- **Nonparametric bootstrap variance** for IPTW, matched TMLE, and
+  TMLE on non-i.i.d. samples -- planned for the next minor release.
+- **Pre-protocol stress-test mode** (`run_preprotocol_plasmode()`)
+  -- planned; allows the plasmode + DQ loop to run on user-specified
+  covariate distributions without a real lock.
+- **Unmeasured-confounding severity gradient** in `run_plasmode_dq_stress()`
+  -- planned; currently a single fixed-strength scenario.
 
 ## Installation
 
