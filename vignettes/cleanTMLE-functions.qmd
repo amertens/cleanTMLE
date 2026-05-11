@@ -618,6 +618,9 @@ These dossier-related helpers are recommended outputs and are planned for cleanT
 
 - `clean_target_trial_table()` --- render a target-trial timing table from an analysis lock and `attach_estimand()` metadata. Build manually from the lock fields and the estimand object for now.
 - `checkpoint_dashboard()` --- aggregate per-checkpoint records into a single GO / FLAG / STOP dashboard. Build by binding the rows returned by individual `checkpoint_*()` calls and `gate_all()`.
+- `run_plasmode_dq_stress(..., scenarios = with_u_gradient(...))` --- extend the unmeasured-confounding scenario from a single fixed latent-U strength to a prespecified grid of strengths, so the DQ stress test produces an E-value-style sensitivity curve as a by-product. Current users can approximate this by calling `run_plasmode_dq_stress()` repeatedly with different `unmeasured_U_strength` parameter values and concatenating the metrics.
+- `run_preprotocol_plasmode()` --- a pre-protocol variant of the plasmode + DQ stress test that takes user-specified covariate distributions and a hypothesised treatment-mechanism strength instead of a real lock. Use case: deciding which dataset to use before a data-use agreement is signed. Current users can approximate this by constructing a synthetic lock with `create_analysis_lock()` on simulated covariates and treatment, then running the standard plasmode pipeline.
+- `select_tmle_candidate(..., rule = "fiord_two_stage")` --- implement the FIORD two-stage candidate selector: first screen point estimators by oracle coverage (CI built from the Monte Carlo empirical SE), then select the variance method on the locked point estimator. The current `rule = "min_rmse"` and `rule = "min_max_rmse"` options collapse the two stages.
 
 ```{r session-info}
 sessionInfo()
