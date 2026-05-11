@@ -644,15 +644,74 @@ composite <- gate_all(cp1, cp2, cp3, allow_flag = TRUE)
 print(composite)
 ```
 
+### Plasmode candidate-grid expansion (workshop-driven, 0.2)
+
+The 0.2 release adds eight axes to the plasmode candidate grid plus four new helpers, motivated by Phillips et al. 2023 *Practical considerations for specifying a super learner*, Gruber et al. 2023 *Developing a Targeted Learning-based SAP* and its supplement, Gruber et al. 2023 *Evaluating and improving RWE with TL*, and Gruber & van der Laan 2009.
+
+**New `tmle_candidate()` arguments** (all back-compatible):
+
+- `variance_method ∈ c("IF","cv_IF","robust")` --- IF is the current default; `cv_IF` uses fold-specific Q,g; `robust` requests the upstream `tmle::tmle(variance.method = "tmle")` plug-in variance (Tran et al. 2018).
+- `cv_scheme ∈ c("none","cv_tmle","sample_split")` --- promotes CV-TMLE to a first-class axis; `cv_V` lets you pin V (otherwise auto-set from the Phillips rule).
+- `estimator ∈ c("tmle","aipw","onestep")` --- recorded on the spec; AIPW is post-hoc-computable via `compute_aipw(g_fit, Q_fit)`.
+- `discrete_sl` --- request the discrete super learner (`method.NNLS`, eSL in the dSL pool).
+- `screener ∈ c("All","corP","corRank","glmnet","randomForest")` --- couples a screener with every Q, g learner inside CV (Phillips p. 1283).
+- `tmle_control` --- list of upstream `tmle::tmle()` controls (`fluctuation`, `alpha`, `target.gwt`, `automate`, `min.retain`, `cv_Qinit`).
+- `match_spec` --- list `list(method, ratio, caliper)` for matched-cohort candidates.
+- `truncation` now accepts either numeric or one of the named rules `"sqrt_n_ln_n"`, `"fixed_001"`, `"fixed_025"`, `"fixed_05"`. The named rule is resolved at fit time when `n` is known.
+
+**New `expand_tmle_candidate_grid()` arguments**: `estimators`, `cv_schemes`, `variance_methods`, `discrete_sl`, `screeners`, `max_candidates`. The function Cartesian-products the requested axes and caps the grid at `max_candidates`.
+
+**New `select_tmle_candidate()` rules**:
+
+- `rule = "ci_coverage"` --- picks the candidate whose oracle coverage is closest to nominal.
+- `rule = "min_se"` --- picks the candidate with the smallest mean SE.
+- `rule = "composite"` --- weighted composite of standardised RMSE, coverage penalty, and SE-vs-SD penalty.
+- `rule = "fiord_two_stage"` --- the FIORD two-stage selector: Stage 1 screens candidates whose oracle coverage is within `fiord_coverage_tol` (default 0.02) of the target; Stage 2 picks the smallest mean SE among survivors. *Variance-method selection on the locked point estimator (FIORD Stage 2 proper)* is still pending; this rule currently selects the point-estimator candidate.
+
+**New helpers**:
+
+- `compute_n_eff(y, family)` --- effective sample size `min(n, 5·n_rare)` for binary outcomes (Phillips p. 1281).
+- `recommend_cv_V(n_eff)` --- the Phillips V rule (V = 20 for n_eff < 500, V = 10 for n_eff < 5,000, ...).
+- `build_sl_library(role, n_eff, p, preset)` --- four role-aware library presets (`small_n`, `default`, `rich`, `very_rich`), keyed by effective sample size.
+- `resolve_truncation_rule(rule, n)` --- numeric pass-through or one of the named rules.
+
+**New post-processors**:
+
+- `run_positivity_diagnostics(ps_fit)` --- single tidy object with PS C-statistic, per-arm distribution summary, % truncated, bounded-g quantiles, and a near-positivity-violation flag.
+- `compute_G_value(estimate, se)` --- the additive bias that would push the CI across the null (Gruber 2023 RWE).
+- `run_delta_sensitivity(estimate, se, delta_grid)` --- causal-gap sensitivity sweep on top of an existing fit (SAP §8.3.4).
+- `compute_aipw(g_fit, Q_fit)` --- AIPW estimate from the same nuisances the modular TMLE uses, useful as a candidate-grid comparator.
+
+**Example**:
+
+```{r expanded-candidate-example, eval = FALSE}
+# Expanded grid: 2 truncations x 1 library x 2 CV schemes x
+# 2 variance methods = 8 candidates.
+g <- expand_tmle_candidate_grid(
+  truncations      = c(0.01, 0.05),
+  libraries        = list(default = c("SL.glm", "SL.glmnet", "SL.gam")),
+  cv_schemes       = c("none", "cv_tmle"),
+  variance_methods = c("IF", "cv_IF"),
+  max_candidates   = 16
+)
+plas <- run_plasmode_feasibility(lock, tmle_candidates = g, reps = 200)
+selected <- select_tmle_candidate(
+  plas,
+  rule = "fiord_two_stage",
+  fiord_target_coverage = 0.95,
+  fiord_coverage_tol = 0.02
+)
+```
+
 ### Planned helpers
 
-These dossier-related helpers are recommended outputs and are planned for cleanTMLE 0.2; current users should build them from the documented primitives.
+These helpers are recommended outputs and are planned for later cleanTMLE releases; current users should build them from the documented primitives.
 
 - `clean_target_trial_table()` --- render a target-trial timing table from an analysis lock and `attach_estimand()` metadata. Build manually from the lock fields and the estimand object for now.
 - `checkpoint_dashboard()` --- aggregate per-checkpoint records into a single GO / FLAG / STOP dashboard. Build by binding the rows returned by individual `checkpoint_*()` calls and `gate_all()`.
 - `run_plasmode_dq_stress(..., scenarios = with_u_gradient(...))` --- extend the unmeasured-confounding scenario from a single fixed latent-U strength to a prespecified grid of strengths, so the DQ stress test produces an E-value-style sensitivity curve as a by-product. Current users can approximate this by calling `run_plasmode_dq_stress()` repeatedly with different `unmeasured_U_strength` parameter values and concatenating the metrics.
-- `run_preprotocol_plasmode()` --- a pre-protocol variant of the plasmode + DQ stress test that takes user-specified covariate distributions and a hypothesised treatment-mechanism strength instead of a real lock. Use case: deciding which dataset to use before a data-use agreement is signed. Current users can approximate this by constructing a synthetic lock with `create_analysis_lock()` on simulated covariates and treatment, then running the standard plasmode pipeline.
-- `select_tmle_candidate(..., rule = "fiord_two_stage")` --- implement the FIORD two-stage candidate selector: first screen point estimators by oracle coverage (CI built from the Monte Carlo empirical SE), then select the variance method on the locked point estimator. The current `rule = "min_rmse"` and `rule = "min_max_rmse"` options collapse the two stages.
+- `run_preprotocol_plasmode()` --- a pre-protocol variant of the plasmode + DQ stress test that takes user-specified covariate distributions and a hypothesised treatment-mechanism strength instead of a real lock. Use case: deciding which dataset to use before a data-use agreement is signed.
+- `run_ctmle_candidate()`, `run_bootstrap_variance()` --- C-TMLE (collaborative TMLE; Gruber 2009 §3.2) and nonparametric bootstrap variance paths. Both require wrapping a separate upstream package (`ctmle`, `boot`/`HAL`) and are on the 0.3 roadmap.
 
 ```{r session-info}
 sessionInfo()

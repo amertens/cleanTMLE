@@ -7,6 +7,12 @@
 expand_tmle_candidate_grid(
   truncations = c(0.01, 0.05),
   libraries = list(glm = c("SL.glm"), glm_mean = c("SL.glm", "SL.mean")),
+  estimators = "tmle",
+  cv_schemes = "none",
+  variance_methods = "IF",
+  discrete_sl = FALSE,
+  screeners = "All",
+  max_candidates = 64L,
   ...
 )
 }

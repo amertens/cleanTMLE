@@ -6,9 +6,13 @@
 \usage{
 select_tmle_candidate(
   sim_results,
-  rule = c("min_rmse", "min_bias", "max_coverage", "min_max_rmse"),
+  rule = c("min_rmse", "min_bias", "max_coverage", "min_max_rmse", "ci_coverage",
+    "min_se", "composite", "fiord_two_stage"),
   thresholds = NULL,
-  dq_results = NULL
+  dq_results = NULL,
+  composite_weights = c(rmse = 1, coverage_penalty = 2, se_penalty = 0.5),
+  fiord_target_coverage = 0.95,
+  fiord_coverage_tol = 0.02
 )
 }
 \arguments{

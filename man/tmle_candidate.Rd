@@ -10,6 +10,14 @@ tmle_candidate(
   g_library = c("SL.glm"),
   q_library = NULL,
   truncation = 0.01,
+  variance_method = c("IF", "cv_IF", "robust"),
+  cv_scheme = c("none", "cv_tmle", "sample_split"),
+  cv_V = NULL,
+  estimator = c("tmle", "aipw", "onestep"),
+  discrete_sl = FALSE,
+  screener = c("All", "corP", "corRank", "glmnet", "randomForest"),
+  tmle_control = NULL,
+  match_spec = NULL,
   ...
 )
 }

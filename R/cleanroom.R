@@ -711,9 +711,18 @@ plot.ps_diagnostics <- function(x, ...) {
 #'
 #' @export
 tmle_candidate <- function(candidate_id, label = candidate_id,
-                           g_library  = c("SL.glm"),
-                           q_library  = NULL,
-                           truncation = 0.01,
+                           g_library       = c("SL.glm"),
+                           q_library       = NULL,
+                           truncation      = 0.01,
+                           variance_method = c("IF", "cv_IF", "robust"),
+                           cv_scheme       = c("none", "cv_tmle", "sample_split"),
+                           cv_V            = NULL,
+                           estimator       = c("tmle", "aipw", "onestep"),
+                           discrete_sl     = FALSE,
+                           screener        = c("All", "corP", "corRank",
+                                                "glmnet", "randomForest"),
+                           tmle_control    = NULL,
+                           match_spec      = NULL,
                            ...) {
   if (!is.character(candidate_id) || length(candidate_id) != 1L)
     stop("`candidate_id` must be a single character string.", call. = FALSE)
@@ -734,12 +743,40 @@ tmle_candidate <- function(candidate_id, label = candidate_id,
 
   if (is.null(q_library)) q_library <- g_library
 
+  variance_method <- match.arg(variance_method)
+  cv_scheme       <- match.arg(cv_scheme)
+  estimator       <- match.arg(estimator)
+  screener        <- match.arg(screener)
+
+  # Resolve named truncation rule lazily (sample size unknown here)
+  truncation_rule <- if (is.character(truncation)) truncation else NULL
+
+  if (is.null(tmle_control)) {
+    tmle_control <- list(
+      fluctuation = "logistic",
+      alpha       = 0.9995,
+      target.gwt  = TRUE,
+      automate    = FALSE,
+      min.retain  = 2L,
+      cv_Qinit    = TRUE
+    )
+  }
+
   obj <- list(
-    candidate_id = candidate_id,
-    label        = label,
-    g_library    = g_library,
-    q_library    = q_library,
-    truncation   = truncation
+    candidate_id    = candidate_id,
+    label           = label,
+    g_library       = g_library,
+    q_library       = q_library,
+    truncation      = truncation,
+    truncation_rule = truncation_rule,
+    variance_method = variance_method,
+    cv_scheme       = cv_scheme,
+    cv_V            = cv_V,
+    estimator       = estimator,
+    discrete_sl     = isTRUE(discrete_sl),
+    screener        = screener,
+    tmle_control    = tmle_control,
+    match_spec      = match_spec
   )
   class(obj) <- "tmle_candidate_spec"
   obj
@@ -749,12 +786,22 @@ tmle_candidate <- function(candidate_id, label = candidate_id,
 #' @export
 print.tmle_candidate_spec <- function(x, ...) {
   cat(sprintf("TMLE Candidate: %s\n", x$candidate_id))
-  cat(sprintf("  Label:      %s\n", x$label))
-  cat(sprintf("  g-library:  %s\n", paste(x$g_library, collapse = ", ")))
-  cat(sprintf("  Q-library:  %s\n", paste(x$q_library, collapse = ", ")))
-  cat(sprintf("  Truncation: %s\n", x$truncation))
+  cat(sprintf("  Label:           %s\n", x$label))
+  cat(sprintf("  Estimator:       %s\n", x$estimator %||% "tmle"))
+  cat(sprintf("  CV scheme:       %s\n", x$cv_scheme %||% "none"))
+  cat(sprintf("  Variance method: %s\n", x$variance_method %||% "IF"))
+  cat(sprintf("  g-library:       %s\n", paste(x$g_library, collapse = ", ")))
+  cat(sprintf("  Q-library:       %s\n", paste(x$q_library, collapse = ", ")))
+  cat(sprintf("  Discrete SL:     %s\n", isTRUE(x$discrete_sl)))
+  cat(sprintf("  Screener:        %s\n", x$screener %||% "All"))
+  cat(sprintf("  Truncation:      %s\n", x$truncation))
+  if (!is.null(x$match_spec))
+    cat("  Matched cohort: yes\n")
   invisible(x)
 }
+
+# NOTE: `%||%` is already defined in tmle_clean_room_wrapper.R and
+# plasmode_dq.R; relying on those package-internal definitions.
 
 
 #' Check a List of TMLE Candidate Specifications
@@ -811,6 +858,12 @@ expand_tmle_candidate_grid <- function(
       glm      = c("SL.glm"),
       glm_mean = c("SL.glm", "SL.mean")
     ),
+    estimators       = "tmle",
+    cv_schemes       = "none",
+    variance_methods = "IF",
+    discrete_sl      = FALSE,
+    screeners        = "All",
+    max_candidates   = 64L,
     ...) {
 
   # Back-compat: accept g_libraries / Q_libraries from the older docs and
@@ -840,22 +893,56 @@ expand_tmle_candidate_grid <- function(
            call. = FALSE)
   }
 
+  # Build the Cartesian product across the workshop-driven axes.
+  # When all extra axes are at their single-value defaults, the
+  # behaviour is identical to the pre-0.2 grid.
   candidates <- list()
-  for (lib_name in names(libraries)) {
-    for (trunc in truncations) {
-      trunc_label <- sub("\\.", "", sprintf("t%s", trunc))
-      cand_id <- paste0("tmle_", lib_name, "_", trunc_label)
-      label   <- sprintf("TMLE: %s, trunc=%.3g",
-                          paste(libraries[[lib_name]], collapse = "+"),
-                          trunc)
-      candidates[[cand_id]] <- tmle_candidate(
-        candidate_id = cand_id,
-        label        = label,
-        g_library    = libraries[[lib_name]],
-        q_library    = libraries[[lib_name]],
-        truncation   = trunc
-      )
-    }
+  grid <- expand.grid(
+    lib_name = names(libraries),
+    trunc    = truncations,
+    est      = estimators,
+    cvs      = cv_schemes,
+    var_m    = variance_methods,
+    dsl      = discrete_sl,
+    scr      = screeners,
+    stringsAsFactors = FALSE,
+    KEEP.OUT.ATTRS   = FALSE
+  )
+  if (nrow(grid) > max_candidates)
+    stop("Candidate grid has ", nrow(grid), " entries (max_candidates = ",
+         max_candidates, "). Narrow the axes or raise max_candidates.",
+         call. = FALSE)
+
+  for (r in seq_len(nrow(grid))) {
+    g       <- grid[r, ]
+    trunc_label <- sub("\\.", "", sprintf("t%s", g$trunc))
+    parts   <- c(g$lib_name, trunc_label,
+                 if (g$est != "tmle")   g$est,
+                 if (g$cvs != "none")   g$cvs,
+                 if (g$var_m != "IF")   g$var_m,
+                 if (isTRUE(g$dsl))     "dSL",
+                 if (g$scr != "All")    g$scr)
+    cand_id <- paste(c("tmle", parts), collapse = "_")
+    label   <- sprintf(
+      "%s: lib=%s, trunc=%.3g, cv=%s, var=%s%s%s",
+      toupper(g$est),
+      paste(libraries[[g$lib_name]], collapse = "+"),
+      g$trunc, g$cvs, g$var_m,
+      if (isTRUE(g$dsl)) ", dSL" else "",
+      if (g$scr != "All") paste0(", screener=", g$scr) else ""
+    )
+    candidates[[cand_id]] <- tmle_candidate(
+      candidate_id    = cand_id,
+      label           = label,
+      g_library       = libraries[[g$lib_name]],
+      q_library       = libraries[[g$lib_name]],
+      truncation      = g$trunc,
+      estimator       = g$est,
+      cv_scheme       = g$cvs,
+      variance_method = g$var_m,
+      discrete_sl     = isTRUE(g$dsl),
+      screener        = g$scr
+    )
   }
   candidates
 }
@@ -1182,9 +1269,17 @@ print.plasmode_results <- function(x, ...) {
 #' @export
 select_tmle_candidate <- function(sim_results,
                                    rule = c("min_rmse", "min_bias",
-                                            "max_coverage", "min_max_rmse"),
+                                            "max_coverage", "min_max_rmse",
+                                            "ci_coverage", "min_se",
+                                            "composite",
+                                            "fiord_two_stage"),
                                    thresholds = NULL,
-                                   dq_results = NULL) {
+                                   dq_results = NULL,
+                                   composite_weights = c(rmse = 1.0,
+                                                         coverage_penalty = 2.0,
+                                                         se_penalty = 0.5),
+                                   fiord_target_coverage = 0.95,
+                                   fiord_coverage_tol = 0.02) {
   if (!inherits(sim_results, "plasmode_results"))
     stop("`sim_results` must be a plasmode_results object.", call. = FALSE)
   rule <- match.arg(rule)
@@ -1256,6 +1351,45 @@ select_tmle_candidate <- function(sim_results,
         stop("dq_results contains no candidates matching sim_results.",
              call. = FALSE)
       which.min(pool$max_rmse)
+    },
+    # New (workshop-driven; TODO A.23):
+    ci_coverage = {
+      # Pick the candidate whose coverage is closest to nominal.
+      which.min(abs(pool$coverage - fiord_target_coverage))
+    },
+    min_se = which.min(pool$mean_se),
+    composite = {
+      # Weighted composite: standardised RMSE + coverage penalty +
+      # SE-vs-empirical-SD penalty. Smaller is better.
+      cov_pen <- (pool$coverage - fiord_target_coverage)^2
+      se_pen  <- (pool$mean_se - pool$emp_sd)^2 /
+                 pmax(pool$emp_sd, .Machine$double.eps)^2
+      score <- composite_weights["rmse"] * scale(pool$rmse)[, 1L] +
+               composite_weights["coverage_penalty"] * scale(cov_pen)[, 1L] +
+               composite_weights["se_penalty"] * scale(se_pen)[, 1L]
+      which.min(score)
+    },
+    fiord_two_stage = {
+      # Stage 1: keep candidates whose oracle coverage is within
+      # fiord_coverage_tol of the nominal target.
+      keep <- abs(pool$coverage - fiord_target_coverage) <= fiord_coverage_tol
+      if (!any(keep)) {
+        warning("FIORD stage 1: no candidate achieves nominal coverage; ",
+                "falling back to closest-coverage candidate.",
+                call. = FALSE)
+        return_idx <- which.min(abs(pool$coverage - fiord_target_coverage))
+        return_idx
+      } else {
+        # Stage 2: among those, choose the candidate with the
+        # smallest mean SE (most precise inference at the right
+        # coverage). NOTE: variance-method selection per FIORD is a
+        # separate step that needs candidates run under each variance
+        # method; this rule selects the point-estimator candidate.
+        stage2 <- pool[keep, , drop = FALSE]
+        stage2_idx <- which.min(stage2$mean_se)
+        # Map back to the row of pool
+        which(keep)[stage2_idx]
+      }
     }
   )
   best_id <- pool$candidate[best_idx]
@@ -1776,6 +1910,22 @@ fit_tmle_treatment_mechanism <- function(lock, ps_fit = NULL,
   A          <- data[[lock$treatment]]
   W          <- data[, lock$covariates, drop = FALSE]
   n          <- nrow(data)
+
+  # Named truncation rule support (TODO A.21.6): if `truncation` is a
+  # string like "sqrt_n_ln_n", resolve it now that n is known.
+  if (is.character(truncation))
+    truncation <- resolve_truncation_rule(truncation, n = n)
+
+  # CV scheme: if the candidate spec sets cv_scheme = "cv_tmle" and the
+  # caller did not override n_folds, use a sensible default V from the
+  # Phillips rule.
+  if (!is.null(primary_spec) &&
+      identical(primary_spec$cv_scheme, "cv_tmle") &&
+      n_folds == 1L && is.null(fold_vec)) {
+    n_folds <- if (!is.null(primary_spec$cv_V)) primary_spec$cv_V
+               else recommend_cv_V(compute_n_eff(data[[lock$outcome]],
+                                                 family = "binomial"))
+  }
   use_cv     <- !is.null(fold_vec) || n_folds > 1L
 
   if (use_cv && is.null(ps_fit)) {
