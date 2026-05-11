@@ -27,12 +27,20 @@ NULL
                                   caller = "Stage 4 function") {
   if (isTRUE(override_clean_room)) return(invisible(TRUE))
 
-  # Check outcome masking
+  # Lock-level opt-out: if the user created the lock with
+  # cleanroom_enabled = FALSE, the package is being used as a plain
+  # outcome-blind RWE pipeline without the audit/hash/gate machinery.
+  # Stage 4 functions still run; outcome-blindness is the analyst's
+  # responsibility rather than software-enforced.
+  if (isFALSE(lock$cleanroom_enabled)) return(invisible(TRUE))
 
+  # Check outcome masking
   if (isTRUE(lock$.outcome_masked)) {
     stop(
       caller, ": Outcome is masked. ",
-      "Use unmask_outcome() first, or set override_clean_room = TRUE.",
+      "Use unmask_outcome() first, set override_clean_room = TRUE, ",
+      "or create the lock with cleanroom_enabled = FALSE to skip ",
+      "the software-enforced outcome guard entirely.",
       call. = FALSE
     )
   }
@@ -118,9 +126,10 @@ NULL
 #'
 #' @export
 create_analysis_lock <- function(data, treatment, outcome, covariates,
-                                  sl_library    = c("SL.glm", "SL.mean"),
-                                  plasmode_reps = 100L,
-                                  seed          = 42L) {
+                                  sl_library        = c("SL.glm", "SL.mean"),
+                                  plasmode_reps     = 100L,
+                                  seed              = 42L,
+                                  cleanroom_enabled = TRUE) {
   if (!is.data.frame(data))
     stop("`data` must be a data.frame.", call. = FALSE)
   if (!is.character(treatment) || length(treatment) != 1L)
@@ -150,18 +159,71 @@ create_analysis_lock <- function(data, treatment, outcome, covariates,
   ))
 
   lock <- list(
-    data          = data,
-    treatment     = treatment,
-    outcome       = outcome,
-    covariates    = covariates,
-    sl_library    = sl_library,
-    plasmode_reps = as.integer(plasmode_reps),
-    seed          = as.integer(seed),
-    locked_at     = Sys.time(),
-    lock_hash     = lock_hash
+    data              = data,
+    treatment         = treatment,
+    outcome           = outcome,
+    covariates        = covariates,
+    sl_library        = sl_library,
+    plasmode_reps     = as.integer(plasmode_reps),
+    seed              = as.integer(seed),
+    cleanroom_enabled = isTRUE(cleanroom_enabled),
+    locked_at         = Sys.time(),
+    lock_hash         = lock_hash
   )
   class(lock) <- "cleanroom_lock"
   lock
+}
+
+#' Create a Simple (Non-Clean-Room) Analysis Lock
+#'
+#' A convenience wrapper around [create_analysis_lock()] that disables the
+#' software-enforced clean-room machinery (outcome guard, gate authorisation,
+#' audit-trail requirement). The resulting lock can be passed to the
+#' estimation functions ([run_clean_tmle()], [run_ipcw_tmle()],
+#' [run_matched_tmle()], [estimate_ipwrisk()], [estimate_gcomprisk()],
+#' [estimate_aipwrisk()], etc.) without first calling
+#' [authorize_outcome_analysis()]. The lock fingerprint and the design
+#' diagnostics (`compute_ps_diagnostics()`, `clean_weight_diagnostics()`,
+#' `love_plot()`) remain available.
+#'
+#' Use this constructor when you want cleanTMLE as a plain outcome-blind
+#' RWE pipeline (TMLE, IPTW, g-computation, AIPW, IPCW-TMLE) without the
+#' staged-analysis governance layer. Outcome blindness is then the
+#' analyst's responsibility, not software-enforced.
+#'
+#' For high-stakes confirmatory studies, use [create_analysis_lock()]
+#' (the default) and the full staged workflow.
+#'
+#' @inheritParams create_analysis_lock
+#'
+#' @return A `cleanroom_lock` object with `cleanroom_enabled = FALSE`.
+#'
+#' @examples
+#' dat  <- sim_func1(n = 200, seed = 1)
+#' lock <- create_simple_lock(
+#'   data       = dat,
+#'   treatment  = "treatment",
+#'   outcome    = "event_24",
+#'   covariates = c("age", "sex", "biomarker"),
+#'   seed       = 1
+#' )
+#' isFALSE(lock$cleanroom_enabled)
+#'
+#' @export
+create_simple_lock <- function(data, treatment, outcome, covariates,
+                                sl_library    = c("SL.glm", "SL.mean"),
+                                plasmode_reps = 100L,
+                                seed          = 42L) {
+  create_analysis_lock(
+    data              = data,
+    treatment         = treatment,
+    outcome           = outcome,
+    covariates        = covariates,
+    sl_library        = sl_library,
+    plasmode_reps     = as.integer(plasmode_reps),
+    seed              = as.integer(seed),
+    cleanroom_enabled = FALSE
+  )
 }
 
 #' @keywords internal
@@ -1599,7 +1661,13 @@ run_ipcw_tmle <- function(lock, ps_fit = NULL,
     warning("run_ipcw_tmle: tmle::tmle Delta-path failed (",
             conditionMessage(e), "). Falling back to complete-case ",
             "TMLE weighted by IPCW. The analysis no longer uses the ",
-            "full cohort; n_effective = ", sum(R), " (of ", n, ").",
+            "full cohort; n_effective = ", sum(R), " (of ", n, "). ",
+            "Note that this fallback gives up the joint double-robustness ",
+            "in the censoring + outcome models that the Delta-path ",
+            "provides: consistency now requires the IPCW SuperLearner ",
+            "response model to be correctly specified. Inspect ",
+            "method_used and the IPCW weight summary on the returned ",
+            "object before reporting.",
             call. = FALSE)
     cc      <- which(R == 1L)
     Y_cc    <- Y[cc]; A_cc <- A[cc]
@@ -1981,7 +2049,20 @@ run_tmle_targeting_step <- function(g_fit, Q_fit) {
       family = stats::binomial()
     )
     unname(stats::coef(fluc))
-  }, error = function(e) 0)
+  }, error = function(e) {
+    # Surface the failure so callers know the TMLE targeting step did
+    # not converge and the returned estimate is the untargeted Q (i.e.
+    # behaves like g-computation rather than TMLE).
+    warning(
+      "run_tmle_targeting_step: targeting-step GLM failed (",
+      conditionMessage(e), "). Falling back to epsilon = 0 ",
+      "(untargeted plug-in). Inspect the clever-covariate distribution ",
+      "and propensity-score truncation before treating the result as a ",
+      "TMLE estimate.",
+      call. = FALSE
+    )
+    0
+  })
 
   # Updated predictions
   Q_a1_upd <- stats::plogis(

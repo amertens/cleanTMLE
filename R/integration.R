@@ -488,7 +488,15 @@ run_matched_tmle <- function(lock, ps_fit, subset_idx,
     fluc <- stats::glm(Y ~ -1 + H_aw + offset(Q_aw_logit),
                         family = stats::binomial())
     unname(stats::coef(fluc))
-  }, error = function(e) 0)
+  }, error = function(e) {
+    warning(
+      "run_matched_tmle: targeting-step GLM failed (",
+      conditionMessage(e), "). Falling back to epsilon = 0 ",
+      "(untargeted plug-in on the matched subset).",
+      call. = FALSE
+    )
+    0
+  })
 
   Q_a1_u <- stats::plogis(
     stats::qlogis(pmax(pmin(Q_result$Q_a1, 0.999), 0.001)) + epsilon * H_a1)
@@ -497,6 +505,12 @@ run_matched_tmle <- function(lock, ps_fit, subset_idx,
   Q_aw_u <- stats::plogis(Q_aw_logit + epsilon * H_aw)
 
   psi <- mean(Q_a1_u) - mean(Q_a0_u)
+  # NOTE: the influence-function variance below treats the matched
+  # subset as an iid sample. The matched-pair correlation induced by
+  # the matching draw is not modelled, so the reported SE is not a
+  # paired-design SE. Users reporting matched-TMLE as primary should
+  # block-bootstrap the matching step. See manuscript section 8.2.4
+  # and TODO.md item A.2 (bootstrap variance for matched TMLE).
   eic <- H_aw * (Y - Q_aw_u) + (Q_a1_u - Q_a0_u) - psi
   eic_obs <- eic[!is.na(eic)]
   n_eff   <- length(eic_obs)

@@ -11,7 +11,8 @@ create_analysis_lock(
   covariates,
   sl_library = c("SL.glm", "SL.mean"),
   plasmode_reps = 100L,
-  seed = 42L
+  seed = 42L,
+  cleanroom_enabled = TRUE
 )
 }
 \arguments{
