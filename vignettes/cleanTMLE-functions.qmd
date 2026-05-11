@@ -134,8 +134,11 @@ stage, and what it uses from the outcome side of the data.
 | Plot | `clever_covariate_plot()` | No | H(A,W) distribution by group |
 | Plot | `love_plot_threeway()` | No | Unweighted / IPTW / matched SMDs |
 | Integ | `compute_matched_smds()` | No | SMDs on a matched subset |
-| 1 | `attrition_table()` | No | Cohort flow / attrition documentation |
+| 1 | `attrition_table()` | No outcome access | Cohort flow / attrition documentation |
 | 1 | `get_final_cohort()` | No | Extract filtered data from attrition table |
+| 1 | `clean_event_process_table()` | No outcome access | Event-process classification table |
+| 1 | `clean_check_event_processes()` | No outcome access | Verify event-process specification |
+| 2 | `clean_weight_diagnostics()` | No outcome access | Weight ESS, percentiles, max-weight thresholds |
 | 2b | `refine_ps_after_nco()` | Negative-control Y only | Iterative PS refinement after NCO signal |
 | 2b | `run_plasmode_dq_stress()` | Synthetic Y only | DQ stress test (missingness, misclass, U) |
 | 2b | `summarize_dq_degradation()` | No | DQ degradation comparison table |
@@ -608,6 +611,13 @@ convenient when the pipeline has many stages:
 composite <- gate_all(cp1, cp2, cp3, allow_flag = TRUE)
 print(composite)
 ```
+
+### Planned helpers
+
+These dossier-related helpers are recommended outputs and are planned for cleanTMLE 0.2; current users should build them from the documented primitives.
+
+- `clean_target_trial_table()` --- render a target-trial timing table from an analysis lock and `attach_estimand()` metadata. Build manually from the lock fields and the estimand object for now.
+- `checkpoint_dashboard()` --- aggregate per-checkpoint records into a single GO / FLAG / STOP dashboard. Build by binding the rows returned by individual `checkpoint_*()` calls and `gate_all()`.
 
 ```{r session-info}
 sessionInfo()

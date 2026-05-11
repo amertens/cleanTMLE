@@ -24,6 +24,26 @@ diagnostics, the candidate comparison, and the GO / FLAG / STOP
 decisions. It is intended to support, not replace, careful
 causal design and broader clean-room governance.
 
+## Pre-outcome study dossier
+
+cleanTMLE's central artefact is a reviewer-facing pre-outcome study dossier: a structured bundle of analytic outputs the review team reads before authorising the primary analysis. The dossier contains:
+
+- Protocol and target-trial timing (`attach_estimand()`)
+- Cohort flow and attrition (`attrition_table()`)
+- Event-process classification (`clean_event_process_table()`, `clean_check_event_processes()`)
+- Covariate and missingness summary (`make_table1()`, missingness checks)
+- PS overlap and balance (`compute_ps_diagnostics()`, `love_plot()`, `love_plot_threeway()`)
+- Treatment- and IPCW-weight diagnostics (`clean_weight_diagnostics()`, `extreme_weights()`)
+- Event-count and precision adequacy (`checkpoint_cohort_adequacy()`)
+- Baseline plasmode candidate selection (`run_plasmode_feasibility()`, `select_tmle_candidate()`)
+- DQ stress-test results (`run_plasmode_dq_stress()`, `summarize_dq_degradation()`)
+- Negative-control eligibility and attrition (`run_residual_confounding_stage()`)
+- GO / FLAG / STOP checkpoint dashboard (`gate_all()`; aggregate `checkpoint_dashboard()` planned)
+- Decision log and audit log export (`export_decision_log()`)
+- Authorisation record for primary analysis (`authorize_outcome_analysis()`)
+
+The dossier is the artefact the reviewer reads. Comparative treatment-outcome estimates are not part of the dossier and are produced only after authorisation.
+
 ## Workflow
 
 ```
@@ -59,6 +79,17 @@ not a substitute for source-data validation.
 - does not perform formal identification-region quantitative
   bias analysis
 
+## What external governance must still provide
+
+The software workflow is necessary but not sufficient for high-stakes RWE. External governance, outside cleanTMLE's scope, must provide:
+
+- Role separation between analytic, methodological, and reviewing teams
+- Raw-data access controls (credentialed folders, audit trails of file access)
+- Review-team structure with named reviewers and an escalation path
+- Protocol registration in an appropriate registry before data access
+- Source-data and phenotype validation against external references
+- Independent review of deviations and overrides recorded in the decision log
+
 ## When to use this package
 
 - methods development around outcome-blind workflows
@@ -70,28 +101,15 @@ not a substitute for source-data validation.
   external clean-room governance (role separation, data-access
   controls, independent checkpoint review, archived audit trail)
 
-## Relation to causalRisk
+## Cumulative-risk workflow considerations
 
-The proprietary [`causalRisk`](https://github.com/CausalInference/causalRisk)
-package by M. Alan Brookhart, Alexander Breskin, and Bassim
-Eledath is an alternative implementation of related
-cumulative-risk estimators with which cleanTMLE shares conceptual
-structure. The two packages do not share code: cleanTMLE
-implements its cohort-specification interface (`specify_models`,
-`identify_treatment`, `identify_outcome`, `identify_censoring`,
-`identify_competing_risk`, `identify_subject`, `identify_interval`,
-`identify_missing`), its IPW / G-computation / AIPW estimators
-(`estimate_ipwrisk`, `estimate_gcomprisk`, `estimate_aipwrisk`,
-`estimate_ipwhr`), and its reporting helpers (`make_table1`,
-`make_table2`, `extreme_weights`, `inspect_ipw_weights`,
-`forest_plot`, `compare_fits`, `re_estimate`, `hr_data`)
-independently. The analysis lock, outcome masking, plasmode
-feasibility and DQ stress, audit and decision logs, four-step TMLE
-functions, IPCW-TMLE for missing outcomes, and the staged
-pre-outcome decision rule are also independent implementations.
-We acknowledge `causalRisk` as the closest alternative
-implementation in the R ecosystem and recommend it as a reference
-point for analysts comparing approaches.
+cleanTMLE provides software support for the analytic considerations that arise in cumulative-risk pharmacoepidemiology workflows:
+
+- **Model specification grammar**: `identify_*()` family and `specify_models()` for declaring eligibility, treatment, outcome, censoring, competing risk, follow-up interval, and intercurrent events as code objects.
+- **Cumulative-risk reporting**: `clean_risk_report_table()` produces a compact risk table at clinically meaningful time points; the package emphasises risk differences and risk ratios over hazard ratios except where the estimand is explicitly defined on the hazard scale.
+- **Censoring and missingness weights as first-class objects**: `run_ipcw_tmle()` and `clean_weight_diagnostics()` expose ESS, percentiles, maximum weight, and prespecified instability thresholds.
+- **Event-process classification**: `clean_event_process_table()` and `clean_check_event_processes()` distinguish event of interest, competing event, censoring, treatment discontinuation/switching, transfer exclusions, and administrative end of follow-up.
+- **Hazard-ratio de-emphasis**: cumulative risks at clinically meaningful follow-up times are reported as primary; hazard ratios are reserved for analyses where a hazard-scale estimand is the primary scientific question and proportional hazards is plausible.
 
 ## Overview
 
@@ -121,9 +139,11 @@ The package covers three workflow families:
   the best specification before the real outcome is accessed.
 
 In addition, the package provides a **model-specification DSL** and
-**time-to-event estimation** functions (IPW risk curves, g-computation,
-augmented IPW, IPW hazard ratios, survival TMLE, and LMTP) for
-richer applied analyses.
+**time-to-event helpers** (IPW risk curves, g-computation,
+augmented IPW, IPW hazard ratios, survival TMLE, and LMTP) as
+experimental extensions; the v0.1 staged-workflow primitives are
+tested on binary point exposure with binary outcome and the
+marginal risk-difference estimand.
 
 ## Key Features
 
@@ -227,64 +247,67 @@ remotes::install_github("amertens/cleanTMLE")
 
 ## Worked Example
 
-The following example demonstrates the full staged workflow using the
+The following example walks through the dossier loop using the
 built-in simulated dataset. For a complete narrative walkthrough, see
 `vignette("cleanTMLE-staged-analysis")`; for a compact function
 reference, see `vignette("cleanTMLE-functions")`.
 
-```r
+> **Warning:** Low-replicate examples in this README (and in the bundled `config/clean_room_config.yml`) are for workflow demonstration only. They should not be interpreted as stable operating-characteristic estimates. Use `n_reps >= 200` for inferential interpretation.
+
+```{r eval = FALSE}
 library(cleanTMLE)
 
-# Stage 1a: lock the analysis specification
-dat  <- sim_func1(n = 2000, seed = 42)
+# 1. Lock the analytic specification (Stage 1a)
 lock <- create_analysis_lock(
-  data          = dat,
-  treatment     = "treatment",
-  outcome       = "event_24",
-  covariates    = c("age", "sex", "biomarker", "comorbidity"),
-  sl_library    = c("SL.glm", "SL.mean"),
-  plasmode_reps = 200L,
-  seed          = 42L
+  data        = study_data,
+  treatment   = "A",
+  outcome     = "Y",
+  covariates  = baseline_covariates,
+  sl_library  = c("SL.glm", "SL.glmnet", "SL.ranger"),
+  seed        = 2026
 )
-lock  <- attach_estimand(lock, contrast = "risk_difference",
-            statistical_estimand = "E_W[E(Y|A=1,W) - E(Y|A=0,W)]")
-audit <- create_audit_log(lock)
-
-# Stage 1b / 2a: cohort adequacy and design diagnostics
-cp1    <- checkpoint_cohort_adequacy(lock, min_n_per_arm = 50, min_events = 30)
-ps_fit <- fit_ps_superlearner(lock)
-cp2    <- checkpoint_balance(compute_ps_diagnostics(ps_fit),
-                             lock_hash = lock$lock_hash)
-
-# Stage 2b: define candidates and screen on baseline plasmode
-candidates <- list(
-  tmle_candidate("glm_t01", "GLM, trunc=0.01", truncation = 0.01),
-  tmle_candidate("glm_t05", "GLM, trunc=0.05", truncation = 0.05),
-  tmle_candidate("glm_t10", "GLM, trunc=0.10", truncation = 0.10)
+lock <- attach_estimand(lock,
+  description           = "Effect of A on 24-month event risk",
+  population            = "Adults eligible at index",
+  treatment_strategies  = c("Treatment", "Reference"),
+  outcome_label         = "Event by 24 months",
+  followup              = "24 months",
+  contrast              = "risk_difference"
 )
-plas     <- run_plasmode_feasibility(lock, tmle_candidates = candidates,
-                                     effect_sizes = c(0.05, 0.10))
-selected <- select_tmle_candidate(plas, rule = "min_rmse")
-lock     <- lock_primary_tmle_spec(lock, selected)
 
-# Stage 2c: data-quality stress test on the locked severity ranges
-# dq <- run_plasmode_dq_stress(lock, tmle_candidates = candidates, ...)
+# 2. Cohort flow / attrition
+attr_tbl <- attrition_table(raw_data, inclusion_rules)
 
-# Stage 3 (optional) and pre-outcome decision: GO / FLAG / STOP
-stage3 <- run_residual_confounding_stage(lock, ps_fit)
-audit  <- record_checkpoint(audit, cp1)
-audit  <- record_checkpoint(audit, cp2)
-audit  <- record_checkpoint(audit, stage3$checkpoint)
-gate   <- authorize_outcome_analysis(audit)
+# 3. Design diagnostics (Stage 2a)
+ps      <- fit_ps_superlearner(lock)
+ps_diag <- compute_ps_diagnostics(ps)
+wd      <- clean_weight_diagnostics(ps$weights,
+                                    treatment  = lock$data[[lock$treatment]],
+                                    covariates = lock$data[, lock$covariates])
 
-# Stage 4: authorised primary analysis on the locked specification
-g_fit    <- fit_tmle_treatment_mechanism(lock, ps_fit)
-Q_fit    <- fit_tmle_outcome_mechanism(lock, g_fit)
-tmle_fit <- extract_tmle_estimate(run_tmle_targeting_step(g_fit, Q_fit))
+# 4. Baseline plasmode candidate selection (Stage 2b)
+plas <- run_plasmode_feasibility(lock, tmle_candidates = candidates, reps = 200)
 
-# Post-outcome: sensitivity analyses and audit export
-sensitivity_truncation(lock, thresholds = c(0.01, 0.05, 0.10))
-export_audit_trail(audit)
+# 5. DQ stress testing (Stage 2c)
+dq   <- run_plasmode_dq_stress(lock, tmle_candidates = candidates,
+                               scenarios = default_dq_scenarios(), n_reps = 200)
+
+# 6. Decision log entries throughout
+audit <- init_decision_log(lock)
+audit <- log_decision_entry(audit, stage = "Stage 2c", decision = "GO",
+                            rationale = "All candidates within thresholds",
+                            reviewer = "lead_analyst")
+
+# 7. Pre-outcome gate
+gate  <- gate_all(checkpoint_cohort_adequacy(lock),
+                  checkpoint_balance(ps_diag),
+                  checkpoint_weights(ps$weights))
+
+# 8. Authorisation record
+auth  <- authorize_outcome_analysis(lock, gate)
+
+# 9. Primary analysis (only callable after authorisation)
+fit   <- run_clean_tmle(lock, ps_fit = ps)
 ```
 
 ## Function Reference

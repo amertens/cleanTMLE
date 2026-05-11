@@ -109,6 +109,35 @@ establish exchangeability, measurement validity, phenotype
 validity, linkage accuracy, or regulatory acceptability.
 :::
 
+::: {.callout-warning}
+Low-replicate examples in this vignette are for workflow demonstration only. Use `n_reps >= 200` before interpreting bias, coverage, or RMSE inferentially.
+:::
+
+## Pre-outcome study dossier
+
+The reviewer-facing artefact produced by this workflow is a pre-outcome
+study dossier. It is assembled across the stages demonstrated below,
+and the review team reads it before authorising the primary analysis.
+Its components are:
+
+- Protocol and target-trial timing (`attach_estimand()`); see *Define the causal question and estimand*.
+- Cohort flow and attrition (`attrition_table()`); see *Stage 1b*.
+- Event-process classification (`clean_event_process_table()`, `clean_check_event_processes()`); see *From target trial specification to event-process classification*.
+- Covariate and missingness summary (`make_table1()` and missingness checks); see *Stage 1a* covariate sanitisation.
+- PS overlap and balance (`compute_ps_diagnostics()`, `love_plot()`, `love_plot_threeway()`); see *Stage 2a*.
+- Treatment- and IPCW-weight diagnostics (`clean_weight_diagnostics()`, `extreme_weights()`); see *Outcome-blind diagnostics before fitting the final estimator*.
+- Event-count and precision adequacy (`checkpoint_cohort_adequacy()`); see *Stage 1b*.
+- Baseline plasmode candidate selection (`run_plasmode_feasibility()`, `select_tmle_candidate()`); see *Stage 2b*.
+- DQ stress-test results (`run_plasmode_dq_stress()`, `summarize_dq_degradation()`); see *Stage 2c*.
+- Negative-control eligibility and attrition (`run_residual_confounding_stage()`); see *Stage 3*.
+- GO / FLAG / STOP checkpoint dashboard (`gate_all()`; aggregate `checkpoint_dashboard()` planned); see *Pre-outcome decision*.
+- Decision log and audit log export (`export_decision_log()`); see *Audit trail and reproducibility*.
+- Authorisation record for primary analysis (`authorize_outcome_analysis()`); see *Pre-outcome decision*.
+
+The dossier is the artefact the reviewer reads. Comparative
+treatment-outcome estimates are not part of the dossier and are
+produced only after authorisation.
+
 ### Why TMLE fits this workflow
 
 TMLE is well suited to an outcome-blind staged workflow for a
@@ -1136,6 +1165,24 @@ for archival or tabular display.
 ```{r decision-log}
 dlog_df <- export_decision_log(audit)
 knitr::kable(dlog_df, caption = "Decision log for the staged analysis.")
+```
+
+A structured decision-log entry recording the Stage 2c outcome and an
+on-disk export looks like this:
+
+```{r decision-log-example, eval = FALSE}
+audit <- init_decision_log(lock)
+audit <- log_decision_entry(audit,
+  stage     = "Stage 2c",
+  diagnostic = "DQ stress test minimax",
+  criterion  = "All candidates within bias/coverage thresholds across severities",
+  decision   = "GO",
+  rationale  = "Minimax candidate glm_t01 selected; full-cohort plasmode confirms.",
+  reviewer   = "lead_analyst",
+  y_visible  = FALSE,
+  action     = "Lock glm_t01 as primary; record DQ summary in dossier."
+)
+export_decision_log(audit, "decision_log.csv")
 ```
 
 ---
