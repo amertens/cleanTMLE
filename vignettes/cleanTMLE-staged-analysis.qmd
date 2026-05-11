@@ -27,6 +27,170 @@ knitr::opts_chunk$set(
 library(cleanTMLE)
 ```
 
+## Read this first
+
+This vignette has two halves. The **first half** teaches the core estimator and shows what a plain end-to-end analysis looks like using `cleanTMLE` as a regular RWE estimation package. The **second half** adds the staged-analysis governance layer (analysis lock, audit log, GO / FLAG / STOP gate) for studies that need a reproducible pre-outcome dossier.
+
+If you are new to targeted-learning methods, read the first half straight through. The vocabulary you need is in the **Concept primer** below. The governance vocabulary (clean room, gate, dossier) does not appear until §"The staged workflow" — by then you will have already seen Table 1, the propensity-score overlap, and a risk-curve plot, so the governance ideas have something concrete to attach to.
+
+## A clinical anchor
+
+We use a small simulated cohort (`sim_func1()`) that we will treat as if it came from a pharmaco-epidemiology study. Read it as:
+
+- **Population.** Adult patients enrolled at a tertiary hospital network.
+- **Treatment** (`treatment`). A new oral medication started at enrolment versus standard care.
+- **Outcome** (`event_24`). A binary event at 24 months (for example, a major cardiovascular event).
+- **Baseline covariates** (`age`, `sex`, `biomarker`, `comorbidity`). Standard pre-treatment demographics and risk factors recorded at enrolment.
+
+The numbers are simulated, but the question we are asking is the one a real pharmaco-epi study would ask: **does the new medication change the 24-month event risk, after we adjust for baseline differences between the treated and untreated groups?**
+
+```{r clinical-anchor}
+set.seed(2026)
+dat <- sim_func1(n = 600, seed = 2026)
+head(dat[, c("treatment", "event_24", "age", "sex", "biomarker",
+             "comorbidity")])
+cat("\nGroup sizes:\n")
+table(treatment = dat$treatment, useNA = "ifany")
+cat("\nRaw 24-month event rates by treatment arm:\n")
+round(tapply(dat$event_24, dat$treatment, mean, na.rm = TRUE), 3)
+```
+
+## Concept primer
+
+Eight terms that appear repeatedly in this vignette and in the targeted-learning literature, in plain language:
+
+- **Estimand.** The exact quantity you want to estimate. For us: the population-average 24-month event-risk difference if everyone took the new medication versus if no one did.
+- **Propensity score (PS).** The probability of receiving treatment given a person's baseline covariates. Predicted from a model fit on the data.
+- **Overlap (positivity).** Whether treated and untreated groups have similar baseline profiles. Poor overlap means adjustment cannot recover the marginal effect for the full cohort.
+- **SMD (standardised mean difference).** A balance metric: the difference in covariate means between treated and untreated, standardised by the pooled SD. Smaller is better; < 0.10 is the convention.
+- **ESS (effective sample size, Kish).** The "real" sample size after weighting; a few heavy weights can shrink ESS far below `n`.
+- **TMLE (targeted maximum-likelihood estimation).** A four-step recipe: (1) predict the outcome from covariates and treatment; (2) predict the propensity score; (3) *target* the outcome predictions using the propensity score so the resulting treatment-effect estimate has the right calibration; (4) read off the contrast and its standard error.
+- **Clever covariate.** The specific function of the propensity score that TMLE uses in step 3. You do not have to compute it by hand; `run_clean_tmle()` does it.
+- **EIC (efficient influence curve) variance.** The standard-error formula TMLE uses. Interpretable as a regular Wald-type SE under standard regularity conditions.
+
+Two more terms come up in the second half of the vignette: **plasmode simulation** (a simulation that keeps the real covariate and treatment structure but generates a synthetic outcome with a known truth) and **IPCW** (inverse-probability-of-censoring weighting, used to handle missing outcomes).
+
+## The plain workflow: TMLE in five estimators on one figure
+
+Before introducing any governance machinery, we run the full estimator menu on the clinical anchor and compare them on a single figure. This is the workflow you can lift straight into a methods-development analysis.
+
+```{r plain-workflow}
+# 1. Create a "simple" lock that disables the staged-analysis machinery
+#    (no outcome guard, no gate, no required audit). The fingerprint
+#    and design diagnostics remain available.
+plain_lock <- create_simple_lock(
+  data       = dat,
+  treatment  = "treatment",
+  outcome    = "event_24",
+  covariates = c("age", "sex", "biomarker", "comorbidity"),
+  sl_library = c("SL.glm", "SL.glmnet", "SL.mean"),
+  seed       = 2026
+)
+
+# 2. Propensity-score model + overlap and balance diagnostics
+ps      <- fit_ps_superlearner(plain_lock)
+ps_diag <- compute_ps_diagnostics(ps)
+print(ps_diag)
+```
+
+```{r plain-overlap, fig.cap = "Propensity-score overlap by treatment arm. Both arms should have density across the same range; gaps signal positivity strain."}
+plot(ps_diag)
+```
+
+The overlap plot is the first thing a reviewer should see. If the two density curves do not cover the same range, adjustment cannot recover a marginal contrast for the full eligible cohort and you will need to consider matching or trimming.
+
+```{r plain-estimators, results = "hide"}
+# 3. Attach a primary TMLE specification to the lock so the four-step
+#    TMLE knows which library and truncation level to use.
+primary_spec <- tmle_candidate(
+  candidate_id = "plain_tmle",
+  label        = "TMLE for the plain workflow",
+  q_library    = c("SL.glm", "SL.glmnet"),
+  g_library    = c("SL.glm", "SL.glmnet"),
+  truncation   = 0.01
+)
+plain_lock <- lock_primary_tmle_spec(plain_lock, primary_spec)
+
+# 4. Run four estimators on the same lock and same PS
+crude  <- run_crude_workflow(plain_lock)
+match  <- run_match_workflow(plain_lock, ps_fit = ps)
+iptw   <- run_iptw_workflow(plain_lock, ps_fit = ps)
+
+# 5. TMLE via the four-step modular API
+g_fit    <- fit_tmle_treatment_mechanism(plain_lock, ps)
+Q_fit    <- fit_tmle_outcome_mechanism(plain_lock, g_fit)
+tmle_upd <- run_tmle_targeting_step(g_fit, Q_fit)
+tmle     <- extract_tmle_estimate(tmle_upd)
+```
+
+```{r plain-summary}
+# 6. Combine the four estimates in one table.
+#    Each result has $estimate; CI may be on the top level (run_*_workflow)
+#    or under $estimates$ATE (modular TMLE extract).
+pick_ci <- function(x) {
+  if (!is.null(x$estimates) && !is.null(x$estimates$ATE)) {
+    list(est = x$estimates$ATE$estimate,
+         lo  = x$estimates$ATE$ci_lower,
+         hi  = x$estimates$ATE$ci_upper)
+  } else {
+    se_or_na <- if (is.null(x$se) || length(x$se) == 0) NA_real_ else x$se
+    lo_top   <- if (is.null(x$ci_lower)) x$estimate - 1.96 * se_or_na else x$ci_lower
+    hi_top   <- if (is.null(x$ci_upper)) x$estimate + 1.96 * se_or_na else x$ci_upper
+    list(est = x$estimate, lo = lo_top, hi = hi_top)
+  }
+}
+plain_results <- data.frame(
+  estimator = c("Crude (unadjusted)", "PS matching",
+                "IPTW (stabilised)", "TMLE (full cohort)"),
+  estimate  = c(pick_ci(crude)$est, pick_ci(match)$est,
+                pick_ci(iptw)$est,  pick_ci(tmle)$est),
+  ci_lower  = c(pick_ci(crude)$lo,  pick_ci(match)$lo,
+                pick_ci(iptw)$lo,   pick_ci(tmle)$lo),
+  ci_upper  = c(pick_ci(crude)$hi,  pick_ci(match)$hi,
+                pick_ci(iptw)$hi,   pick_ci(tmle)$hi),
+  stringsAsFactors = FALSE
+)
+knitr::kable(plain_results, digits = 4,
+             caption = "Four estimators on the plain-mode lock.")
+```
+
+(`run_ipcw_tmle()` adds an IPCW sensitivity path for studies with missing outcomes; `estimate_gcomprisk()` and `estimate_aipwrisk()` are also available, but they consume a `specify_models()` object rather than the `cleanroom_lock` shown here. See the function-reference vignette for both.)
+
+```{r plain-forest, fig.cap = "Forest plot of the four estimators. The dashed line marks no effect; the adjusted estimators agree closely and shift the crude estimate.", fig.height = 3.5}
+library(ggplot2)
+ggplot(plain_results,
+       aes(x = estimate, y = factor(estimator, levels = rev(plain_results$estimator)))) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+  geom_point(size = 3) +
+  geom_errorbarh(aes(xmin = ci_lower, xmax = ci_upper), height = 0.2) +
+  labs(x = "Risk difference (95% CI)", y = NULL,
+       title = "Five estimators on one figure",
+       subtitle = "Crude vs IPTW vs g-computation vs AIPW vs TMLE") +
+  theme_minimal(base_size = 11)
+```
+
+A few things to read from the forest plot:
+
+- The three adjusted estimators (PS matching, IPTW, TMLE) agree closely. When the design diagnostics look reasonable, this is exactly what you should see; substantial disagreement is a signal to slow down.
+- The crude (unadjusted) estimate sits noticeably further from the others. The shift between crude and the adjusted estimators is the contribution of the baseline confounders.
+- The confidence intervals are not the same width. IPTW's IF-based SE assumes the propensity score is known; in practice it has been estimated, so the IPTW SE is conservative. TMLE's SE accounts for the estimation of the propensity score.
+- The matched estimator's CI is wider than the full-cohort TMLE's CI because matching restricts the analysis to the overlap subset and discards unmatched controls.
+
+That is the entire core workflow. Everything in the rest of this vignette is *governance and audit machinery* on top of these five estimators — for studies that need a reproducible pre-outcome dossier — not a different estimator.
+
+## When to read the rest
+
+Continue reading if any of the following apply:
+
+- You are running an analysis where the comparative answer will be reviewed by a third party, and you need a reproducible record of every analytic decision made before the comparative answer was seen.
+- You want to use the **plasmode candidate-selector** to pick between competing TMLE specifications before unblinding.
+- You want to use the **data-quality stress test** to check how the chosen estimator behaves under prespecified threats (measurement error, missingness, unmeasured confounding) before unblinding.
+- You are working inside an institutional clean-room arrangement and need the software-side artefacts (lock fingerprint, audit log, decision log, GO / FLAG / STOP record).
+
+If none of these apply, you can stop here and use the plain workflow above. cleanTMLE was designed to be useful at both levels of formality.
+
+---
+
 ## Purpose of this vignette
 
 This vignette demonstrates a staged workflow for an observational
