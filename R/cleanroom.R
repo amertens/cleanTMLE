@@ -1540,6 +1540,7 @@ run_ipcw_tmle <- function(lock, ps_fit = NULL,
   # tmle versions reject Delta entirely; in that case we drop to a
   # complete-case TMLE on the SuperLearner Q-fit weighted by the IPCW
   # we computed above.
+  method_used <- "tmle_delta_full_cohort"
   fit <- tryCatch({
     tmle::tmle(
       Y = ifelse(is.na(Y), 0L, Y),
@@ -1552,6 +1553,12 @@ run_ipcw_tmle <- function(lock, ps_fit = NULL,
       verbose = FALSE
     )
   }, error = function(e) {
+    method_used <<- "ipcw_weighted_complete_case"
+    warning("run_ipcw_tmle: tmle::tmle Delta-path failed (",
+            conditionMessage(e), "). Falling back to complete-case ",
+            "TMLE weighted by IPCW. The analysis no longer uses the ",
+            "full cohort; n_effective = ", sum(R), " (of ", n, ").",
+            call. = FALSE)
     cc      <- which(R == 1L)
     Y_cc    <- Y[cc]; A_cc <- A[cc]
     W_cc    <- as.data.frame(W[cc, , drop = FALSE])
@@ -1588,6 +1595,7 @@ run_ipcw_tmle <- function(lock, ps_fit = NULL,
     treatment    = treatment,
     outcome      = outcome,
     type         = "ipcw_tmle",
+    method_used  = method_used,
     call         = match.call()
   )
   class(result) <- c("tmle_fit", "cr_result")
