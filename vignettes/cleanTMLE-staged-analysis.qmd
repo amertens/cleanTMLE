@@ -502,6 +502,14 @@ advance, and the selected TMLE specification is locked into the
 analysis lock and carried forward exactly to Stage 4 without
 ad hoc modification.
 
+Note that the PS truncation level is not only a numerical
+stabilisation parameter: different truncation thresholds imply
+different effective target populations. Two candidates with
+different truncation rules are therefore paired estimator-and-
+estimand objects, and the truncation rule is recorded in the
+analysis lock alongside the learner library so the
+estimand-vs-estimator distinction remains auditable.
+
 ### Define TMLE candidates
 
 ```{r tmle-candidates}
