@@ -617,8 +617,10 @@ run_plasmode_dq_stress <- function(lock,
         set.seed(lock$seed + rep_i + sg_i * 10000L)
 
         # Generate synthetic outcome and possibly modify A under U.
+        # Clamp BOTH bounds so negative `es` with small p_base does
+        # not produce negative probabilities (rbinom -> NA).
         A_rep <- A
-        p1_sim <- pmin(p_base + es, 0.999)
+        p1_sim <- pmin(pmax(p_base + es, 0.001), 0.999)
         p0_sim <- p_base
 
         if (sc_name == "unmeasured_U") {

@@ -1055,8 +1055,11 @@ run_plasmode_feasibility <- function(lock,
     for (rep_i in seq_len(reps)) {
       set.seed(lock$seed + rep_i)
 
-      # Synthetic outcomes: additive risk difference es for treated
-      p1_sim <- pmin(p_base + es, 0.999)
+      # Synthetic outcomes: additive risk difference es for treated.
+      # Clamp BOTH bounds: with negative es and small p_base, an
+      # unclamped p_base + es can go negative and stats::rbinom()
+      # returns NA, causing every candidate fit to fail downstream.
+      p1_sim <- pmin(pmax(p_base + es, 0.001), 0.999)
       p0_sim <- p_base
       p_obs  <- ifelse(A == 1, p1_sim, p0_sim)
       Y_sim  <- stats::rbinom(n, 1L, p_obs)
