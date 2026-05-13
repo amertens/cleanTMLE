@@ -419,6 +419,15 @@ fit_ps_superlearner <- function(lock, truncate = 0.01,
   A    <- data[[lock$treatment]]
   W    <- data[, lock$covariates, drop = FALSE]
 
+  # Resolve the SuperLearner library. If a primary TMLE spec has been
+  # locked with `g_library`, that takes precedence over the lock-level
+  # `sl_library` -- otherwise switching candidates after locking would
+  # silently leave the PS fit using the original lock library.
+  primary_spec <- lock$primary_tmle_spec
+  sl_library   <- lock$sl_library
+  if (!is.null(primary_spec) && !is.null(primary_spec$g_library))
+    sl_library <- primary_spec$g_library
+
   # Default to sequential evaluation. The "invalid connection" error
   # observed in 0.1.0 came from a stale snow/foreach backend registered in
   # the user's session, not from SuperLearner itself; we therefore use the
@@ -428,7 +437,7 @@ fit_ps_superlearner <- function(lock, truncate = 0.01,
     Y          = A,
     X          = W,
     family     = binomial(),
-    SL.library = lock$sl_library,
+    SL.library = sl_library,
     env        = asNamespace("SuperLearner"),
     cvControl  = list(V = cv_folds)
   )
@@ -467,7 +476,7 @@ fit_ps_superlearner <- function(lock, truncate = 0.01,
     treatment  = lock$treatment,
     covariates = lock$covariates,
     data       = data,
-    sl_library = lock$sl_library,
+    sl_library = sl_library,
     truncate   = truncate,
     cv_folds   = cv_folds,
     method     = "superlearner",
@@ -971,7 +980,17 @@ expand_tmle_candidate_grid <- function(
 #'   Default: `c(0.05, 0.10)`.
 #' @param reps Integer; number of plasmode replicates per effect size.
 #'   Defaults to `lock$plasmode_reps`.
-#' @param verbose Logical; if `TRUE`, print progress messages. Default: `FALSE`.
+#' @param q0_library Optional SuperLearner library used to fit the
+#'   baseline outcome model Q0 (covariates only) that generates the
+#'   synthetic outcomes for candidate selection. If `NULL` (default),
+#'   Q0 is a logistic GLM in the covariates, which biases candidate
+#'   selection toward learners that handle linear-in-logit structure
+#'   well. Set this to a SuperLearner library (e.g.
+#'   `c("SL.glm", "SL.glmnet", "SL.gam", "SL.mean")`) to generate
+#'   synthetic outcomes from a richer Q0 surface.
+#' @param verbose Logical; if `TRUE`, print progress messages and emit
+#'   warnings when any candidate converges on < 50% of inner reps.
+#'   Default: `FALSE`.
 #'
 #' @return An object of class `plasmode_results` containing:
 #'   * `metrics` - data.frame with one row per candidate per effect size
@@ -993,6 +1012,7 @@ run_plasmode_feasibility <- function(lock,
                                       tmle_candidates = NULL,
                                       effect_sizes    = c(0.05, 0.10),
                                       reps            = lock$plasmode_reps,
+                                      q0_library      = NULL,
                                       verbose         = FALSE) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
@@ -1027,13 +1047,40 @@ run_plasmode_feasibility <- function(lock,
   }
 
   # Fit baseline outcome model (covariates only; outcome-blind in the
-  # sense that the treatment--outcome association is not used)
-  # Use complete cases for GLM fitting, then predict for all rows
-  Q0_fml <- stats::reformulate(covariates, response = outcome)
-  Q0_fit <- stats::glm(Q0_fml, data = data, family = stats::binomial(),
-                       na.action = stats::na.exclude)
-  p_base <- as.numeric(stats::predict(Q0_fit, type = "response",
-                                       newdata = data))
+  # sense that the treatment--outcome association is not used).
+  # By default Q0 is a logistic GLM; pass `q0_library` (a SuperLearner
+  # library) to use a richer Q0 -- important when the true outcome
+  # surface is nonlinear, so that the synthetic outcomes used to
+  # select among candidates are not biased toward linear-in-logit
+  # learners.
+  if (is.null(q0_library)) {
+    Q0_fml <- stats::reformulate(covariates, response = outcome)
+    Q0_fit <- stats::glm(Q0_fml, data = data, family = stats::binomial(),
+                         na.action = stats::na.exclude)
+    p_base <- as.numeric(stats::predict(Q0_fit, type = "response",
+                                         newdata = data))
+  } else {
+    if (!requireNamespace("SuperLearner", quietly = TRUE))
+      stop("`q0_library` requested but 'SuperLearner' package is not ",
+           "available. Install it or leave q0_library = NULL.",
+           call. = FALSE)
+    cc <- stats::complete.cases(data[, c(outcome, covariates),
+                                      drop = FALSE])
+    p_base <- rep(NA_real_, nrow(data))
+    Q0_sl <- SuperLearner::SuperLearner(
+      Y          = data[[outcome]][cc],
+      X          = data[cc, covariates, drop = FALSE],
+      family     = stats::binomial(),
+      SL.library = q0_library,
+      env        = asNamespace("SuperLearner")
+    )
+    p_base[cc] <- as.numeric(Q0_sl$SL.predict)
+    if (any(!cc)) {
+      p_base[!cc] <- as.numeric(
+        stats::predict(Q0_sl,
+                       newdata = data[!cc, covariates, drop = FALSE])$pred)
+    }
+  }
   # Handle NAs from quasi-separation or missing covariate values
   if (any(is.na(p_base))) {
     p_base[is.na(p_base)] <- mean(p_base, na.rm = TRUE)
@@ -1200,6 +1247,24 @@ run_plasmode_feasibility <- function(lock,
   # Add SE calibration ratio
   metrics$se_cal <- round(
     ifelse(metrics$emp_sd > 0, metrics$mean_se / metrics$emp_sd, NA_real_), 3L)
+
+  # Surface poorly-converging candidates so the caller can see when
+  # selection is operating on too few successful fits to be reliable.
+  # A candidate that converged on < 50% of inner reps cannot be trusted
+  # to inform candidate selection; warn the user explicitly.
+  poor <- metrics[metrics$n_converged < ceiling(reps / 2), , drop = FALSE]
+  if (nrow(poor) > 0L && isTRUE(verbose)) {
+    msg <- paste0(
+      "run_plasmode_feasibility: ", nrow(poor),
+      " (effect_size x candidate) cell(s) had < 50% convergence; ",
+      "selection on these candidates is unreliable. ",
+      "Worst: ",
+      paste(sprintf("%s@es=%g (n_converged=%d/%d)",
+                     poor$candidate, poor$effect_size,
+                     poor$n_converged, reps),
+            collapse = "; "))
+    warning(msg, call. = FALSE)
+  }
 
   result <- list(
     results         = all_results,
