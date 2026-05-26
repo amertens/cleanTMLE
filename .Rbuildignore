@@ -6,3 +6,6 @@
 ^LICENSE\.md$
 ^data-raw$
 ^\.github$
+^vignettes/.*\.pdf$
+_cache/
+_files/

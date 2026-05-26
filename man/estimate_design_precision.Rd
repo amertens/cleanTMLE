@@ -14,22 +14,15 @@ difference on the risk-difference scale to compare against the
 computed MDD.  Default \code{NULL} (no comparison).}
 }
 \value{
-A list of class \code{design_precision} containing:
-\describe{
-\item{n_total}{Total sample size.}
-\item{n_treated}{Number of treated subjects.}
-\item{n_control}{Number of control subjects.}
-\item{events_total}{Total outcome events.}
-\item{events_per_arm}{Named vector with events per arm.}
-\item{crude_rates}{Named vector of crude event rates per arm.}
-\item{prevalence}{Overall outcome prevalence.}
-\item{se_proxy}{SE proxy for the risk difference.}
-\item{ci_halfwidth}{95\\% CI half-width proxy (1.96 * se_proxy).}
-\item{mdd_80}{MDD at 80\\% power (2.8 * se_proxy).}
-\item{target_mdd}{The user-supplied target MDD (or \code{NULL}).}
-\item{mdd_feasible}{Logical; whether computed MDD <= target_mdd
-(only present when \code{target_mdd} is not \code{NULL}).}
-}
+A list of class \code{design_precision} with elements: \code{n_total}
+(total sample size); \code{n_treated}; \code{n_control}; \code{events_total};
+\code{events_per_arm} (named vector of events per arm); \code{crude_rates}
+(crude event rates per arm); \code{prevalence} (overall outcome
+prevalence); \code{se_proxy} (SE proxy for the risk difference);
+\code{ci_halfwidth} (95\% CI half-width proxy, 1.96 * se_proxy); \code{mdd_80}
+(minimum detectable difference at 80\% power, 2.8 * se_proxy);
+\code{target_mdd} (the user-supplied target, or \code{NULL}); and
+\code{mdd_feasible} (logical; present only when \code{target_mdd} is supplied).
 }
 \description{
 Computes pre-outcome precision summaries using only sample size and

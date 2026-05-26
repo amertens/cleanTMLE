@@ -109,6 +109,9 @@ NULL
 #' @param plasmode_reps Integer; number of plasmode replicates for Stage 2b
 #'   feasibility evaluation. Default: 100.
 #' @param seed Integer; random seed for reproducibility. Default: 42.
+#' @param cleanroom_enabled Logical; if `TRUE` (default) the lock enforces
+#'   the staged clean-room machinery (outcome guard, gate authorisation,
+#'   audit requirement). [create_simple_lock()] sets this to `FALSE`.
 #'
 #' @return An object of class `cleanroom_lock` containing all specified
 #'   analysis parameters plus a reproducibility fingerprint (`lock_hash`).
@@ -226,6 +229,181 @@ create_simple_lock <- function(data, treatment, outcome, covariates,
   )
 }
 
+#' Construct a Prespecified Decision-Threshold Object
+#'
+#' Bundles every GO / FLAG / STOP threshold used across the staged
+#' workflow into one object so they are declared once, in one place, and
+#' can be fingerprinted into the analysis lock with
+#' [attach_decision_thresholds()]. Each `checkpoint_*()` / `gate_*()`
+#' function still accepts its thresholds as arguments; this object is the
+#' single prespecified source those arguments should be drawn from, and
+#' the helpers [dt_cohort()], [dt_balance()], [dt_plasmode()], [dt_dq()],
+#' and [dt_nco()] extract the argument lists for each step.
+#'
+#' Centralising the thresholds addresses a gap in earlier versions: the
+#' decision rule — arguably the most outcome-relevant set of analyst
+#' choices — was passed ad hoc to each checkpoint and was not part of the
+#' lock fingerprint. With [attach_decision_thresholds()] the thresholds
+#' receive their own SHA-256 `thresholds_hash` recorded on the lock, so a
+#' reviewer can verify the decision rule was fixed before unblinding.
+#'
+#' @param cohort_min_n_per_arm,cohort_min_events,cohort_min_prevalence
+#'   Check Point 1 (cohort adequacy) FLAG thresholds.
+#' @param cohort_stop_n_per_arm,cohort_stop_min_events Check Point 1 STOP
+#'   floors.
+#' @param balance_max_smd,balance_min_ess_pct Check Point 2 (balance) FLAG
+#'   thresholds; \code{balance_stop_smd} the STOP floor.
+#' @param balance_stop_smd Check Point 2 STOP floor on the max weighted SMD.
+#' @param plasmode_max_abs_bias,plasmode_min_coverage,plasmode_se_sd_window
+#'   Baseline-plasmode gate (`gate_check`) thresholds.
+#' @param dq_max_abs_bias,dq_min_coverage,dq_max_rmse_ratio Check Point 2c
+#'   (`gate_dq`) STOP thresholds.
+#' @param dq_flag_coverage,dq_flag_rmse_ratio Check Point 2c FLAG envelope.
+#' @param nco_alpha,nco_rule,nco_null_band,nco_adjust Check Point 3
+#'   (negative-control / residual bias) thresholds. \code{nco_rule} is
+#'   \code{"equivalence"} (recommended) or \code{"significance"}.
+#'
+#' @return An object of class \code{cleantmle_thresholds}.
+#'
+#' @examples
+#' dt <- decision_thresholds(dq_max_abs_bias = 0.02, nco_rule = "equivalence",
+#'                           nco_null_band = 0.02)
+#' dt_dq(dt)
+#' @export
+decision_thresholds <- function(
+    cohort_min_n_per_arm   = 50L,
+    cohort_min_events      = 20L,
+    cohort_min_prevalence  = 0.01,
+    cohort_stop_n_per_arm  = 20L,
+    cohort_stop_min_events = 20L,
+    balance_max_smd        = 0.10,
+    balance_min_ess_pct    = 50,
+    balance_stop_smd       = 0.20,
+    plasmode_max_abs_bias  = 0.01,
+    plasmode_min_coverage  = 0.90,
+    plasmode_se_sd_window  = c(0.8, 1.2),
+    dq_max_abs_bias        = 0.02,
+    dq_min_coverage        = 0.85,
+    dq_max_rmse_ratio      = 1.5,
+    dq_flag_coverage       = 0.90,
+    dq_flag_rmse_ratio     = 1.20,
+    nco_alpha              = 0.05,
+    nco_rule               = c("equivalence", "significance"),
+    nco_null_band          = 0.02,
+    nco_adjust             = c("none", "bonferroni")) {
+  nco_rule   <- match.arg(nco_rule)
+  nco_adjust <- match.arg(nco_adjust)
+  obj <- list(
+    cohort = list(min_n_per_arm = cohort_min_n_per_arm,
+                  min_events = cohort_min_events,
+                  min_prevalence = cohort_min_prevalence,
+                  stop_n_per_arm = cohort_stop_n_per_arm,
+                  stop_min_events = cohort_stop_min_events),
+    balance = list(max_smd = balance_max_smd,
+                   min_ess_pct = balance_min_ess_pct,
+                   stop_smd = balance_stop_smd),
+    plasmode = list(max_abs_bias = plasmode_max_abs_bias,
+                    min_coverage = plasmode_min_coverage,
+                    se_sd_window = plasmode_se_sd_window),
+    dq = list(max_abs_bias = dq_max_abs_bias,
+              min_coverage = dq_min_coverage,
+              max_rmse_ratio = dq_max_rmse_ratio,
+              flag_coverage = dq_flag_coverage,
+              flag_rmse_ratio = dq_flag_rmse_ratio),
+    nco = list(alpha = nco_alpha, rule = nco_rule,
+               null_band = nco_null_band, adjust = nco_adjust)
+  )
+  class(obj) <- "cleantmle_thresholds"
+  obj
+}
+
+#' @export
+print.cleantmle_thresholds <- function(x, ...) {
+  cat("cleanTMLE decision thresholds\n=============================\n")
+  cat(sprintf("Cohort (CP1):   min_n/arm=%s FLAG, <%s STOP; min_events=%s\n",
+              x$cohort$min_n_per_arm, x$cohort$stop_n_per_arm,
+              x$cohort$min_events))
+  cat(sprintf("Balance (CP2):  max|SMD|=%.2f FLAG, >%.2f STOP; minESS%%=%s\n",
+              x$balance$max_smd, x$balance$stop_smd, x$balance$min_ess_pct))
+  cat(sprintf("Plasmode gate:  |bias|<%.3f, cov>=%.2f, SE/SD in [%.2f,%.2f]\n",
+              x$plasmode$max_abs_bias, x$plasmode$min_coverage,
+              x$plasmode$se_sd_window[1], x$plasmode$se_sd_window[2]))
+  cat(sprintf("DQ gate (CP2c): STOP |bias|>%.3f | cov<%.2f | rmseR>%.2f\n",
+              x$dq$max_abs_bias, x$dq$min_coverage, x$dq$max_rmse_ratio))
+  cat(sprintf("NCO (CP3):      rule=%s, null_band=%.3g, alpha=%.3g, adjust=%s\n",
+              x$nco$rule, x$nco$null_band, x$nco$alpha, x$nco$adjust))
+  invisible(x)
+}
+
+#' Argument-list extractors for [decision_thresholds()]
+#'
+#' Convenience helpers that return the named argument list each
+#' checkpoint / gate expects, so a single prespecified
+#' \code{cleantmle_thresholds} object drives every step:
+#' \code{do.call(checkpoint_balance, c(list(ps_diag), dt_balance(dt)))}.
+#'
+#' @param dt A \code{cleantmle_thresholds} object.
+#' @return A named list of arguments for the corresponding function.
+#' @name dt_extractors
+#' @export
+dt_cohort <- function(dt) {
+  stopifnot(inherits(dt, "cleantmle_thresholds")); dt$cohort
+}
+#' @rdname dt_extractors
+#' @export
+dt_balance <- function(dt) {
+  stopifnot(inherits(dt, "cleantmle_thresholds")); dt$balance
+}
+#' @rdname dt_extractors
+#' @export
+dt_plasmode <- function(dt) {
+  stopifnot(inherits(dt, "cleantmle_thresholds"))
+  list(max_abs_bias = dt$plasmode$max_abs_bias,
+       coverage_threshold = dt$plasmode$min_coverage,
+       se_sd_window = dt$plasmode$se_sd_window)
+}
+#' @rdname dt_extractors
+#' @export
+dt_dq <- function(dt) {
+  stopifnot(inherits(dt, "cleantmle_thresholds")); dt$dq
+}
+#' @rdname dt_extractors
+#' @export
+dt_nco <- function(dt) {
+  stopifnot(inherits(dt, "cleantmle_thresholds")); dt$nco
+}
+
+#' Attach Prespecified Decision Thresholds to an Analysis Lock
+#'
+#' Stores a [decision_thresholds()] object on the lock and records its
+#' own SHA-256 fingerprint (`thresholds_hash`). The base `lock_hash` is
+#' left unchanged so existing locks remain reconcilable; the additional
+#' `thresholds_hash` gives the decision rule its own tamper-evident
+#' record. Attach the thresholds *before* any checkpoint is evaluated.
+#'
+#' @param lock A \code{cleanroom_lock}.
+#' @param thresholds A \code{cleantmle_thresholds} object (default: the
+#'   package defaults from [decision_thresholds()]).
+#' @return The lock with `$decision_thresholds` and `$thresholds_hash` set.
+#' @examples
+#' dat  <- sim_func1(n = 200, seed = 1)
+#' lock <- create_analysis_lock(dat, "treatment", "event_24",
+#'                              c("age", "sex", "biomarker"), seed = 1)
+#' lock <- attach_decision_thresholds(lock, decision_thresholds())
+#' lock$thresholds_hash
+#' @export
+attach_decision_thresholds <- function(lock,
+                                       thresholds = decision_thresholds()) {
+  if (!inherits(lock, "cleanroom_lock"))
+    stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
+  if (!inherits(thresholds, "cleantmle_thresholds"))
+    stop("`thresholds` must be a cleantmle_thresholds object.", call. = FALSE)
+  lock$decision_thresholds <- thresholds
+  lock$thresholds_hash <- .compute_lock_hash(thresholds)
+  lock
+}
+
+
 #' @keywords internal
 .compute_lock_hash <- function(params) {
   if (requireNamespace("digest", quietly = TRUE)) {
@@ -320,6 +498,8 @@ print.cleanroom_lock <- function(x, ...) {
   if (!is.null(x$locked_at))
     cat("Locked at:  ", format(x$locked_at, "%Y-%m-%d %H:%M:%S"), "\n")
   cat("Hash:       ", x$lock_hash, "\n")
+  if (!is.null(x$thresholds_hash))
+    cat("Thresholds: ", x$thresholds_hash, "(decision rule fingerprint)\n")
 
   # Estimand
   if (!is.null(x$estimand)) {
@@ -388,6 +568,12 @@ print.cleanroom_lock <- function(x, ...) {
 #' the outcome is never accessed, so this step is safe at Stage 2a.
 #'
 #' @param lock A `cleanroom_lock` from [create_analysis_lock()].
+#' @param truncate Numeric; propensity-score truncation bound in (0, 0.5).
+#'   Predicted scores are clamped to `[truncate, 1 - truncate]`. Default 0.01.
+#' @param cv_folds Integer; number of SuperLearner cross-validation folds.
+#'   Default 10.
+#' @param cluster Optional parallel cluster (from \pkg{parallel}) for the
+#'   SuperLearner fit. Default `NULL` (sequential).
 #' @param ... Additional arguments passed to `SuperLearner::SuperLearner()`.
 #'
 #' @return An object of class `ps_fit` containing propensity scores (`ps`),
@@ -711,6 +897,25 @@ plot.ps_diagnostics <- function(x, ...) {
 #'   \code{g_library}.
 #' @param truncation Numeric; PS truncation threshold in (0, 0.5).
 #'   Default: 0.01.
+#' @param variance_method Character; variance estimator for the candidate,
+#'   one of \code{"IF"} (influence-function; default), \code{"cv_IF"}
+#'   (cross-validated IF), or \code{"robust"}.
+#' @param cv_scheme Character; cross-fitting scheme, one of \code{"none"}
+#'   (default), \code{"cv_tmle"}, or \code{"sample_split"}.
+#' @param cv_V Integer or \code{NULL}; number of cross-fitting folds when
+#'   \code{cv_scheme} is not \code{"none"}. \code{NULL} uses a default.
+#' @param estimator Character; the estimator family, one of \code{"tmle"}
+#'   (default), \code{"aipw"}, or \code{"onestep"}.
+#' @param discrete_sl Logical; if \code{TRUE}, use the discrete (single
+#'   best-learner) SuperLearner rather than the convex ensemble.
+#' @param screener Character; variable-screening algorithm prepended to the
+#'   learner library, one of \code{"All"} (default), \code{"corP"},
+#'   \code{"corRank"}, \code{"glmnet"}, or \code{"randomForest"}.
+#' @param tmle_control List or \code{NULL}; optional control parameters
+#'   passed through to the targeting step.
+#' @param match_spec List or \code{NULL}; optional matched-cohort
+#'   specification when the candidate operates on a matched subset.
+#' @param ... Reserved for future candidate options.
 #'
 #' @return A list of class \code{tmle_candidate_spec}.
 #'
@@ -852,6 +1057,19 @@ validate_tmle_candidates <- function(candidates) {
 #'   Default: \code{c(0.01, 0.05)}.
 #' @param libraries A named list of SuperLearner library vectors.
 #'   Default includes GLM-only and GLM+mean.
+#' @param estimators Character vector of estimator families to cross with
+#'   the library/truncation grid (e.g. \code{"tmle"}). Default \code{"tmle"}.
+#' @param cv_schemes Character vector of cross-fitting schemes. Default
+#'   \code{"none"}.
+#' @param variance_methods Character vector of variance estimators. Default
+#'   \code{"IF"}.
+#' @param discrete_sl Logical; passed to each candidate (discrete vs convex
+#'   SuperLearner). Default \code{FALSE}.
+#' @param screeners Character vector of variable screeners to cross into the
+#'   grid. Default \code{"All"}.
+#' @param max_candidates Integer; cap on the number of generated candidates
+#'   (guards against combinatorial blow-up). Default 64.
+#' @param ... Reserved for future grid dimensions / back-compatible aliases.
 #'
 #' @return A list of \code{tmle_candidate_spec} objects.
 #'
@@ -1319,6 +1537,15 @@ print.plasmode_results <- function(x, ...) {
 #'   the rule then minimises the worst-case RMSE that each candidate exhibits
 #'   across all DQ degraded scenarios (excluding the \code{"none"} baseline).
 #'   Ignored for the other rules.
+#' @param composite_weights Named numeric vector of weights for
+#'   \code{rule = "composite"}: \code{rmse}, \code{coverage_penalty}, and
+#'   \code{se_penalty}. Default \code{c(rmse = 1, coverage_penalty = 2,
+#'   se_penalty = 0.5)}.
+#' @param fiord_target_coverage Numeric; nominal coverage used by the
+#'   \code{"ci_coverage"} and \code{"fiord_two_stage"} rules. Default 0.95.
+#' @param fiord_coverage_tol Numeric; tolerance around
+#'   \code{fiord_target_coverage} for the \code{"fiord_two_stage"} Stage-1
+#'   oracle-coverage screen. Default 0.02.
 #'
 #' @return An object of class \code{tmle_selected_spec} containing the
 #'   full candidate specification, the selection rule, and the metrics
@@ -2640,6 +2867,16 @@ fit_tmle_candidate_set <- function(lock, candidates = NULL, ps_fit = NULL,
 #' @param method Character; which row to evaluate.
 #'   Matched against the `candidate` column if it exists, otherwise the
 #'   `method` column. Default: `"TMLE"`.
+#' @param rmse_threshold Numeric or `NULL`; optional maximum tolerable RMSE.
+#'   Used to build `targets$max_rmse` when `targets` is not supplied.
+#' @param coverage_threshold Numeric or `NULL`; shorthand minimum coverage
+#'   used to build `targets$min_coverage` when `targets` is not supplied
+#'   (default 0.90).
+#' @param max_abs_bias Numeric or `NULL`; shorthand maximum absolute bias
+#'   used to build `targets$max_abs_bias` when `targets` is not supplied
+#'   (default 0.01).
+#' @param se_sd_window Numeric length-2; the acceptable SE / empirical-SD
+#'   window used when `targets` is not supplied. Default `c(0.8, 1.2)`.
 #'
 #' @return A list with elements `decision` (one of `"GO"`, `"FLAG"`, or
 #'   `"STOP"`), `table` (a one-row data.frame summarising the evaluation),

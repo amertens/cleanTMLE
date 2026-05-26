@@ -173,7 +173,15 @@ estimate_tmle_risk_point <- function(data, treatment = NULL, outcome = NULL,
       fluc <- stats::glm(Y ~ -1 + H_aw + offset(Q_aw_logit),
                           family = stats::binomial())
       unname(stats::coef(fluc))
-    }, error = function(e) 0)
+    }, error = function(e) {
+      warning("Cross-fitted TMLE targeting step failed (",
+              conditionMessage(e), "); setting the fluctuation coefficient to ",
+              "0. The estimate reduces to the untargeted plug-in and the ",
+              "influence-curve standard error is no longer valid. Inspect ",
+              "the propensity-score overlap and truncation before relying on ",
+              "this estimate.", call. = FALSE)
+      0
+    })
 
     Q_a1_u <- stats::plogis(
       stats::qlogis(pmax(pmin(Q_a1_cf, 0.999), 0.001)) + epsilon * H_a1)
@@ -628,7 +636,16 @@ estimate_surv_tmle <- function(data, treatment = "treatment",
           p_value  = ate$pvalue
         )
       } else {
-        # TMLE failed — IPTW fallback with censoring subsetting
+        # TMLE failed — fall back to an UNADJUSTED arm difference on the
+        # censoring-subsetted data. This is a crude estimate with no
+        # confounding or censoring adjustment, so it is generally biased;
+        # warn loudly rather than return it silently as if it were the TMLE.
+        warning(sprintf(
+          paste0("Survival TMLE failed at t = %s; falling back to an ",
+                 "UNADJUSTED (crude) arm difference, which does not control ",
+                 "confounding or dependent censoring and is generally biased. ",
+                 "Do not report this as the TMLE estimate."), tt),
+          call. = FALSE)
         r1  <- mean(Y_t[A_t == 1])
         r0  <- mean(Y_t[A_t == 0])
         rd  <- r1 - r0

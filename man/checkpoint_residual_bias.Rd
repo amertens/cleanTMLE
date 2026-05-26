@@ -8,16 +8,30 @@ checkpoint_residual_bias(
   nc_results,
   alpha = 0.05,
   max_nc_estimate = Inf,
+  rule = c("significance", "equivalence"),
+  null_band = NULL,
+  adjust = c("none", "bonferroni"),
   lock_hash = NA_character_
 )
 }
 \arguments{
 \item{nc_results}{A single \code{cleantmle_nc_result} or a list of them.}
 
-\item{alpha}{Numeric; significance threshold. Default: 0.05.}
+\item{alpha}{Numeric; significance / one-sided-test level. Default: 0.05.}
 
 \item{max_nc_estimate}{Numeric; maximum tolerable absolute NC estimate.
-Default: \code{Inf} (rely on p-value only).}
+Default: \code{Inf} (rely on p-value only). Used by the
+\code{"significance"} rule.}
+
+\item{rule}{Character; \code{"significance"} (legacy default) or
+\code{"equivalence"} (TOST-style; recommended).}
+
+\item{null_band}{Numeric; half-width of the practical-null band on the
+NC estimate's scale, required when \code{rule = "equivalence"}.}
+
+\item{adjust}{Character; multiplicity adjustment for the equivalence
+intervals across the NC panel. \code{"none"} (default) or
+\code{"bonferroni"}.}
 
 \item{lock_hash}{Character; optional lock hash for traceability.}
 }
@@ -27,6 +41,20 @@ A \code{cleantmle_checkpoint} for Check Point 3.
 \description{
 Evaluates negative control results to assess whether residual
 confounding is likely present.  Returns a structured checkpoint.
+}
+\details{
+Two screening rules are supported. The legacy \code{"significance"} rule
+flags a negative control when its association with treatment is
+statistically significant (\code{p < alpha}) or exceeds
+\code{max_nc_estimate}; it is the historical default but rewards low
+power, because a noisy NC with a large point estimate but a wide CI
+"passes". The recommended \code{"equivalence"} rule (two one-sided
+tests) instead flags a negative control unless its
+\code{(1 - 2*alpha)} confidence interval lies entirely inside the null
+band \code{(-null_band, null_band)}: a NC passes only when it is
+\emph{demonstrated} to be near-null with adequate precision. With several
+negative controls, set \code{adjust = "bonferroni"} to widen each
+interval for multiplicity.
 }
 \section{Clean-room stage}{
  Stage 3 (after negative control analysis).

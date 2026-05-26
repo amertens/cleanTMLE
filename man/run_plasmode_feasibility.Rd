@@ -9,6 +9,7 @@ run_plasmode_feasibility(
   tmle_candidates = NULL,
   effect_sizes = c(0.05, 0.1),
   reps = lock$plasmode_reps,
+  q0_library = NULL,
   verbose = FALSE
 )
 }
@@ -25,7 +26,18 @@ Default: \code{c(0.05, 0.10)}.}
 \item{reps}{Integer; number of plasmode replicates per effect size.
 Defaults to \code{lock$plasmode_reps}.}
 
-\item{verbose}{Logical; if \code{TRUE}, print progress messages. Default: \code{FALSE}.}
+\item{q0_library}{Optional SuperLearner library used to fit the
+baseline outcome model Q0 (covariates only) that generates the
+synthetic outcomes for candidate selection. If \code{NULL} (default),
+Q0 is a logistic GLM in the covariates, which biases candidate
+selection toward learners that handle linear-in-logit structure
+well. Set this to a SuperLearner library (e.g.
+\code{c("SL.glm", "SL.glmnet", "SL.gam", "SL.mean")}) to generate
+synthetic outcomes from a richer Q0 surface.}
+
+\item{verbose}{Logical; if \code{TRUE}, print progress messages and emit
+warnings when any candidate converges on < 50\% of inner reps.
+Default: \code{FALSE}.}
 }
 \value{
 An object of class \code{plasmode_results} containing:

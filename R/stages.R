@@ -209,10 +209,16 @@ as.data.frame.cleantmle_checkpoint <- function(x, ...) {
 #'
 #' @param lock A \code{cleanroom_lock}.
 #' @param min_n_per_arm Integer; minimum acceptable sample size per
-#'   treatment arm. Default: 50.
+#'   treatment arm. A shortfall below this (but above \code{stop_n_per_arm})
+#'   is a FLAG. Default: 50.
 #' @param min_events Integer; minimum acceptable total outcome events.
 #'   Default: 20.
 #' @param min_prevalence Numeric; minimum outcome prevalence. Default: 0.01.
+#' @param stop_n_per_arm Integer; a per-arm count strictly below this
+#'   forces a STOP rather than a FLAG. Default \code{NULL} = 20 (the former
+#'   hard-coded floor).
+#' @param stop_min_events Integer; a total event count strictly below this
+#'   forces a STOP. Default \code{NULL} = \code{min_events}.
 #'
 #' @return A \code{cleantmle_checkpoint} for Check Point 1.
 #'
@@ -227,9 +233,18 @@ as.data.frame.cleantmle_checkpoint <- function(x, ...) {
 checkpoint_cohort_adequacy <- function(lock,
                                        min_n_per_arm  = 50L,
                                        min_events     = 20L,
-                                       min_prevalence = 0.01) {
+                                       min_prevalence = 0.01,
+                                       stop_n_per_arm = NULL,
+                                       stop_min_events = NULL) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
+
+  # STOP floors. Historically these were hard-coded at n = 20 per arm and
+  # at `min_events`; they are now explicit arguments. Default behaviour is
+  # unchanged: STOP at fewer than 20 per arm or fewer than `min_events`
+  # total events; otherwise the soft `min_n_per_arm` shortfall is a FLAG.
+  if (is.null(stop_n_per_arm))  stop_n_per_arm  <- 20L
+  if (is.null(stop_min_events)) stop_min_events <- min_events
 
   data <- lock$data
   A    <- data[[lock$treatment]]
@@ -286,7 +301,8 @@ checkpoint_cohort_adequacy <- function(lock,
                      paste(lock$covariates[pos_flags], collapse = ", ")))
 
   decision <- if (length(flags) == 0L) "GO"
-              else if (events_total < min_events || n1 < 20 || n0 < 20) "STOP"
+              else if (events_total < stop_min_events ||
+                       n1 < stop_n_per_arm || n0 < stop_n_per_arm) "STOP"
               else "FLAG"
 
   rationale <- if (length(flags) == 0L) {
@@ -296,9 +312,11 @@ checkpoint_cohort_adequacy <- function(lock,
   }
 
   thresholds <- list(
-    min_n_per_arm  = min_n_per_arm,
-    min_events     = min_events,
-    min_prevalence = min_prevalence
+    min_n_per_arm   = min_n_per_arm,
+    min_events      = min_events,
+    min_prevalence  = min_prevalence,
+    stop_n_per_arm  = stop_n_per_arm,
+    stop_min_events = stop_min_events
   )
 
   new_checkpoint(
@@ -325,9 +343,11 @@ checkpoint_cohort_adequacy <- function(lock,
 #' @param ps_diag A \code{ps_diagnostics} object from
 #'   \code{\link{compute_ps_diagnostics}}.
 #' @param max_smd Numeric; maximum tolerable absolute SMD after weighting.
-#'   Default: 0.10.
+#'   Exceeding this (but not \code{stop_smd}) is a FLAG. Default: 0.10.
 #' @param min_ess_pct Numeric; minimum ESS as a percent of the original N.
 #'   Default: 50.
+#' @param stop_smd Numeric; a max weighted SMD strictly above this forces a
+#'   STOP rather than a FLAG. Default 0.20 (the former hard-coded floor).
 #' @param lock_hash Character; optional lock hash for traceability.
 #'
 #' @return A \code{cleantmle_checkpoint} for Check Point 2.
@@ -345,6 +365,7 @@ checkpoint_cohort_adequacy <- function(lock,
 checkpoint_balance <- function(ps_diag,
                                max_smd     = 0.10,
                                min_ess_pct = 50,
+                               stop_smd    = 0.20,
                                lock_hash   = NA_character_) {
   if (!inherits(ps_diag, "ps_diagnostics"))
     stop("`ps_diag` must be a ps_diagnostics object.", call. = FALSE)
@@ -353,13 +374,14 @@ checkpoint_balance <- function(ps_diag,
   ess_tbl  <- ps_diag$ess
 
   max_weighted_smd <- max(abs(smds$smd_weighted))
+  n_smd_over       <- sum(abs(smds$smd_weighted) > max_smd, na.rm = TRUE)
   total_ess_pct    <- ess_tbl$ess_pct[ess_tbl$group == "Total"]
 
   flags <- character(0)
   if (max_weighted_smd > max_smd)
     flags <- c(flags,
-               sprintf("max weighted SMD = %.3f (> %.2f)",
-                       max_weighted_smd, max_smd))
+               sprintf("max weighted SMD = %.3f (> %.2f) in %d covariate(s)",
+                       max_weighted_smd, max_smd, n_smd_over))
   if (total_ess_pct < min_ess_pct)
     flags <- c(flags,
                sprintf("total ESS%% = %.1f (< %.0f%%)",
@@ -374,7 +396,7 @@ checkpoint_balance <- function(ps_diag,
   )
 
   decision <- if (length(flags) == 0L) "GO"
-              else if (max_weighted_smd > 0.20) "STOP"
+              else if (max_weighted_smd > stop_smd) "STOP"
               else "FLAG"
 
   rationale <- if (length(flags) == 0L) {
@@ -387,7 +409,8 @@ checkpoint_balance <- function(ps_diag,
     stage      = "Check Point 2: Treatment Comparability",
     decision   = decision,
     metrics    = metrics,
-    thresholds = list(max_smd = max_smd, min_ess_pct = min_ess_pct),
+    thresholds = list(max_smd = max_smd, min_ess_pct = min_ess_pct,
+                      stop_smd = stop_smd, n_smd_over = n_smd_over),
     rationale  = rationale,
     lock_hash  = lock_hash
   )
@@ -558,12 +581,33 @@ print.cleantmle_nc_result <- function(x, ...) {
 #' Evaluates negative control results to assess whether residual
 #' confounding is likely present.  Returns a structured checkpoint.
 #'
+#' Two screening rules are supported. The legacy \code{"significance"} rule
+#' flags a negative control when its association with treatment is
+#' statistically significant (\code{p < alpha}) or exceeds
+#' \code{max_nc_estimate}; it is the historical default but rewards low
+#' power, because a noisy NC with a large point estimate but a wide CI
+#' "passes". The recommended \code{"equivalence"} rule (two one-sided
+#' tests) instead flags a negative control unless its
+#' \code{(1 - 2*alpha)} confidence interval lies entirely inside the null
+#' band \code{(-null_band, null_band)}: a NC passes only when it is
+#' *demonstrated* to be near-null with adequate precision. With several
+#' negative controls, set \code{adjust = "bonferroni"} to widen each
+#' interval for multiplicity.
+#'
 #' @section Clean-room stage: Stage 3 (after negative control analysis).
 #'
 #' @param nc_results A single \code{cleantmle_nc_result} or a list of them.
-#' @param alpha Numeric; significance threshold. Default: 0.05.
+#' @param alpha Numeric; significance / one-sided-test level. Default: 0.05.
 #' @param max_nc_estimate Numeric; maximum tolerable absolute NC estimate.
-#'   Default: \code{Inf} (rely on p-value only).
+#'   Default: \code{Inf} (rely on p-value only). Used by the
+#'   \code{"significance"} rule.
+#' @param rule Character; \code{"significance"} (legacy default) or
+#'   \code{"equivalence"} (TOST-style; recommended).
+#' @param null_band Numeric; half-width of the practical-null band on the
+#'   NC estimate's scale, required when \code{rule = "equivalence"}.
+#' @param adjust Character; multiplicity adjustment for the equivalence
+#'   intervals across the NC panel. \code{"none"} (default) or
+#'   \code{"bonferroni"}.
 #' @param lock_hash Character; optional lock hash for traceability.
 #'
 #' @return A \code{cleantmle_checkpoint} for Check Point 3.
@@ -582,19 +626,49 @@ print.cleantmle_nc_result <- function(x, ...) {
 checkpoint_residual_bias <- function(nc_results,
                                      alpha           = 0.05,
                                      max_nc_estimate = Inf,
+                                     rule            = c("significance",
+                                                         "equivalence"),
+                                     null_band       = NULL,
+                                     adjust          = c("none", "bonferroni"),
                                      lock_hash       = NA_character_) {
-  # Accept single result or list
+  rule   <- match.arg(rule)
+  adjust <- match.arg(adjust)
 
+  # Accept single result or list
   if (inherits(nc_results, "cleantmle_nc_result"))
     nc_results <- list(nc_results)
+  m <- length(nc_results)
+
+  if (rule == "equivalence") {
+    if (is.null(null_band) || !is.numeric(null_band) || null_band <= 0)
+      stop("`null_band` (a positive practical-null half-width) is required ",
+           "when rule = 'equivalence'.", call. = FALSE)
+    # Bonferroni widens each interval by splitting alpha across the panel.
+    alpha_each <- if (adjust == "bonferroni") alpha / max(m, 1L) else alpha
+    z <- stats::qnorm(1 - alpha_each)  # one-sided z for the (1-2*alpha) CI
+  }
 
   rows <- lapply(nc_results, function(nc) {
+    if (rule == "equivalence") {
+      half <- z * nc$se
+      lo <- nc$estimate - half
+      hi <- nc$estimate + half
+      # PASS only if the whole CI sits inside the null band; otherwise FLAG.
+      within <- (lo > -null_band) && (hi < null_band)
+      flagged <- !within
+    } else {
+      lo <- nc$ci_lower
+      hi <- nc$ci_upper
+      flagged <- nc$p_value < alpha || abs(nc$estimate) > max_nc_estimate
+    }
     data.frame(
       variable = nc$variable,
       estimate = round(nc$estimate, 5),
       se       = round(nc$se, 5),
+      ci_lower = round(lo, 5),
+      ci_upper = round(hi, 5),
       p_value  = round(nc$p_value, 4),
-      flagged  = nc$p_value < alpha || abs(nc$estimate) > max_nc_estimate,
+      flagged  = flagged,
       stringsAsFactors = FALSE
     )
   })
@@ -602,21 +676,26 @@ checkpoint_residual_bias <- function(nc_results,
   n_flagged <- sum(metrics$flagged)
 
   decision <- if (n_flagged == 0L) "GO"
-              else if (n_flagged <= length(nc_results) / 2) "FLAG"
+              else if (n_flagged <= m / 2) "FLAG"
               else "STOP"
 
   rationale <- if (n_flagged == 0L) {
-    "No negative controls flagged; no evidence of residual confounding."
+    if (rule == "equivalence")
+      sprintf("All %d NC(s) demonstrated near-null within +/-%.3g; no evidence of residual confounding.",
+              m, null_band)
+    else
+      "No negative controls flagged; no evidence of residual confounding."
   } else {
-    sprintf("%d of %d negative control(s) flagged.",
-            n_flagged, length(nc_results))
+    sprintf("%d of %d negative control(s) flagged (rule = %s).",
+            n_flagged, m, rule)
   }
 
   new_checkpoint(
     stage      = "Check Point 3: Residual Bias",
     decision   = decision,
     metrics    = metrics,
-    thresholds = list(alpha = alpha, max_nc_estimate = max_nc_estimate),
+    thresholds = list(alpha = alpha, max_nc_estimate = max_nc_estimate,
+                      rule = rule, null_band = null_band, adjust = adjust),
     rationale  = rationale,
     lock_hash  = lock_hash
   )
@@ -976,22 +1055,15 @@ get_primary_tmle_spec <- function(lock) {
 #'   difference on the risk-difference scale to compare against the
 #'   computed MDD.  Default \code{NULL} (no comparison).
 #'
-#' @return A list of class \code{design_precision} containing:
-#'   \describe{
-#'     \item{n_total}{Total sample size.}
-#'     \item{n_treated}{Number of treated subjects.}
-#'     \item{n_control}{Number of control subjects.}
-#'     \item{events_total}{Total outcome events.}
-#'     \item{events_per_arm}{Named vector with events per arm.}
-#'     \item{crude_rates}{Named vector of crude event rates per arm.}
-#'     \item{prevalence}{Overall outcome prevalence.}
-#'     \item{se_proxy}{SE proxy for the risk difference.}
-#'     \item{ci_halfwidth}{95\% CI half-width proxy (1.96 * se_proxy).}
-#'     \item{mdd_80}{MDD at 80\% power (2.8 * se_proxy).}
-#'     \item{target_mdd}{The user-supplied target MDD (or \code{NULL}).}
-#'     \item{mdd_feasible}{Logical; whether computed MDD <= target_mdd
-#'       (only present when \code{target_mdd} is not \code{NULL}).}
-#'   }
+#' @return A list of class `design_precision` with elements: `n_total`
+#'   (total sample size); `n_treated`; `n_control`; `events_total`;
+#'   `events_per_arm` (named vector of events per arm); `crude_rates`
+#'   (crude event rates per arm); `prevalence` (overall outcome
+#'   prevalence); `se_proxy` (SE proxy for the risk difference);
+#'   `ci_halfwidth` (95% CI half-width proxy, 1.96 * se_proxy); `mdd_80`
+#'   (minimum detectable difference at 80% power, 2.8 * se_proxy);
+#'   `target_mdd` (the user-supplied target, or `NULL`); and
+#'   `mdd_feasible` (logical; present only when `target_mdd` is supplied).
 #'
 #' @examples
 #' dat  <- sim_func1(n = 500, seed = 1)
@@ -1186,6 +1258,15 @@ summarize_event_support <- function(lock) {
 #'   control.  Default \code{0.05}.
 #' @param max_abs_estimate Numeric; absolute estimate threshold for
 #'   flagging a negative control.  Default \code{0.05}.
+#' @param rule Character; negative-control screening rule passed to
+#'   \code{\link{checkpoint_residual_bias}}: \code{"significance"} (default)
+#'   or \code{"equivalence"}. If the lock carries a
+#'   \code{\link{decision_thresholds}} object and \code{rule} is not
+#'   supplied, the lock's NCO rule is used.
+#' @param null_band Numeric; practical-null half-width required when
+#'   \code{rule = "equivalence"}.
+#' @param adjust Character; multiplicity adjustment for the equivalence
+#'   intervals: \code{"none"} (default) or \code{"bonferroni"}.
 #'
 #' @return A list of class \code{residual_confounding_stage} with:
 #'   \describe{
@@ -1211,9 +1292,29 @@ run_residual_confounding_stage <- function(lock,
                                            ps_fit,
                                            variables        = NULL,
                                            alpha            = 0.05,
-                                           max_abs_estimate = 0.05) {
+                                           max_abs_estimate = 0.05,
+                                           rule             = c("significance",
+                                                                "equivalence"),
+                                           null_band        = NULL,
+                                           adjust           = c("none",
+                                                                "bonferroni")) {
+  rule_missing <- missing(rule)
+  rule   <- match.arg(rule)
+  adjust <- match.arg(adjust)
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
+
+  # If the lock carries a prespecified decision_thresholds() object and the
+  # caller did not override, adopt its negative-control rule.
+  if (!is.null(lock$decision_thresholds) &&
+      rule_missing && is.null(null_band)) {
+    nco <- lock$decision_thresholds$nco
+    if (!is.null(nco)) {
+      rule      <- nco$rule
+      null_band <- nco$null_band
+      adjust    <- nco$adjust
+    }
+  }
   if (!inherits(ps_fit, "ps_fit"))
     stop("`ps_fit` must be a ps_fit object.", call. = FALSE)
 
@@ -1290,6 +1391,9 @@ run_residual_confounding_stage <- function(lock,
     nc_results,
     alpha           = alpha,
     max_nc_estimate = max_abs_estimate,
+    rule            = rule,
+    null_band       = null_band,
+    adjust          = adjust,
     lock_hash       = lock$lock_hash
   )
 
@@ -1354,11 +1458,23 @@ print.residual_confounding_stage <- function(x, ...) {
 #'
 #' @param audit A \code{cleantmle_audit}.
 #' @param required_stages Character vector of stage labels that must be
-#'   present in the audit.  Partial matching is used.  Default:
+#'   present in the audit.  Matching is on the stage *key* (the text
+#'   before the first colon), so \code{"Check Point 2"} matches
+#'   \code{"Check Point 2: Treatment Comparability"} but NOT
+#'   \code{"Check Point 2c: DQ Stress"}.  Default:
 #'   \code{c("Check Point 1", "Check Point 2", "Check Point 3")}.
 #' @param allow_flag Logical; if \code{FALSE} any FLAG decision is treated
 #'   as a STOP.  Default \code{TRUE}.
+#' @param block_on_any_stop Logical; if \code{TRUE} (the default) *any*
+#'   recorded checkpoint with a STOP decision blocks authorisation, even
+#'   if it is not in \code{required_stages}.  This makes optional
+#'   checkpoints such as the DQ-stress gate (\code{"Check Point 2c"})
+#'   authoritative once recorded, and prevents a STOP from being masked
+#'   by a later same-prefix checkpoint.
 #' @param lock_hash Character; optional lock hash for traceability.
+#' @param checkpoints Optional \code{cleantmle_checkpoint} or list of them;
+#'   supplied instead of (or in addition to) \code{audit}, in which case a
+#'   temporary audit is synthesised from the checkpoints.
 #'
 #' @return A \code{cleantmle_checkpoint} of subclass
 #'   \code{pre_outcome_gate} with an additional logical field
@@ -1371,7 +1487,8 @@ print.residual_confounding_stage <- function(x, ...) {
 #' audit <- create_audit_log(lock)
 #' ps    <- fit_ps_glm(lock)
 #' cp1   <- checkpoint_cohort_adequacy(lock)
-#' cp2   <- checkpoint_balance(lock, ps)
+#' diag  <- compute_ps_diagnostics(ps)
+#' cp2   <- checkpoint_balance(diag, lock_hash = lock$lock_hash)
 #' lock  <- define_negative_control(lock, "nc_outcome")
 #' nc    <- run_negative_control(lock, "nc_outcome", ps)
 #' cp3   <- checkpoint_residual_bias(nc, lock_hash = lock$lock_hash)
@@ -1386,7 +1503,8 @@ authorize_outcome_analysis <- function(audit = NULL,
                                        required_stages = NULL,
                                        allow_flag      = TRUE,
                                        lock_hash       = NULL,
-                                       checkpoints     = NULL) {
+                                       checkpoints     = NULL,
+                                       block_on_any_stop = TRUE) {
   # Polymorphic: accept either an audit, a list of checkpoints, or both.
   # When both are supplied, the union of evidence is used (audit entries
   # plus the explicit checkpoints).
@@ -1423,15 +1541,31 @@ authorize_outcome_analysis <- function(audit = NULL,
   if (is.null(lock_hash))
     lock_hash <- if (!is.null(audit$lock_hash)) audit$lock_hash else NA_character_
 
-  # For each required stage, find matching audit entries (partial match)
+  # Stage key = the label before the first colon, trimmed. This makes
+  # required-stage matching exact at the checkpoint level and prevents
+  # "Check Point 2" from accidentally matching "Check Point 2c: DQ Stress".
+  stage_key <- function(s) trimws(sub(":.*$", "", s))
+
+  # For each required stage, reduce the decisions of ALL entries whose
+  # stage key matches, using STOP > FLAG > GO precedence. Returning the
+  # most severe (rather than the last) decision means a STOP can never be
+  # masked by a later same-key entry.
+  reduce_decisions <- function(ds) {
+    ds <- ds[!is.na(ds)]
+    if (length(ds) == 0L) return(NA_character_)
+    if (any(ds == "STOP")) return("STOP")
+    if (any(ds == "FLAG")) return("FLAG")
+    "GO"
+  }
   find_decision <- function(stage_pattern) {
-    matched <- Filter(
-      function(e) grepl(stage_pattern, e$stage, fixed = TRUE),
-      audit$entries
-    )
+    key <- stage_key(stage_pattern)
+    matched <- Filter(function(e) identical(stage_key(e$stage), key),
+                      audit$entries)
     if (length(matched) == 0L) return(NULL)
-    # Return the decision from the last matching entry
-    matched[[length(matched)]]$decision
+    reduce_decisions(vapply(matched, function(e) {
+      d <- e$decision
+      if (is.null(d) || length(d) != 1L) NA_character_ else as.character(d)
+    }, character(1L)))
   }
 
   decisions      <- lapply(required_stages, find_decision)
@@ -1454,6 +1588,26 @@ authorize_outcome_analysis <- function(audit = NULL,
     stop_stages <- names(found_decisions)[found_decisions == "STOP"]
     rationale_parts <- c(rationale_parts,
       paste("STOP decision in:", paste(stop_stages, collapse = "; ")))
+  }
+
+  # Authoritative scan: any recorded checkpoint with a STOP decision
+  # blocks authorisation, even if it is not in required_stages (e.g. the
+  # DQ-stress gate, Check Point 2c). This is the safety net that makes the
+  # gate_dq() STOP binding without forcing every analysis to run the DQ
+  # stage.
+  if (isTRUE(block_on_any_stop)) {
+    all_stop_keys <- unique(vapply(
+      Filter(function(e) identical(as.character(e$decision), "STOP"),
+             audit$entries),
+      function(e) stage_key(e$stage), character(1L)))
+    extra_stop <- setdiff(all_stop_keys,
+                          vapply(required_stages, stage_key, character(1L)))
+    if (length(extra_stop) > 0L) {
+      overall_decision <- "STOP"
+      rationale_parts <- c(rationale_parts,
+        paste("STOP decision in (non-required):",
+              paste(extra_stop, collapse = "; ")))
+    }
   }
 
   if (!allow_flag && any(found_decisions == "FLAG")) {
@@ -1519,7 +1673,8 @@ authorize_outcome_analysis <- function(audit = NULL,
 #' audit <- create_audit_log(lock)
 #' ps    <- fit_ps_glm(lock)
 #' cp1   <- checkpoint_cohort_adequacy(lock)
-#' cp2   <- checkpoint_balance(lock, ps)
+#' diag  <- compute_ps_diagnostics(ps)
+#' cp2   <- checkpoint_balance(diag, lock_hash = lock$lock_hash)
 #' lock  <- define_negative_control(lock, "nc_outcome")
 #' nc    <- run_negative_control(lock, "nc_outcome", ps)
 #' cp3   <- checkpoint_residual_bias(nc, lock_hash = lock$lock_hash)

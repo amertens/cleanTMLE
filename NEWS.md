@@ -1,3 +1,124 @@
+# cleanTMLE 0.1.4 (development)
+
+## FIORD selector: second stage (variance-method selection)
+
+* **`bootstrap_rd_variance()`** adds a native nonparametric bootstrap
+  standard error and percentile interval for the marginal risk
+  difference (TMLE or stabilised IPTW). This is the principled variance
+  method when the influence-function variance is conservative or invalid
+  (stabilised IPTW; any estimator on a non-i.i.d. matched cohort).
+* **`select_variance_method()`** implements the second stage of the
+  FIORD two-stage selector (Nance et al. 2026): with the point estimator
+  locked, it chooses the variance method whose oracle coverage on
+  synthetic data is closest to nominal. Together with
+  `select_tmle_candidate(rule = "fiord_two_stage")` (stage 1) this closes
+  the gap to the full FIORD procedure.
+
+## Loud failure modes (validity)
+
+* **`estimate_gcomprisk()` no longer silently returns a zero risk
+  difference.** When a treatment is identified but absent from the
+  outcome model, g-computation predicted identical risk in both arms,
+  yielding a degenerate RD of exactly zero with no signal to the user.
+  The treatment is now injected into the outcome model and a `warning()`
+  is emitted. The bootstrap re-uses the resolved formula so the warning
+  fires once.
+* **Cross-fitted TMLE targeting failures now warn.** A failed
+  fluctuation step previously set the targeting coefficient to 0
+  silently, reducing the estimator to an untargeted plug-in with an
+  invalid influence-curve standard error. It now warns.
+* **Survival-TMLE fallback warns.** When `tmle::tmle()` fails, the
+  fallback to an unadjusted arm difference (which controls neither
+  confounding nor censoring) now warns rather than returning the crude
+  contrast as if it were the TMLE estimate.
+
+## Tests
+
+* New `test-ground-truth.R` checks the estimators against an analytic
+  truth and against `tmle::tmle()` on shared inputs (point TMLE agrees
+  with `tmle::tmle()` to within 0.01 on the risk-difference scale), and
+  locks in the g-computation treatment-injection fix.
+
+# cleanTMLE 0.1.3
+
+This release hardens the GO/FLAG/STOP decision layer, centralises the
+decision thresholds, strengthens the negative-control and missingness
+checks, and adds a synthetic-data fidelity diagnostic.
+
+## Decision-layer fixes
+
+* **`authorize_outcome_analysis()` no longer masks a STOP.** Required
+  stages are now matched on the stage *key* (text before the first
+  colon), so `"Check Point 2"` matches the balance checkpoint but not
+  `"Check Point 2c: DQ Stress"`. Decisions for a stage are reduced with
+  STOP > FLAG > GO precedence rather than "last entry wins", and a new
+  `block_on_any_stop = TRUE` argument makes *any* recorded STOP
+  (including the optional DQ-stress gate) authoritative. Previously a
+  balance STOP could be silently overwritten by a later same-prefix
+  checkpoint, and the `gate_dq()` STOP was honoured only by recording
+  order.
+
+## Centralised, fingerprintable thresholds
+
+* **`decision_thresholds()`** bundles every cohort / balance / plasmode /
+  DQ / NCO threshold into one object; **`attach_decision_thresholds()`**
+  stores it on the lock and records its own SHA-256 `thresholds_hash`, so
+  the decision rule is tamper-evident (previously thresholds were passed
+  ad hoc and were not fingerprinted). Helpers `dt_cohort()`,
+  `dt_balance()`, `dt_plasmode()`, `dt_dq()`, `dt_nco()` extract the
+  argument list for each step; `gate_dq(..., thresholds = dt)` reads from
+  it directly.
+
+## Checkpoint improvements
+
+* **`checkpoint_residual_bias(rule = "equivalence")`** adds a TOST-style
+  negative-control screen: a NC passes only when its `(1 - 2*alpha)` CI
+  lies entirely inside a prespecified `null_band`, with optional
+  `adjust = "bonferroni"` for the panel. The legacy significance rule
+  rewarded low power (a noisy NC with a wide CI "passed"); equivalence is
+  now recommended.
+* **`checkpoint_cohort_adequacy()`** and **`checkpoint_balance()`** expose
+  their formerly hard-coded STOP floors as arguments (`stop_n_per_arm`,
+  `stop_min_events`, `stop_smd`); defaults reproduce prior behaviour.
+  `checkpoint_balance()` also reports the number of covariates over the
+  SMD threshold.
+
+## Plasmode / DQ-stress additions
+
+* **`run_plasmode_dq_stress(q0_library = ...)`** lets the synthetic-outcome
+  generator Q0 use a SuperLearner library instead of a logistic GLM,
+  matching the option already available in `run_plasmode_feasibility()`.
+* **MAR covariate-missingness scenario** (`covariate_missingness_mar`):
+  treatment-dependent missingness with median imputation, a stronger test
+  than the existing MCAR scenario because the imputation is biased rather
+  than merely inefficient.
+* **`assess_dgp_fidelity()`** compares synthetic vs real covariate and
+  treatment distributions (per-covariate SMD and KS, treatment-prevalence
+  difference) and returns a GO/FLAG decision, so the analyst can defend
+  that the plasmode generator is faithful enough to base candidate
+  selection on.
+
+
+# cleanTMLE 0.1.2
+
+## New: `gate_dq()` makes the DQ stress test a hard checkpoint
+
+* **`gate_dq(dq_results, candidate, max_abs_bias, min_coverage,
+  max_rmse_ratio, ...)`** converts the degraded-scenario rows of a
+  `plasmode_dq_results` object into a `cleantmle_checkpoint`. The
+  checkpoint flips to STOP if any degraded row for the locked
+  candidate exceeds the configured envelope, slots into `gate_all()`
+  alongside the cohort-adequacy, balance, and residual-bias
+  checkpoints, and is exported through the audit log. Previously the
+  DQ stress test was computed and saved but never thresholded by the
+  gate, which meant locked candidates could pass the gate even when a
+  prespecified DQ row was outside the locked envelope.
+* `run_simulation.R` now constructs a DQ checkpoint after every
+  scenario's stress run and feeds it into `gate_all()`. Bundled
+  results regenerated under `gate_dq()` show the expected
+  Scenario C STOP from the unmeasured-confounding row.
+
+
 # cleanTMLE 0.1.1
 
 This release addresses the issues surfaced by applying cleanTMLE to the

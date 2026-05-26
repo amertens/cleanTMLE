@@ -22,6 +22,26 @@ Default: \code{c(0.01, 0.05)}.}
 
 \item{libraries}{A named list of SuperLearner library vectors.
 Default includes GLM-only and GLM+mean.}
+
+\item{estimators}{Character vector of estimator families to cross with
+the library/truncation grid (e.g. \code{"tmle"}). Default \code{"tmle"}.}
+
+\item{cv_schemes}{Character vector of cross-fitting schemes. Default
+\code{"none"}.}
+
+\item{variance_methods}{Character vector of variance estimators. Default
+\code{"IF"}.}
+
+\item{discrete_sl}{Logical; passed to each candidate (discrete vs convex
+SuperLearner). Default \code{FALSE}.}
+
+\item{screeners}{Character vector of variable screeners to cross into the
+grid. Default \code{"All"}.}
+
+\item{max_candidates}{Integer; cap on the number of generated candidates
+(guards against combinatorial blow-up). Default 64.}
+
+\item{...}{Reserved for future grid dimensions / back-compatible aliases.}
 }
 \value{
 A list of \code{tmle_candidate_spec} objects.

@@ -31,6 +31,10 @@ Default: \code{c("SL.glm", "SL.mean")}.}
 feasibility evaluation. Default: 100.}
 
 \item{seed}{Integer; random seed for reproducibility. Default: 42.}
+
+\item{cleanroom_enabled}{Logical; if \code{TRUE} (default) the lock enforces
+the staged clean-room machinery (outcome guard, gate authorisation,
+audit requirement). \code{\link[=create_simple_lock]{create_simple_lock()}} sets this to \code{FALSE}.}
 }
 \value{
 An object of class \code{cleanroom_lock} containing all specified

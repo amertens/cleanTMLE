@@ -30,6 +30,20 @@ coverage), \code{se_sd_low} (lower bound for SE / empirical-SD ratio), and
 \item{method}{Character; which row to evaluate.
 Matched against the \code{candidate} column if it exists, otherwise the
 \code{method} column. Default: \code{"TMLE"}.}
+
+\item{rmse_threshold}{Numeric or \code{NULL}; optional maximum tolerable RMSE.
+Used to build \code{targets$max_rmse} when \code{targets} is not supplied.}
+
+\item{coverage_threshold}{Numeric or \code{NULL}; shorthand minimum coverage
+used to build \code{targets$min_coverage} when \code{targets} is not supplied
+(default 0.90).}
+
+\item{max_abs_bias}{Numeric or \code{NULL}; shorthand maximum absolute bias
+used to build \code{targets$max_abs_bias} when \code{targets} is not supplied
+(default 0.01).}
+
+\item{se_sd_window}{Numeric length-2; the acceptable SE / empirical-SD
+window used when \code{targets} is not supplied. Default \code{c(0.8, 1.2)}.}
 }
 \value{
 A list with elements \code{decision} (one of \code{"GO"}, \code{"FLAG"}, or

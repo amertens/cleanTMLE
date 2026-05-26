@@ -35,6 +35,18 @@ a warning.}
 the rule then minimises the worst-case RMSE that each candidate exhibits
 across all DQ degraded scenarios (excluding the \code{"none"} baseline).
 Ignored for the other rules.}
+
+\item{composite_weights}{Named numeric vector of weights for
+\code{rule = "composite"}: \code{rmse}, \code{coverage_penalty}, and
+\code{se_penalty}. Default \code{c(rmse = 1, coverage_penalty = 2,
+  se_penalty = 0.5)}.}
+
+\item{fiord_target_coverage}{Numeric; nominal coverage used by the
+\code{"ci_coverage"} and \code{"fiord_two_stage"} rules. Default 0.95.}
+
+\item{fiord_coverage_tol}{Numeric; tolerance around
+\code{fiord_target_coverage} for the \code{"fiord_two_stage"} Stage-1
+oracle-coverage screen. Default 0.02.}
 }
 \value{
 An object of class \code{tmle_selected_spec} containing the

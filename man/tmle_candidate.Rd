@@ -35,6 +35,34 @@ outcome mechanism (Q-model). If \code{NULL}, defaults to
 
 \item{truncation}{Numeric; PS truncation threshold in (0, 0.5).
 Default: 0.01.}
+
+\item{variance_method}{Character; variance estimator for the candidate,
+one of \code{"IF"} (influence-function; default), \code{"cv_IF"}
+(cross-validated IF), or \code{"robust"}.}
+
+\item{cv_scheme}{Character; cross-fitting scheme, one of \code{"none"}
+(default), \code{"cv_tmle"}, or \code{"sample_split"}.}
+
+\item{cv_V}{Integer or \code{NULL}; number of cross-fitting folds when
+\code{cv_scheme} is not \code{"none"}. \code{NULL} uses a default.}
+
+\item{estimator}{Character; the estimator family, one of \code{"tmle"}
+(default), \code{"aipw"}, or \code{"onestep"}.}
+
+\item{discrete_sl}{Logical; if \code{TRUE}, use the discrete (single
+best-learner) SuperLearner rather than the convex ensemble.}
+
+\item{screener}{Character; variable-screening algorithm prepended to the
+learner library, one of \code{"All"} (default), \code{"corP"},
+\code{"corRank"}, \code{"glmnet"}, or \code{"randomForest"}.}
+
+\item{tmle_control}{List or \code{NULL}; optional control parameters
+passed through to the targeting step.}
+
+\item{match_spec}{List or \code{NULL}; optional matched-cohort
+specification when the candidate operates on a matched subset.}
+
+\item{...}{Reserved for future candidate options.}
 }
 \value{
 A list of class \code{tmle_candidate_spec}.

@@ -21,6 +21,13 @@ clever_covariate_plot(
 H from PS directly.}
 
 \item{lock}{A \code{cleanroom_lock} (required if using \code{ps_fit}).}
+
+\item{bin_extreme}{Logical; if \code{TRUE}, clever-covariate values beyond
+the \code{extreme_quantile} are collapsed into a single extreme bin so a
+few large weights do not dominate the plot scale. Default \code{FALSE}.}
+
+\item{extreme_quantile}{Numeric quantile in (0, 1) defining the extreme
+bin when \code{bin_extreme = TRUE}. Default 0.99.}
 }
 \value{
 A \code{ggplot2} object.

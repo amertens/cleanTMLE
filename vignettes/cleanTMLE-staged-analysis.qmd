@@ -534,6 +534,23 @@ lock <- define_negative_control(lock, "nc_outcome",
 )
 ```
 
+We also prespecify the entire GO / FLAG / STOP decision rule in one
+object and attach it to the lock. `attach_decision_thresholds()`
+records a separate `thresholds_hash`, so the decision rule — not just
+the cohort and estimator definitions — is fingerprinted before any
+checkpoint is scored. Each checkpoint below can read its thresholds
+from this object via the `dt_*()` helpers.
+
+```{r decision-thresholds}
+dt <- decision_thresholds(
+  balance_max_smd   = 0.10,
+  dq_max_abs_bias   = 0.02,
+  nco_rule          = "equivalence",
+  nco_null_band     = 0.02
+)
+lock <- attach_decision_thresholds(lock, dt)
+```
+
 ```{r print-lock}
 validate_analysis_lock(lock)
 print(lock)
@@ -881,6 +898,25 @@ selects the candidate with the best baseline RMSE, while
 candidate that stays inside the gate thresholds across the
 plausible range of every realistic data threat.
 
+### Turning the DQ stress test into a gate (Check Point 2c)
+
+`gate_dq()` converts the degradation table into a
+`cleantmle_checkpoint` so the DQ result enters the GO / FLAG / STOP
+decision on the same footing as the cohort, balance, and
+residual-bias checkpoints. It returns STOP if any degraded scenario
+for the locked candidate breaches the prespecified bias, coverage,
+or RMSE-ratio envelope. Drawing the thresholds from the lock's
+`decision_thresholds()` object keeps the whole decision rule in one
+fingerprinted place.
+
+```{r gate-dq}
+cp_dq <- gate_dq(dq_results,
+                 candidate  = selected$candidate_id,
+                 thresholds = lock$decision_thresholds)  # NULL is fine too
+audit <- record_checkpoint(audit, cp_dq)
+cat(sprintf("Check Point 2c (DQ stress): %s\n", cp_dq$decision))
+```
+
 ```{r audit-stage2b}
 audit <- record_stage(audit, "Stage 2b",
   paste("Plasmode evaluation complete; selected TMLE spec:",
@@ -972,12 +1008,21 @@ missing or returned *stop* (STOP), the prespecified workflow is
 not complete and outcome-analysis functions will not run.
 
 `gate_all()` evaluates all checkpoint objects at once and returns
-the composite classification:
+the composite classification. Pass the DQ checkpoint alongside the
+others so a DQ STOP blocks the gate:
 
 ```{r gate-all}
-composite <- gate_all(cp1, cp2, cp3, allow_flag = TRUE)
+composite <- gate_all(cp1, cp2, cp_dq, cp3, allow_flag = TRUE)
 print(composite)
 ```
+
+`authorize_outcome_analysis()` then inspects the audit trail. With
+`block_on_any_stop = TRUE` (the default), a STOP recorded by *any*
+checkpoint — including the optional DQ-stress gate — blocks
+authorisation, even though `"Check Point 2c"` is not in the default
+`required_stages`. Required stages are matched on the stage key (the
+text before the first colon), so `"Check Point 2"` matches the
+balance checkpoint but never the DQ checkpoint.
 
 ```{r gate}
 gate <- authorize_outcome_analysis(audit)
@@ -1023,6 +1068,28 @@ cat(sprintf("Rationale: %s\n", fake_composite$rationale))
 When the gate returns STOP, no outcome code should execute.
 In `run_clean_tmle()` this is checked automatically; in the modular
 workflow the analyst inspects the gate decision and branches accordingly.
+
+The most consequential STOP in this workflow usually comes from the
+DQ stress test rather than from balance. The block below shows a
+DQ-driven STOP: a candidate that passes the baseline plasmode but
+whose bias under a prespecified threat exceeds the locked envelope.
+Because `authorize_outcome_analysis(block_on_any_stop = TRUE)` honours
+any recorded STOP, this blocks the gate even though the DQ checkpoint
+is not a *required* stage.
+
+```{r dq-stop-demo}
+# A DQ checkpoint that breaches the locked bias envelope returns STOP.
+fake_cp_dq <- gate_dq(dq_results,
+                      candidate    = selected$candidate_id,
+                      max_abs_bias = 0.0001)  # deliberately strict
+cat(sprintf("Strict DQ gate: %s -- %s\n",
+            fake_cp_dq$decision, fake_cp_dq$rationale))
+
+audit_demo <- record_checkpoint(audit, fake_cp_dq)
+gate_demo  <- authorize_outcome_analysis(audit_demo)
+cat(sprintf("Authorization with DQ STOP recorded: %s\n",
+            gate_demo$decision))
+```
 
 ---
 

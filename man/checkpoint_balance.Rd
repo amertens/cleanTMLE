@@ -8,6 +8,7 @@ checkpoint_balance(
   ps_diag,
   max_smd = 0.1,
   min_ess_pct = 50,
+  stop_smd = 0.2,
   lock_hash = NA_character_
 )
 }
@@ -16,10 +17,13 @@ checkpoint_balance(
 \code{\link{compute_ps_diagnostics}}.}
 
 \item{max_smd}{Numeric; maximum tolerable absolute SMD after weighting.
-Default: 0.10.}
+Exceeding this (but not \code{stop_smd}) is a FLAG. Default: 0.10.}
 
 \item{min_ess_pct}{Numeric; minimum ESS as a percent of the original N.
 Default: 50.}
+
+\item{stop_smd}{Numeric; a max weighted SMD strictly above this forces a
+STOP rather than a FLAG. Default 0.20 (the former hard-coded floor).}
 
 \item{lock_hash}{Character; optional lock hash for traceability.}
 }

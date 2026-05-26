@@ -9,20 +9,35 @@ authorize_outcome_analysis(
   required_stages = NULL,
   allow_flag = TRUE,
   lock_hash = NULL,
-  checkpoints = NULL
+  checkpoints = NULL,
+  block_on_any_stop = TRUE
 )
 }
 \arguments{
 \item{audit}{A \code{cleantmle_audit}.}
 
 \item{required_stages}{Character vector of stage labels that must be
-present in the audit.  Partial matching is used.  Default:
+present in the audit.  Matching is on the stage \emph{key} (the text
+before the first colon), so \code{"Check Point 2"} matches
+\code{"Check Point 2: Treatment Comparability"} but NOT
+\code{"Check Point 2c: DQ Stress"}.  Default:
 \code{c("Check Point 1", "Check Point 2", "Check Point 3")}.}
 
 \item{allow_flag}{Logical; if \code{FALSE} any FLAG decision is treated
 as a STOP.  Default \code{TRUE}.}
 
 \item{lock_hash}{Character; optional lock hash for traceability.}
+
+\item{checkpoints}{Optional \code{cleantmle_checkpoint} or list of them;
+supplied instead of (or in addition to) \code{audit}, in which case a
+temporary audit is synthesised from the checkpoints.}
+
+\item{block_on_any_stop}{Logical; if \code{TRUE} (the default) \emph{any}
+recorded checkpoint with a STOP decision blocks authorisation, even
+if it is not in \code{required_stages}.  This makes optional
+checkpoints such as the DQ-stress gate (\code{"Check Point 2c"})
+authoritative once recorded, and prevents a STOP from being masked
+by a later same-prefix checkpoint.}
 }
 \value{
 A \code{cleantmle_checkpoint} of subclass
@@ -69,7 +84,8 @@ lock  <- create_analysis_lock(dat, "treatment", "event_24",
 audit <- create_audit_log(lock)
 ps    <- fit_ps_glm(lock)
 cp1   <- checkpoint_cohort_adequacy(lock)
-cp2   <- checkpoint_balance(lock, ps)
+diag  <- compute_ps_diagnostics(ps)
+cp2   <- checkpoint_balance(diag, lock_hash = lock$lock_hash)
 lock  <- define_negative_control(lock, "nc_outcome")
 nc    <- run_negative_control(lock, "nc_outcome", ps)
 cp3   <- checkpoint_residual_bias(nc, lock_hash = lock$lock_hash)

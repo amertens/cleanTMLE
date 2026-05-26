@@ -744,6 +744,11 @@ create_analysis_lock_from_yaml <- function(config_path, data,
 #' @param ps_fit Alternatively, a \code{ps_fit} object to compute
 #'   H from PS directly.
 #' @param lock A \code{cleanroom_lock} (required if using \code{ps_fit}).
+#' @param bin_extreme Logical; if \code{TRUE}, clever-covariate values beyond
+#'   the \code{extreme_quantile} are collapsed into a single extreme bin so a
+#'   few large weights do not dominate the plot scale. Default \code{FALSE}.
+#' @param extreme_quantile Numeric quantile in (0, 1) defining the extreme
+#'   bin when \code{bin_extreme = TRUE}. Default 0.99.
 #'
 #' @return A \code{ggplot2} object.
 #'

@@ -49,21 +49,46 @@ estimate_gcomprisk <- function(spec, risk_time = NULL, outcome_formula = NULL,
   event_var <- spec$outcome$name
   event_ind <- .build_event_indicator(data, spec)
 
-  # Build outcome formula
+  # Build outcome formula. Accept either a one-sided (~ x + y) or two-sided
+  # formula in `outcome_formula`/`spec$outcome$formula`; we always wrap the
+  # right-hand side in the appropriate Surv() response so the caller does not
+  # have to know the internal event-indicator name.
+  .rhs_of <- function(f) paste(deparse(f[[length(f)]]), collapse = " ")
+  trt_name <- if (!is.null(spec$treatment)) spec$treatment$name else NULL
+
   if (!is.null(outcome_formula)) {
-    out_fml <- outcome_formula
+    rhs <- .rhs_of(outcome_formula)
   } else if (!is.null(spec$outcome$formula)) {
-    rhs <- deparse(spec$outcome$formula[[2]])
-    out_fml <- as.formula(paste("survival::Surv(", time_var, ",", "event_ind) ~", rhs))
+    rhs <- .rhs_of(spec$outcome$formula)
+  } else if (!is.null(trt_name)) {
+    rhs <- trt_name
   } else {
-    # Use treatment variable as the only predictor
-    if (!is.null(spec$treatment)) {
-      out_fml <- as.formula(paste("survival::Surv(", time_var, ",", "event_ind) ~",
-                                  spec$treatment$name))
-    } else {
-      out_fml <- as.formula(paste("survival::Surv(", time_var, ",", "event_ind) ~ 1"))
+    rhs <- "1"
+  }
+
+  # G-computation predicts the outcome under each treatment level, so the
+  # treatment MUST appear in the outcome model. If a treatment is identified
+  # but absent from the outcome model, the counterfactual predictions are
+  # identical across arms and the risk difference is degenerately zero. This
+  # is a silent-failure trap, so we inject the treatment and warn loudly
+  # rather than returning a meaningless null contrast.
+  if (!is.null(trt_name)) {
+    rhs_terms <- tryCatch(
+      attr(stats::terms(stats::as.formula(paste("~", rhs))), "term.labels"),
+      error = function(e) character(0))
+    if (!(trt_name %in% rhs_terms)) {
+      warning(sprintf(
+        paste0("estimate_gcomprisk(): treatment '%s' was not in the outcome ",
+               "model; adding it. g-computation requires the treatment in the ",
+               "outcome model, otherwise the risk difference is identically ",
+               "zero. Add '%s' to identify_outcome(formula = ...) to silence ",
+               "this warning."),
+        trt_name, trt_name), call. = FALSE)
+      rhs <- paste(trt_name, "+", rhs)
     }
   }
+  out_fml <- stats::as.formula(
+    paste0("survival::Surv(", time_var, ", event_ind) ~ ", rhs))
 
   # Fit Cox PH model
   data_fit <- data
@@ -129,7 +154,10 @@ estimate_gcomprisk <- function(spec, risk_time = NULL, outcome_formula = NULL,
   boot_results <- NULL
   if (nboot > 0) {
     set.seed(seed)
-    boot_results <- .bootstrap_gcomp(spec, nboot, risk_time, outcome_formula)
+    # Pass the fully resolved formula (treatment already injected) so the
+    # bootstrap does not re-trigger the treatment-injection warning.
+    boot_results <- suppressWarnings(
+      .bootstrap_gcomp(spec, nboot, risk_time, out_fml))
     risk_df <- .attach_boot_ci(risk_df, boot_results)
   }
 

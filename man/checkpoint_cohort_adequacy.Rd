@@ -8,19 +8,29 @@ checkpoint_cohort_adequacy(
   lock,
   min_n_per_arm = 50L,
   min_events = 20L,
-  min_prevalence = 0.01
+  min_prevalence = 0.01,
+  stop_n_per_arm = NULL,
+  stop_min_events = NULL
 )
 }
 \arguments{
 \item{lock}{A \code{cleanroom_lock}.}
 
 \item{min_n_per_arm}{Integer; minimum acceptable sample size per
-treatment arm. Default: 50.}
+treatment arm. A shortfall below this (but above \code{stop_n_per_arm})
+is a FLAG. Default: 50.}
 
 \item{min_events}{Integer; minimum acceptable total outcome events.
 Default: 20.}
 
 \item{min_prevalence}{Numeric; minimum outcome prevalence. Default: 0.01.}
+
+\item{stop_n_per_arm}{Integer; a per-arm count strictly below this
+forces a STOP rather than a FLAG. Default \code{NULL} = 20 (the former
+hard-coded floor).}
+
+\item{stop_min_events}{Integer; a total event count strictly below this
+forces a STOP. Default \code{NULL} = \code{min_events}.}
 }
 \value{
 A \code{cleantmle_checkpoint} for Check Point 1.

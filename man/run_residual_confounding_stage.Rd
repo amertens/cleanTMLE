@@ -9,7 +9,10 @@ run_residual_confounding_stage(
   ps_fit,
   variables = NULL,
   alpha = 0.05,
-  max_abs_estimate = 0.05
+  max_abs_estimate = 0.05,
+  rule = c("significance", "equivalence"),
+  null_band = NULL,
+  adjust = c("none", "bonferroni")
 )
 }
 \arguments{
@@ -27,6 +30,18 @@ control.  Default \code{0.05}.}
 
 \item{max_abs_estimate}{Numeric; absolute estimate threshold for
 flagging a negative control.  Default \code{0.05}.}
+
+\item{rule}{Character; negative-control screening rule passed to
+\code{\link{checkpoint_residual_bias}}: \code{"significance"} (default)
+or \code{"equivalence"}. If the lock carries a
+\code{\link{decision_thresholds}} object and \code{rule} is not
+supplied, the lock's NCO rule is used.}
+
+\item{null_band}{Numeric; practical-null half-width required when
+\code{rule = "equivalence"}.}
+
+\item{adjust}{Character; multiplicity adjustment for the equivalence
+intervals: \code{"none"} (default) or \code{"bonferroni"}.}
 }
 \value{
 A list of class \code{residual_confounding_stage} with:

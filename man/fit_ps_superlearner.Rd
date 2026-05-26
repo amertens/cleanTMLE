@@ -9,6 +9,15 @@ fit_ps_superlearner(lock, truncate = 0.01, cv_folds = 10L, cluster = NULL, ...)
 \arguments{
 \item{lock}{A \code{cleanroom_lock} from \code{\link[=create_analysis_lock]{create_analysis_lock()}}.}
 
+\item{truncate}{Numeric; propensity-score truncation bound in (0, 0.5).
+Predicted scores are clamped to \verb{[truncate, 1 - truncate]}. Default 0.01.}
+
+\item{cv_folds}{Integer; number of SuperLearner cross-validation folds.
+Default 10.}
+
+\item{cluster}{Optional parallel cluster (from \pkg{parallel}) for the
+SuperLearner fit. Default \code{NULL} (sequential).}
+
 \item{...}{Additional arguments passed to \code{SuperLearner::SuperLearner()}.}
 }
 \value{

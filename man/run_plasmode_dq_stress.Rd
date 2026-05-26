@@ -10,6 +10,7 @@ run_plasmode_dq_stress(
   effect_sizes = c(0.05),
   reps = 50L,
   data_quality_scenarios = list(),
+  q0_library = NULL,
   verbose = TRUE
 )
 }
@@ -25,6 +26,12 @@ Default: \code{c(0.05)}.}
 typically smaller than the baseline plasmode for speed.}
 
 \item{data_quality_scenarios}{A named list of DQ scenarios; see Details.}
+
+\item{q0_library}{Optional SuperLearner library (character vector) for
+the plasmode outcome generator Q0. Default \code{NULL} uses a
+covariate-only logistic GLM. Supplying a richer library reduces the
+linear-in-logit bias the GLM Q0 imposes on candidate selection when
+the true outcome surface is nonlinear.}
 
 \item{verbose}{Logical; print progress messages.}
 }
@@ -50,9 +57,16 @@ outcomes are used.
 The \code{data_quality_scenarios} list may contain any combination of:
 
 \describe{
-\item{\code{covariate_missingness}}{List with \code{fractions}
+\item{\code{covariate_missingness}}{MCAR. List with \code{fractions}
 (numeric vector, e.g. \code{c(0.05, 0.10, 0.20)}) and optional
 \code{variables} (character vector; default: all covariates).}
+\item{\code{covariate_missingness_mar}}{MAR (treatment-dependent).
+List with \code{fractions} (control-arm missingness fractions),
+optional \code{variables}, and optional \code{treatment_OR}
+(odds-ratio multiplier for treated-arm missingness; default 3).
+Because missingness depends on the arm and the column is
+median-imputed, this scenario is a stronger test than MCAR: the
+imputation is biased rather than merely inefficient.}
 \item{\code{treatment_misclass}}{List with optional \code{rates}
 (numeric vector for symmetric flips) and / or asymmetric
 \code{sensitivity} and \code{specificity} (numeric vectors of
