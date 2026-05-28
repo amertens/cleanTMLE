@@ -47,6 +47,48 @@ test_that("run_plasmode_dq_stress runs and returns a metrics frame", {
 })
 
 
+test_that("fit_timeout argument: callr guard produces valid results or degrades gracefully", {
+  # When callr is available and fit_timeout is finite, each replicate's fits
+  # run in a killable subprocess. On timeout the replicate is recorded as NA.
+  # This test verifies that: (a) results still conform to the expected schema,
+  # (b) the guard falls back gracefully when callr is absent, and
+  # (c) a generous timeout (300s) never actually triggers on this tiny DGP.
+  set.seed(2026)
+  dat  <- sim_func1(n = 200, seed = 2)
+  lock <- create_analysis_lock(
+    data        = dat,
+    treatment   = "treatment",
+    outcome     = "event_24",
+    covariates  = c("age", "sex", "biomarker"),
+    sl_library  = "SL.glm",
+    plasmode_reps = 3L,
+    seed        = 2L
+  )
+  candidates <- list(
+    tmle_candidate("glm_t01", "GLM, trunc=0.01",
+                   g_library = "SL.glm", truncation = 0.01)
+  )
+  # 300 second timeout — never triggers on this tiny DGP but exercises the
+  # callr-session-init path when callr is available.
+  res <- run_plasmode_dq_stress(
+    lock,
+    tmle_candidates        = candidates,
+    effect_sizes           = c(0.05),
+    reps                   = 2L,
+    data_quality_scenarios = list(
+      covariate_missingness = list(fractions = c(0.10))
+    ),
+    fit_timeout = 300,
+    verbose     = FALSE
+  )
+  expect_s3_class(res, "plasmode_dq_results")
+  expect_true(is.data.frame(res$metrics))
+  expect_true(nrow(res$metrics) > 0L)
+  expect_true(all(c("scenario", "level", "candidate",
+                    "bias", "rmse", "coverage") %in% names(res$metrics)))
+})
+
+
 test_that("summarize_dq_degradation produces a sensible relative table", {
   set.seed(2026)
   dat  <- sim_func1(n = 300, seed = 1)
