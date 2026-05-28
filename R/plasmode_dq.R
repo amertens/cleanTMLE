@@ -207,6 +207,81 @@ print_locked_spec <- function(lock) {
 }
 
 
+#' Fit all candidates for one synthetic replicate, bounded by a wall clock.
+#'
+#' A degraded synthetic design can send the SuperLearner/glmnet candidate fit
+#' into a CPU/memory runaway. That is not an R error (so a plain tryCatch does
+#' not help) and in-process elapsed-time limits (setTimeLimit / withTimeout)
+#' abort the R front end unsafely on some platforms. We therefore run the
+#' replicate's fits inside a persistent, killable `callr` subprocess held in
+#' `sess$rs`. If the fits exceed `timeout` seconds the subprocess is killed,
+#' a fresh one is started for subsequent replicates, and every candidate for
+#' this replicate is recorded as NA -- exactly as a fit error would be. When
+#' `sess` is NULL (callr unavailable or no finite timeout) fits run in-process.
+#' @keywords internal
+#' @noRd
+.fit_candidates_bounded <- function(sess, Y_sim, A, W_data, treatment,
+                                     covariates, n, tmle_candidates,
+                                     timeout, label = "") {
+  na1 <- list(est = NA_real_, se = NA_real_,
+              ci_lower = NA_real_, ci_upper = NA_real_)
+  ids <- vapply(tmle_candidates, function(x) x$candidate_id, character(1))
+  na_all <- stats::setNames(rep(list(na1), length(ids)), ids)
+
+  in_process <- function() {
+    res <- lapply(tmle_candidates, function(cand)
+      tryCatch(.plasmode_fit_one_candidate(
+                 Y_sim = Y_sim, A = A, W_data = W_data, treatment = treatment,
+                 covariates = covariates, cand = cand, n = n),
+               error = function(e) na1))
+    stats::setNames(res, ids)
+  }
+
+  if (is.null(sess) || is.null(sess$rs) || !is.finite(timeout))
+    return(in_process())
+
+  # Self-contained worker: references cleanTMLE by namespace so it does not
+  # drag the package environment through serialisation.
+  child_fn <- function(Y_sim, A, W_data, treatment, covariates, n, cands) {
+    one <- function(cand) tryCatch(
+      cleanTMLE:::.plasmode_fit_one_candidate(
+        Y_sim = Y_sim, A = A, W_data = W_data, treatment = treatment,
+        covariates = covariates, cand = cand, n = n),
+      error = function(e) list(est = NA_real_, se = NA_real_,
+                               ci_lower = NA_real_, ci_upper = NA_real_))
+    stats::setNames(lapply(cands, one),
+                    vapply(cands, function(x) x$candidate_id, character(1)))
+  }
+  environment(child_fn) <- globalenv()
+
+  started <- tryCatch({
+    sess$rs$call(child_fn, args = list(Y_sim, A, W_data, treatment,
+                                       covariates, n, tmle_candidates))
+    TRUE
+  }, error = function(e) FALSE)
+  if (!started) {                       # session wedged: rebuild and degrade
+    try(sess$rs$kill(), silent = TRUE)
+    sess$rs <- tryCatch(callr::r_session$new(), error = function(e) NULL)
+    return(in_process())
+  }
+
+  state <- tryCatch(sess$rs$poll_process(timeout * 1000),
+                    error = function(e) "error")
+  if (!identical(state, "ready")) {     # timeout or crash: kill the runaway
+    message(sprintf(
+      "    DQ fit exceeded %.0fs%s -> NA (out-of-process fit killed)",
+      timeout, if (nzchar(label)) paste0(" at ", label) else ""))
+    try(sess$rs$kill(), silent = TRUE)
+    sess$rs <- tryCatch(callr::r_session$new(), error = function(e) NULL)
+    return(na_all)
+  }
+  msg <- tryCatch(sess$rs$read(), error = function(e) NULL)
+  if (is.null(msg) || !is.null(msg$error) || is.null(msg$result))
+    return(na_all)
+  msg$result
+}
+
+
 # ── Internal: DQ Degradation Functions ───────────────────────────────────
 
 #' Introduce MCAR missingness into covariates and impute with column medians
@@ -465,6 +540,7 @@ run_plasmode_dq_stress <- function(lock,
                                     reps            = 50L,
                                     data_quality_scenarios = list(),
                                     q0_library      = NULL,
+                                    fit_timeout     = Inf,
                                     verbose         = TRUE) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
@@ -647,6 +723,21 @@ run_plasmode_dq_stress <- function(lock,
                 nrow(scenario_grid), length(effect_sizes), reps, length(cand_ids)))
   }
 
+  # ── Out-of-process fit guard ──────────────────────────────────────────
+  # Each replicate's candidate fits run in a persistent, killable callr
+  # subprocess so a degenerate synthetic design that sends glmnet into a
+  # runaway cannot wedge the whole study. See .fit_candidates_bounded().
+  # Falls back to in-process fitting when callr is unavailable.
+  sess <- NULL
+  if (is.finite(fit_timeout) && requireNamespace("callr", quietly = TRUE)) {
+    sess <- new.env(parent = emptyenv())
+    sess$rs <- tryCatch(callr::r_session$new(), error = function(e) NULL)
+    if (is.null(sess$rs)) sess <- NULL
+  }
+  on.exit({
+    if (!is.null(sess) && !is.null(sess$rs)) try(sess$rs$close(), silent = TRUE)
+  }, add = TRUE)
+
   # ── Run plasmode across scenario grid ─────────────────────────────────
   all_metrics <- list()
 
@@ -773,21 +864,17 @@ run_plasmode_dq_stress <- function(lock,
                                             A = A_rep, treatment_OR = or_a)
         }
 
-        # Fit each candidate.
-        cand_results <- list()
-        for (cand in tmle_candidates) {
-          cand_results[[cand$candidate_id]] <- tryCatch(
-            .plasmode_fit_one_candidate(
-              Y_sim = Y_fit, A = A_fit, W_data = W_fit,
-              treatment = treatment, covariates = covariates,
-              cand = cand, n = n
-            ),
-            error = function(e) {
-              list(est = NA_real_, se = NA_real_,
-                   ci_lower = NA_real_, ci_upper = NA_real_)
-            }
-          )
-        }
+        # Fit all candidates for this replicate inside a killable subprocess
+        # bounded by `fit_timeout` seconds (see .fit_candidates_bounded): a
+        # degraded synthetic design can send the SuperLearner/glmnet fit into
+        # a CPU/memory runaway that is not an R error, so one pathological draw
+        # would otherwise wedge the entire stress test. On timeout the worker
+        # is killed and this replicate's candidates are recorded as NA.
+        cand_results <- .fit_candidates_bounded(
+          sess, Y_sim = Y_fit, A = A_fit, W_data = W_fit,
+          treatment = treatment, covariates = covariates, n = n,
+          tmle_candidates = tmle_candidates, timeout = fit_timeout,
+          label = sprintf("%s[%s] rep %d", sc_name, sc_level, rep_i))
 
         rep_results[[rep_i]] <- c(cand_results, list(.truth = truth))
       }
