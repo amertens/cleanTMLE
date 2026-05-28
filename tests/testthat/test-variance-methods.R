@@ -37,6 +37,21 @@ test_that("bootstrap_rd_variance works for TMLE", {
   expect_lt(abs(bs$estimate - d$truth), 0.06)
 })
 
+test_that("bootstrap_rd_variance works for match_tmle", {
+  skip_if_not_installed("tmle")
+  skip_if_not_installed("SuperLearner")
+  d <- make_conf_data(n = 1200, seed = 7)
+  bs <- bootstrap_rd_variance(d$data, "A", "Y", c("W1", "W2"),
+                              estimator = "match_tmle", R = 30L,
+                              sl_library = "SL.glm", seed = 11L)
+  expect_true(is.finite(bs$se) && bs$se > 0)
+  expect_length(bs$ci, 2)
+  expect_lt(bs$ci[1], bs$ci[2])
+  expect_gte(bs$R_effective, 20L)
+  # Point estimate should be close to truth
+  expect_lt(abs(bs$estimate - d$truth), 0.08)
+})
+
 test_that("select_variance_method returns a method and per-method coverage", {
   # Build a small set of synthetic datasets with a known truth.
   set.seed(99)

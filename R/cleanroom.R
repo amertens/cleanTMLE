@@ -1755,6 +1755,28 @@ as.character.tmle_selected_spec <- function(x, ...) {
 #' @return An object of class `match_result` containing the causal risk
 #'   difference estimate, SE, 95% CI, p-value, and the matched dataset.
 #'
+#' @section Variance:
+#' The paired-difference SE in the returned object conditions on the fixed
+#' matched dataset and does not propagate matching-draw variance -- the
+#' variability from which controls are selected when re-sampling. Abadie and
+#' Imbens (2008) show that the standard paired SE is inconsistent for this
+#' reason; Abadie and Imbens (2016) show that matching on the estimated
+#' propensity score does not restore consistency of the naive bootstrap.
+#' The principled solution is a full-pipeline nonparametric bootstrap that
+#' re-runs PS estimation, matching, and TMLE on each resample.
+#' Use \code{bootstrap_rd_variance(estimator = "match_tmle")} to obtain a
+#' bootstrap SE that captures matching-draw variance.
+#' \code{select_variance_method(estimator = "match_tmle")} can confirm
+#' which variance method achieves nominal oracle coverage for the study's
+#' data-generating process and sample size.
+#'
+#' @references
+#' Abadie, A. and Imbens, G. W. (2008). On the failure of the bootstrap for
+#' matching estimators. \emph{Econometrica}, 76(6), 1537--1557.
+#'
+#' Abadie, A. and Imbens, G. W. (2016). Matching on the estimated propensity
+#' score. \emph{Econometrica}, 84(2), 781--807.
+#'
 #' @export
 run_match_workflow <- function(lock, ps_fit, caliper = NULL,
                                override_clean_room = FALSE) {

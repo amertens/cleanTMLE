@@ -1,7 +1,21 @@
-# cleanTMLE 0.1.4 (development)
+# cleanTMLE 0.1.5 (development)
 
 ## FIORD selector: second stage (variance-method selection)
 
+* **`bootstrap_rd_variance(estimator = "match_tmle")`** is a new estimator
+  option that implements the theoretically principled bootstrap for matched
+  estimators (Abadie and Imbens 2008, 2016). Each bootstrap resample re-runs
+  the full pipeline: GLM propensity-score estimation, greedy 1:1 nearest-
+  neighbour matching on the logit-PS, and TMLE on the matched cohort. This
+  captures matching-draw variance (the variability from which controls are
+  selected when the data are re-sampled) that the standard paired-difference
+  SE ignores, correcting anti-conservative IF coverage in good-overlap
+  settings. The internal `.match_nn_pairs()` helper mirrors
+  `run_match_workflow()` exactly.
+* **`select_variance_method(estimator = "match_tmle")`** is now supported.
+  The `"influence"` branch uses the paired-difference SE on the matched
+  cohort; the `"bootstrap"` branch re-runs the full pipeline via
+  `bootstrap_rd_variance()`.
 * **`bootstrap_rd_variance()`** adds a native nonparametric bootstrap
   standard error and percentile interval for the marginal risk
   difference (TMLE or stabilised IPTW). This is the principled variance
@@ -13,6 +27,10 @@
   synthetic data is closest to nominal. Together with
   `select_tmle_candidate(rule = "fiord_two_stage")` (stage 1) this closes
   the gap to the full FIORD procedure.
+* **`run_match_workflow()`** Roxygen now includes a `@section Variance`
+  explaining the paired-difference SE limitation and pointing to
+  `bootstrap_rd_variance(estimator = "match_tmle")` as the recommended
+  alternative. References Abadie and Imbens (2008, 2016).
 
 ## Loud failure modes (validity)
 
