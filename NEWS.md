@@ -32,6 +32,21 @@
   confounding nor censoring) now warns rather than returning the crude
   contrast as if it were the TMLE estimate.
 
+## Callr out-of-process fit guard (opt-in)
+
+* **`run_plasmode_dq_stress(fit_timeout = Inf)`** now accepts a `fit_timeout`
+  argument (seconds). When a finite value is supplied and the `callr` package
+  is available, each DQ-stress replicate's candidate fits run inside a
+  persistent, killable `callr` subprocess (`.fit_candidates_bounded()`). If the
+  fits exceed `fit_timeout` seconds the subprocess is killed, a fresh session
+  is started for subsequent replicates, and every candidate for that replicate
+  is recorded as `NA` — exactly as a fit error would be. This prevents a
+  degenerate synthetic design (e.g. near-positivity scenarios that send
+  `glmnet` into a runaway) from wedging the entire stress test. The default
+  (`Inf`) preserves the existing in-process behaviour so existing scripts are
+  unaffected; setting `fit_timeout = 120` is recommended when any SuperLearner
+  candidate uses `SL.glmnet`.
+
 ## Tests
 
 * New `test-ground-truth.R` checks the estimators against an analytic
