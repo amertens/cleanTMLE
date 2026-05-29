@@ -43,15 +43,15 @@ dat <- sim_func1(n = 400, seed = 42)
 The function index below labels each exported function by what it
 uses internally from the outcome side of the data:
 
-- **No outcome access** --- uses W, A, metadata, lock objects,
+- **No outcome access**:uses W, A, metadata, lock objects,
   synthetic outcomes, or diagnostics not involving Y.
-- **Marginal Y only** --- uses event counts or marginal outcome
+- **Marginal Y only**:uses event counts or marginal outcome
   support (no estimation of the A--Y association).
-- **Synthetic Y only** --- uses plasmode-generated outcomes; no
+- **Synthetic Y only**:uses plasmode-generated outcomes; no
   observed Y.
-- **Negative-control Y only** --- uses prespecified NC outcomes,
+- **Negative-control Y only**:uses prespecified NC outcomes,
   not the primary outcome.
-- **Primary Y** --- estimates the observed
+- **Primary Y**:estimates the observed
   treatment-primary-outcome association; requires authorization.
 
 These labels describe what exported package functions use
@@ -596,7 +596,7 @@ unlink(tmp)
 ### TMLE-based negative controls
 
 The default `run_negative_control()` uses IPTW.
-`run_negative_control_tmle()` is doubly robust --- more consistent
+`run_negative_control_tmle()` is doubly robust:more consistent
 with a TMLE-centred pipeline:
 
 ```{r nc-tmle}
@@ -650,37 +650,37 @@ The 0.2 release adds eight axes to the plasmode candidate grid plus four new hel
 
 **New `tmle_candidate()` arguments** (all back-compatible):
 
-- `variance_method ∈ c("IF","cv_IF","robust")` --- IF is the current default; `cv_IF` uses fold-specific Q,g; `robust` requests the upstream `tmle::tmle(variance.method = "tmle")` plug-in variance (Tran et al. 2018).
-- `cv_scheme ∈ c("none","cv_tmle","sample_split")` --- promotes CV-TMLE to a first-class axis; `cv_V` lets you pin V (otherwise auto-set from the Phillips rule).
-- `estimator ∈ c("tmle","aipw","onestep")` --- recorded on the spec; AIPW is post-hoc-computable via `compute_aipw(g_fit, Q_fit)`.
-- `discrete_sl` --- request the discrete super learner (`method.NNLS`, eSL in the dSL pool).
-- `screener ∈ c("All","corP","corRank","glmnet","randomForest")` --- couples a screener with every Q, g learner inside CV (Phillips p. 1283).
-- `tmle_control` --- list of upstream `tmle::tmle()` controls (`fluctuation`, `alpha`, `target.gwt`, `automate`, `min.retain`, `cv_Qinit`).
-- `match_spec` --- list `list(method, ratio, caliper)` for matched-cohort candidates.
+- `variance_method ∈ c("IF","cv_IF","robust")`:IF is the current default; `cv_IF` uses fold-specific Q,g; `robust` requests the upstream `tmle::tmle(variance.method = "tmle")` plug-in variance (Tran et al. 2018).
+- `cv_scheme ∈ c("none","cv_tmle","sample_split")`:promotes CV-TMLE to a first-class axis; `cv_V` lets you pin V (otherwise auto-set from the Phillips rule).
+- `estimator ∈ c("tmle","aipw","onestep")`:recorded on the spec; AIPW is post-hoc-computable via `compute_aipw(g_fit, Q_fit)`.
+- `discrete_sl`:request the discrete super learner (`method.NNLS`, eSL in the dSL pool).
+- `screener ∈ c("All","corP","corRank","glmnet","randomForest")`:couples a screener with every Q, g learner inside CV (Phillips p. 1283).
+- `tmle_control`:list of upstream `tmle::tmle()` controls (`fluctuation`, `alpha`, `target.gwt`, `automate`, `min.retain`, `cv_Qinit`).
+- `match_spec`:list `list(method, ratio, caliper)` for matched-cohort candidates.
 - `truncation` now accepts either numeric or one of the named rules `"sqrt_n_ln_n"`, `"fixed_001"`, `"fixed_025"`, `"fixed_05"`. The named rule is resolved at fit time when `n` is known.
 
 **New `expand_tmle_candidate_grid()` arguments**: `estimators`, `cv_schemes`, `variance_methods`, `discrete_sl`, `screeners`, `max_candidates`. The function Cartesian-products the requested axes and caps the grid at `max_candidates`.
 
 **New `select_tmle_candidate()` rules**:
 
-- `rule = "ci_coverage"` --- picks the candidate whose oracle coverage is closest to nominal.
-- `rule = "min_se"` --- picks the candidate with the smallest mean SE.
-- `rule = "composite"` --- weighted composite of standardised RMSE, coverage penalty, and SE-vs-SD penalty.
-- `rule = "fiord_two_stage"` --- the FIORD two-stage selector: Stage 1 screens candidates whose oracle coverage is within `fiord_coverage_tol` (default 0.02) of the target; Stage 2 picks the smallest mean SE among survivors. *Variance-method selection on the locked point estimator (FIORD Stage 2 proper)* is still pending; this rule currently selects the point-estimator candidate.
+- `rule = "ci_coverage"`:picks the candidate whose oracle coverage is closest to nominal.
+- `rule = "min_se"`:picks the candidate with the smallest mean SE.
+- `rule = "composite"`:weighted composite of standardised RMSE, coverage penalty, and SE-vs-SD penalty.
+- `rule = "fiord_two_stage"`:the FIORD two-stage selector: Stage 1 screens candidates whose oracle coverage is within `fiord_coverage_tol` (default 0.02) of the target; Stage 2 picks the smallest mean SE among survivors. *Variance-method selection on the locked point estimator (FIORD Stage 2 proper)* is still pending; this rule currently selects the point-estimator candidate.
 
 **New helpers**:
 
-- `compute_n_eff(y, family)` --- effective sample size `min(n, 5·n_rare)` for binary outcomes (Phillips p. 1281).
-- `recommend_cv_V(n_eff)` --- the Phillips V rule (V = 20 for n_eff < 500, V = 10 for n_eff < 5,000, ...).
-- `build_sl_library(role, n_eff, p, preset)` --- four role-aware library presets (`small_n`, `default`, `rich`, `very_rich`), keyed by effective sample size.
-- `resolve_truncation_rule(rule, n)` --- numeric pass-through or one of the named rules.
+- `compute_n_eff(y, family)`:effective sample size `min(n, 5·n_rare)` for binary outcomes (Phillips p. 1281).
+- `recommend_cv_V(n_eff)`:the Phillips V rule (V = 20 for n_eff < 500, V = 10 for n_eff < 5,000, ...).
+- `build_sl_library(role, n_eff, p, preset)`:four role-aware library presets (`small_n`, `default`, `rich`, `very_rich`), keyed by effective sample size.
+- `resolve_truncation_rule(rule, n)`:numeric pass-through or one of the named rules.
 
 **New post-processors**:
 
-- `run_positivity_diagnostics(ps_fit)` --- single tidy object with PS C-statistic, per-arm distribution summary, % truncated, bounded-g quantiles, and a near-positivity-violation flag.
-- `compute_G_value(estimate, se)` --- the additive bias that would push the CI across the null (Gruber 2023 RWE).
-- `run_delta_sensitivity(estimate, se, delta_grid)` --- causal-gap sensitivity sweep on top of an existing fit (SAP §8.3.4).
-- `compute_aipw(g_fit, Q_fit)` --- AIPW estimate from the same nuisances the modular TMLE uses, useful as a candidate-grid comparator.
+- `run_positivity_diagnostics(ps_fit)`:single tidy object with PS C-statistic, per-arm distribution summary, % truncated, bounded-g quantiles, and a near-positivity-violation flag.
+- `compute_G_value(estimate, se)`:the additive bias that would push the CI across the null (Gruber 2023 RWE).
+- `run_delta_sensitivity(estimate, se, delta_grid)`:causal-gap sensitivity sweep on top of an existing fit (SAP §8.3.4).
+- `compute_aipw(g_fit, Q_fit)`:AIPW estimate from the same nuisances the modular TMLE uses, useful as a candidate-grid comparator.
 
 **Example**:
 
@@ -707,11 +707,11 @@ selected <- select_tmle_candidate(
 
 These helpers are recommended outputs and are planned for later cleanTMLE releases; current users should build them from the documented primitives.
 
-- `clean_target_trial_table()` --- render a target-trial timing table from an analysis lock and `attach_estimand()` metadata. Build manually from the lock fields and the estimand object for now.
-- `checkpoint_dashboard()` --- aggregate per-checkpoint records into a single GO / FLAG / STOP dashboard. Build by binding the rows returned by individual `checkpoint_*()` calls and `gate_all()`.
-- `run_plasmode_dq_stress(..., scenarios = with_u_gradient(...))` --- extend the unmeasured-confounding scenario from a single fixed latent-U strength to a prespecified grid of strengths, so the DQ stress test produces an E-value-style sensitivity curve as a by-product. Current users can approximate this by calling `run_plasmode_dq_stress()` repeatedly with different `unmeasured_U_strength` parameter values and concatenating the metrics.
-- `run_preprotocol_plasmode()` --- a pre-protocol variant of the plasmode + DQ stress test that takes user-specified covariate distributions and a hypothesised treatment-mechanism strength instead of a real lock. Use case: deciding which dataset to use before a data-use agreement is signed.
-- `run_ctmle_candidate()`, `run_bootstrap_variance()` --- C-TMLE (collaborative TMLE; Gruber 2009 §3.2) and nonparametric bootstrap variance paths. Both require wrapping a separate upstream package (`ctmle`, `boot`/`HAL`) and are on the 0.3 roadmap.
+- `clean_target_trial_table()`:render a target-trial timing table from an analysis lock and `attach_estimand()` metadata. Build manually from the lock fields and the estimand object for now.
+- `checkpoint_dashboard()`:aggregate per-checkpoint records into a single GO / FLAG / STOP dashboard. Build by binding the rows returned by individual `checkpoint_*()` calls and `gate_all()`.
+- `run_plasmode_dq_stress(..., scenarios = with_u_gradient(...))`:extend the unmeasured-confounding scenario from a single fixed latent-U strength to a prespecified grid of strengths, so the DQ stress test produces an E-value-style sensitivity curve as a by-product. Current users can approximate this by calling `run_plasmode_dq_stress()` repeatedly with different `unmeasured_U_strength` parameter values and concatenating the metrics.
+- `run_preprotocol_plasmode()`:a pre-protocol variant of the plasmode + DQ stress test that takes user-specified covariate distributions and a hypothesised treatment-mechanism strength instead of a real lock. Use case: deciding which dataset to use before a data-use agreement is signed.
+- `run_ctmle_candidate()`, `run_bootstrap_variance()`:C-TMLE (collaborative TMLE; Gruber 2009 §3.2) and nonparametric bootstrap variance paths. Both require wrapping a separate upstream package (`ctmle`, `boot`/`HAL`) and are on the 0.3 roadmap.
 
 ```{r session-info}
 sessionInfo()

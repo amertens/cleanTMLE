@@ -47,10 +47,21 @@
 #' forest_plot(hr_fit)
 #' }
 #'
+#' @section Experimental:
+#' `estimate_ipwhr()` is outside the tested v0.1 scope of cleanTMLE, which
+#' covers binary point exposure, binary outcome, and the marginal risk
+#' difference only. Time-to-event estimators are exported for early adopters
+#' but are not yet validated through the staged workflow and the API may change.
+#'
 #' @export
 estimate_ipwhr <- function(spec, covariates = NULL, trim = NULL, trunc = NULL,
                            weight_type = c("iptw", "smr"),
                            robust = TRUE, ...) {
+  rlang::warn(
+    paste0("estimate_ipwhr() is experimental and outside the tested v0.1 ",
+           "scope of cleanTMLE (binary point exposure / binary outcome only)."),
+    .frequency = "once", .frequency_id = "estimate_ipwhr"
+  )
   if (!inherits(spec, "cr_spec")) {
     stop("`spec` must be a cr_spec object.", call. = FALSE)
   }

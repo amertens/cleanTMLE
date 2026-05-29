@@ -18,14 +18,16 @@ NULL
 #'   for an \code{audit} attribute carrying authorisation status.
 #'
 #' @param lock A \code{cleanroom_lock}.
-#' @param override_clean_room Logical; if \code{TRUE} the check is skipped.
+#' @param allow_outcome_access Logical; if \code{TRUE} the outcome-guard check
+#'   is skipped. Use this argument in place of the deprecated
+#'   \code{override_clean_room}.
 #' @param caller Character; name of the calling function (for error messages).
 #'
 #' @return \code{invisible(TRUE)} if access is permitted.
 #' @keywords internal
-.check_outcome_access <- function(lock, override_clean_room = FALSE,
+.check_outcome_access <- function(lock, allow_outcome_access = FALSE,
                                   caller = "Stage 4 function") {
-  if (isTRUE(override_clean_room)) return(invisible(TRUE))
+  if (isTRUE(allow_outcome_access)) return(invisible(TRUE))
 
   # Lock-level opt-out: if the user created the lock with
   # cleanroom_enabled = FALSE, the package is being used as a plain
@@ -38,7 +40,7 @@ NULL
   if (isTRUE(lock$.outcome_masked)) {
     stop(
       caller, ": Outcome is masked. ",
-      "Use unmask_outcome() first, set override_clean_room = TRUE, ",
+      "Use unmask_outcome() first, set allow_outcome_access = TRUE, ",
       "or create the lock with cleanroom_enabled = FALSE to skip ",
       "the software-enforced outcome guard entirely.",
       call. = FALSE
@@ -1750,7 +1752,9 @@ as.character.tmle_selected_spec <- function(x, ...) {
 #' @param ps_fit A `ps_fit` object from [fit_ps_superlearner()].
 #' @param caliper Numeric; maximum PS distance (logit scale) allowed for a
 #'   match. Default: `0.2 * sd(logit(ps))`.
-#' @param override_clean_room Logical; if \code{TRUE}, skips the outcome-access check.  Default \code{FALSE}.
+#' @param allow_outcome_access Logical; if \code{TRUE}, skips the
+#'   outcome-access check. Default \code{FALSE}.
+#' @param override_clean_room Deprecated. Use \code{allow_outcome_access}.
 #'
 #' @return An object of class `match_result` containing the causal risk
 #'   difference estimate, SE, 95% CI, p-value, and the matched dataset.
@@ -1779,12 +1783,20 @@ as.character.tmle_selected_spec <- function(x, ...) {
 #'
 #' @export
 run_match_workflow <- function(lock, ps_fit, caliper = NULL,
-                               override_clean_room = FALSE) {
+                               allow_outcome_access = FALSE,
+                               override_clean_room = NULL) {
+  if (!is.null(override_clean_room)) {
+    rlang::warn(
+      "override_clean_room is deprecated in run_match_workflow(); use allow_outcome_access.",
+      .frequency = "once", .frequency_id = "run_match_workflow_deprecated"
+    )
+    allow_outcome_access <- override_clean_room
+  }
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
   if (!inherits(ps_fit, "ps_fit"))
     stop("`ps_fit` must be a ps_fit object.", call. = FALSE)
-  .check_outcome_access(lock, override_clean_room,
+  .check_outcome_access(lock, allow_outcome_access,
                         caller = "run_match_workflow")
 
   data      <- lock$data
@@ -1898,19 +1910,28 @@ print.match_result <- function(x, ...) {
 #' @param ps_fit A `ps_fit` object from [fit_ps_superlearner()].
 #' @param trim Quantile for weight trimming (e.g., `0.01` trims at 1st and
 #'   99th percentile). Default: `NULL` (no trimming).
-#' @param override_clean_room Logical; if \code{TRUE}, skips the outcome-access check.  Default \code{FALSE}.
+#' @param allow_outcome_access Logical; if \code{TRUE}, skips the outcome-access check. Default \code{FALSE}.
+#' @param override_clean_room Deprecated. Use \code{allow_outcome_access}.
 #'
 #' @return An object of class `iptw_result` containing the estimated risk
 #'   difference, SE, 95% CI, p-value, and IPTW weights.
 #'
 #' @export
 run_iptw_workflow <- function(lock, ps_fit, trim = NULL,
-                              override_clean_room = FALSE) {
+                              allow_outcome_access = FALSE,
+                              override_clean_room = NULL) {
+  if (!is.null(override_clean_room)) {
+    rlang::warn(
+      "override_clean_room is deprecated in run_iptw_workflow(); use allow_outcome_access.",
+      .frequency = "once", .frequency_id = "run_iptw_workflow_deprecated"
+    )
+    allow_outcome_access <- override_clean_room
+  }
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
   if (!inherits(ps_fit, "ps_fit"))
     stop("`ps_fit` must be a ps_fit object.", call. = FALSE)
-  .check_outcome_access(lock, override_clean_room,
+  .check_outcome_access(lock, allow_outcome_access,
                         caller = "run_iptw_workflow")
 
   data      <- lock$data
@@ -2007,8 +2028,8 @@ run_iptw_workflow <- function(lock, ps_fit, trim = NULL,
 #'   SuperLearner library.
 #' @param weight_truncation Upper-quantile cap for the IPCW weights to
 #'   bound extreme values. Default \code{0.99}.
-#' @param override_clean_room Logical; if \code{TRUE}, skips the
-#'   outcome-access check. Default \code{FALSE}.
+#' @param allow_outcome_access Logical; if \code{TRUE}, skips the outcome-access check. Default \code{FALSE}.
+#' @param override_clean_room Deprecated. Use \code{allow_outcome_access}.
 #'
 #' @return A list of class `tmle_fit` (and `cr_result`) containing the
 #'   ATE estimate, IPCW summary, and the underlying `tmle::tmle()` fit.
@@ -2027,10 +2048,18 @@ run_iptw_workflow <- function(lock, ps_fit, trim = NULL,
 run_ipcw_tmle <- function(lock, ps_fit = NULL,
                           censoring_library = NULL,
                           weight_truncation = 0.99,
-                          override_clean_room = FALSE) {
+                          allow_outcome_access = FALSE,
+                          override_clean_room = NULL) {
+  if (!is.null(override_clean_room)) {
+    rlang::warn(
+      "override_clean_room is deprecated in run_ipcw_tmle(); use allow_outcome_access.",
+      .frequency = "once", .frequency_id = "run_ipcw_tmle_deprecated"
+    )
+    allow_outcome_access <- override_clean_room
+  }
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
-  .check_outcome_access(lock, override_clean_room,
+  .check_outcome_access(lock, allow_outcome_access,
                         caller = "run_ipcw_tmle")
   if (!requireNamespace("tmle", quietly = TRUE))
     stop("Package 'tmle' is required for run_ipcw_tmle(). ",
@@ -2322,21 +2351,29 @@ fit_tmle_treatment_mechanism <- function(lock, ps_fit = NULL,
 #' @param sl_library Optional SuperLearner library override. If \code{NULL},
 #'   uses the locked primary TMLE spec Q-library if available, then falls
 #'   back to `lock$sl_library`.
-#' @param override_clean_room Logical; if \code{TRUE}, skips the outcome-
-#'   access check.  Default \code{FALSE}.
+#' @param allow_outcome_access Logical; if \code{TRUE}, skips the outcome-access check. Default \code{FALSE}.
+#' @param override_clean_room Deprecated. Use \code{allow_outcome_access}.
 #'
 #' @return An object of class `tmle_mechanism` with `type = "outcome"`
 #'   containing initial outcome predictions `Q_a1`, `Q_a0`, and `Q_aw`.
 #'
 #' @export
 fit_tmle_outcome_mechanism <- function(lock, g_fit, sl_library = NULL,
-                                       override_clean_room = FALSE) {
+                                       allow_outcome_access = FALSE,
+                                       override_clean_room = NULL) {
+  if (!is.null(override_clean_room)) {
+    rlang::warn(
+      "override_clean_room is deprecated in fit_tmle_outcome_mechanism(); use allow_outcome_access.",
+      .frequency = "once", .frequency_id = "fit_tmle_outcome_mechanism_deprecated"
+    )
+    allow_outcome_access <- override_clean_room
+  }
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
   if (!inherits(g_fit, "tmle_mechanism") || g_fit$type != "treatment")
     stop("`g_fit` must be a tmle_mechanism of type 'treatment'.",
          call. = FALSE)
-  .check_outcome_access(lock, override_clean_room,
+  .check_outcome_access(lock, allow_outcome_access,
                         caller = "fit_tmle_outcome_mechanism")
 
   # Resolve Q-library from locked spec
@@ -2731,16 +2768,24 @@ summarize_plasmode_results <- function(x, ...) {
 #'   Default: `c("match", "iptw", "tmle")`.  Matching and IPTW serve as
 #'   secondary comparators; the primary TMLE uses the locked specification
 #'   from [lock_primary_tmle_spec()] when available.
-#' @param override_clean_room Logical; if \code{TRUE}, skips the outcome-
-#'   access check.  Default \code{FALSE}.
+#' @param allow_outcome_access Logical; if \code{TRUE}, skips the outcome-access check. Default \code{FALSE}.
+#' @param override_clean_room Deprecated. Use \code{allow_outcome_access}.
 #'
 #' @return A named list with elements named by the requested workflows.
 #'
 #' @export
 fit_final_workflows <- function(lock, ps_fit,
                                  workflows = c("match", "iptw", "tmle"),
-                                 override_clean_room = FALSE) {
-  .check_outcome_access(lock, override_clean_room,
+                                 allow_outcome_access = FALSE,
+                                 override_clean_room = NULL) {
+  if (!is.null(override_clean_room)) {
+    rlang::warn(
+      "override_clean_room is deprecated in fit_final_workflows(); use allow_outcome_access.",
+      .frequency = "once", .frequency_id = "fit_final_workflows_deprecated"
+    )
+    allow_outcome_access <- override_clean_room
+  }
+  .check_outcome_access(lock, allow_outcome_access,
                         caller = "fit_final_workflows")
   workflows <- match.arg(workflows, choices = c("match", "iptw", "tmle"),
                           several.ok = TRUE)
@@ -2796,7 +2841,8 @@ fit_final_workflows <- function(lock, ps_fit,
 #'   [expand_tmle_candidate_grid()] defaults.
 #' @param ps_fit Optional `ps_fit` object; reused across candidates to
 #'   avoid redundant PS estimation.
-#' @param override_clean_room Logical; if \code{TRUE}, skips the outcome-access check.  Default \code{FALSE}.
+#' @param allow_outcome_access Logical; if \code{TRUE}, skips the outcome-access check. Default \code{FALSE}.
+#' @param override_clean_room Deprecated. Use \code{allow_outcome_access}.
 #'
 #' @return A named list of TMLE estimate objects (failed candidates dropped).
 #'
@@ -2804,10 +2850,18 @@ fit_final_workflows <- function(lock, ps_fit,
 #'
 #' @export
 fit_tmle_candidate_set <- function(lock, candidates = NULL, ps_fit = NULL,
-                                    override_clean_room = FALSE) {
+                                    allow_outcome_access = FALSE,
+                                    override_clean_room = NULL) {
+  if (!is.null(override_clean_room)) {
+    rlang::warn(
+      "override_clean_room is deprecated in fit_tmle_candidate_set(); use allow_outcome_access.",
+      .frequency = "once", .frequency_id = "fit_tmle_candidate_set_deprecated"
+    )
+    allow_outcome_access <- override_clean_room
+  }
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
-  .check_outcome_access(lock, override_clean_room,
+  .check_outcome_access(lock, allow_outcome_access,
                         caller = "fit_tmle_candidate_set")
 
   # Default: use grid expansion
@@ -3030,7 +3084,8 @@ gate_check <- function(metrics, scenario_name = "plasmode", targets = NULL,
 #' a benchmark comparator for the adjusted workflows.
 #'
 #' @param lock A `cleanroom_lock` from [create_analysis_lock()].
-#' @param override_clean_room Logical; if \code{TRUE}, skips the outcome-access check.  Default \code{FALSE}.
+#' @param allow_outcome_access Logical; if \code{TRUE}, skips the outcome-access check. Default \code{FALSE}.
+#' @param override_clean_room Deprecated. Use \code{allow_outcome_access}.
 #'
 #' @return A list with elements `estimate`, `se`, `ci_lower`, `ci_upper`,
 #'   `p_value`, `r1` (risk in treated), and `r0` (risk in control).
@@ -3044,10 +3099,18 @@ gate_check <- function(metrics, scenario_name = "plasmode", targets = NULL,
 #' run_crude_workflow(lock)
 #'
 #' @export
-run_crude_workflow <- function(lock, override_clean_room = FALSE) {
+run_crude_workflow <- function(lock, allow_outcome_access = FALSE,
+                               override_clean_room = NULL) {
+  if (!is.null(override_clean_room)) {
+    rlang::warn(
+      "override_clean_room is deprecated in run_crude_workflow(); use allow_outcome_access.",
+      .frequency = "once", .frequency_id = "run_crude_workflow_deprecated"
+    )
+    allow_outcome_access <- override_clean_room
+  }
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
-  .check_outcome_access(lock, override_clean_room,
+  .check_outcome_access(lock, allow_outcome_access,
                         caller = "run_crude_workflow")
 
   data <- lock$data

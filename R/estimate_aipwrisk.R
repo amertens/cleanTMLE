@@ -29,9 +29,20 @@
 #' at each evaluation time, define a binary outcome I(T <= t, event),
 #' and apply the standard AIPW formula.
 #'
+#' @section Experimental:
+#' `estimate_aipwrisk()` is outside the tested v0.1 scope of cleanTMLE, which
+#' covers binary point exposure, binary outcome, and the marginal risk
+#' difference only. Time-to-event estimators are exported for early adopters
+#' but are not yet validated through the staged workflow and the API may change.
+#'
 #' @export
 estimate_aipwrisk <- function(spec, risk_time = NULL, trim = NULL,
                               trunc = NULL, nboot = 0, seed = 42, ...) {
+  rlang::warn(
+    paste0("estimate_aipwrisk() is experimental and outside the tested v0.1 ",
+           "scope of cleanTMLE (binary point exposure / binary outcome only)."),
+    .frequency = "once", .frequency_id = "estimate_aipwrisk"
+  )
   if (!inherits(spec, "cr_spec")) {
     stop("`spec` must be a cr_spec object.", call. = FALSE)
   }

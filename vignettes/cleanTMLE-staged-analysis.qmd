@@ -647,7 +647,7 @@ print(dp)
 ::: {.callout-note}
 The MDD report may show "Feasible: NO" with this small simulated
 sample (n = `r nrow(dat)`).
-This is expected --- the vignette uses a deliberately small dataset
+This is expected, because the vignette uses a deliberately small dataset
 for fast rendering.
 In practice you would either increase sample size or relax the
 target MDD.
@@ -939,7 +939,7 @@ audit <- record_decision_log_entry(audit,
 A negative-control outcome (NCO) screen is an optional pre-outcome
 checkpoint that sits between the Stage 2c DQ stress test and the
 pre-outcome decision. The NCO screen assesses residual
-confounding using a negative-control outcome --- a variable that is
+confounding using a negative-control outcome, a variable that is
 known (or strongly believed) to be unaffected by treatment.
 If the same analytic pipeline detects an association with the negative
 control, this suggests that confounders remain unbalanced after
@@ -1157,7 +1157,7 @@ print(iptw_fit)
 TMLE is the prespecified primary estimator, using the specification
 selected at Stage 2b and locked into the analysis lock.  The locked
 truncation threshold and learner libraries are applied automatically
-by the four TMLE functions --- no manual specification is needed at
+by the four TMLE functions; no manual specification is needed at
 this stage.
 
 The package separates the TMLE procedure into four explicit steps
@@ -1201,7 +1201,7 @@ audit <- record_stage(audit, "Stage 4",
 ### Matched-cohort TMLE
 
 `run_matched_tmle()` runs the full TMLE pipeline on a matched subset
-without creating a separate lock --- addressing a common need in
+without creating a separate lock, addressing a common need in
 pharmacoepidemiology.
 
 ```{r matched-tmle}
@@ -1422,25 +1422,25 @@ export_decision_log(audit, "decision_log.csv")
 
 The worked example illustrates the canonical stages:
 
-1. **Stage 0** --- feasibility, target-trial specification, and
+1. **Stage 0**: feasibility, target-trial specification, and
    protocol / SAP drafting (precondition, external to the package).
-2. **Stage 1a** --- lock the estimand, covariates, learners,
+2. **Stage 1a**: lock the estimand, covariates, learners,
    candidate grid, and decision thresholds.
-3. **Stage 1b** --- cohort adequacy and marginal event support
+3. **Stage 1b**: cohort adequacy and marginal event support
    (Check Point 1, with design-precision diagnostics).
-4. **Stage 2a** --- propensity score, balance, overlap, ESS, and
+4. **Stage 2a**: propensity score, balance, overlap, ESS, and
    design diagnostics (Check Point 2).
-5. **Stage 2b** --- baseline plasmode candidate selection using the
+5. **Stage 2b**: baseline plasmode candidate selection using the
    prespecified rule.
-6. **Stage 2c** --- plasmode DQ stress testing on the locked
+6. **Stage 2c**: plasmode DQ stress testing on the locked
    severity ranges from the fit-for-purpose review.
-7. **Stage 3 (optional)** --- negative-control outcome checks.
-8. **Pre-outcome decision** --- GO (proceed),
+7. **Stage 3 (optional)**: negative-control outcome checks.
+8. **Pre-outcome decision**: GO (proceed),
    FLAG (proceed-with-qualification), or STOP (do-not-run), based
    on the recorded checkpoint results.
-9. **Stage 4** --- authorized primary outcome analysis on the
+9. **Stage 4**: authorized primary outcome analysis on the
    unmasked data.
-10. **Post-outcome** --- sensitivity analyses, interpretation, and
+10. **Post-outcome**: sensitivity analyses, interpretation, and
     archived analysis record (analysis specification, audit trail,
     and decision log).
 

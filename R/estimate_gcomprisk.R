@@ -34,9 +34,20 @@
 #'   estimate_gcomprisk(risk_time = c(6, 12, 24))
 #' }
 #'
+#' @section Experimental:
+#' `estimate_gcomprisk()` is outside the tested v0.1 scope of cleanTMLE, which
+#' covers binary point exposure, binary outcome, and the marginal risk
+#' difference only. Time-to-event estimators are exported for early adopters
+#' but are not yet validated through the staged workflow and the API may change.
+#'
 #' @export
 estimate_gcomprisk <- function(spec, risk_time = NULL, outcome_formula = NULL,
                                nboot = 0, seed = 42, ...) {
+  rlang::warn(
+    paste0("estimate_gcomprisk() is experimental and outside the tested v0.1 ",
+           "scope of cleanTMLE (binary point exposure / binary outcome only)."),
+    .frequency = "once", .frequency_id = "estimate_gcomprisk"
+  )
   if (!inherits(spec, "cr_spec")) {
     stop("`spec` must be a cr_spec object.", call. = FALSE)
   }

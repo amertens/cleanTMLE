@@ -46,6 +46,12 @@
 #' incidence is estimated using the weighted Aalen-Johansen estimator
 #' in discrete time.
 #'
+#' @section Experimental:
+#' `estimate_ipwrisk()` is outside the tested v0.1 scope of cleanTMLE, which
+#' covers binary point exposure, binary outcome, and the marginal risk
+#' difference only. Time-to-event estimators are exported for early adopters
+#' but are not yet validated through the staged workflow and the API may change.
+#'
 #' @examples
 #' \dontrun{
 #' data(example1, package = "cleanTMLE")
@@ -62,6 +68,11 @@
 estimate_ipwrisk <- function(spec, risk_time = NULL, trim = NULL, trunc = NULL,
                              weight_type = c("iptw", "smr"),
                              nboot = 0, seed = 42, ...) {
+  rlang::warn(
+    paste0("estimate_ipwrisk() is experimental and outside the tested v0.1 ",
+           "scope of cleanTMLE (binary point exposure / binary outcome only)."),
+    .frequency = "once", .frequency_id = "estimate_ipwrisk"
+  )
   if (!inherits(spec, "cr_spec")) {
     stop("`spec` must be a cr_spec object.", call. = FALSE)
   }

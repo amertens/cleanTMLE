@@ -19,6 +19,12 @@
 #' @param ... Additional arguments passed to model fitting functions.
 #'
 #' @return The modified `cr_spec` object (for piping).
+#'
+#' @section Experimental:
+#' The `identify_*()` family is outside the tested v0.1 scope of cleanTMLE.
+#' These functions are exported so that users can begin exercising the
+#' model-specification DSL, but they are not yet validated through the
+#' staged workflow and the API may change in a future release.
 NULL
 
 #' @rdname identify
@@ -26,6 +32,10 @@ NULL
 identify_outcome <- function(spec, name, formula = NULL,
                              type = c("time_to_event", "binary", "continuous"),
                              ...) {
+  rlang::warn(
+    "identify_outcome() is experimental and outside the tested v0.1 scope.",
+    .frequency = "once", .frequency_id = "identify_outcome"
+  )
   if (!inherits(spec, "cr_spec")) {
     stop("`spec` must be a cr_spec object.", call. = FALSE)
   }
@@ -48,6 +58,10 @@ identify_outcome <- function(spec, name, formula = NULL,
 #' @export
 identify_censoring <- function(spec, name, formula = NULL,
                                model = c("coxph", "glm"), ...) {
+  rlang::warn(
+    "identify_censoring() is experimental and outside the tested v0.1 scope.",
+    .frequency = "once", .frequency_id = "identify_censoring"
+  )
   if (!inherits(spec, "cr_spec")) {
     stop("`spec` must be a cr_spec object.", call. = FALSE)
   }
@@ -71,6 +85,10 @@ identify_censoring <- function(spec, name, formula = NULL,
 #' @export
 identify_treatment <- function(spec, name, formula = NULL,
                                model = c("glm", "multinom"), ...) {
+  rlang::warn(
+    "identify_treatment() is experimental and outside the tested v0.1 scope.",
+    .frequency = "once", .frequency_id = "identify_treatment"
+  )
   if (!inherits(spec, "cr_spec")) {
     stop("`spec` must be a cr_spec object.", call. = FALSE)
   }
@@ -92,7 +110,10 @@ identify_treatment <- function(spec, name, formula = NULL,
 #' @rdname identify
 #' @export
 identify_competing_risk <- function(spec, name, event_value) {
-
+  rlang::warn(
+    "identify_competing_risk() is experimental and outside the tested v0.1 scope.",
+    .frequency = "once", .frequency_id = "identify_competing_risk"
+  )
   if (!inherits(spec, "cr_spec")) {
     stop("`spec` must be a cr_spec object.", call. = FALSE)
   }
@@ -111,6 +132,10 @@ identify_competing_risk <- function(spec, name, event_value) {
 #' @rdname identify
 #' @export
 identify_subject <- function(spec, name) {
+  rlang::warn(
+    "identify_subject() is experimental and outside the tested v0.1 scope.",
+    .frequency = "once", .frequency_id = "identify_subject"
+  )
   if (!inherits(spec, "cr_spec")) {
     stop("`spec` must be a cr_spec object.", call. = FALSE)
   }
@@ -126,6 +151,10 @@ identify_subject <- function(spec, name) {
 #' @rdname identify
 #' @export
 identify_interval <- function(spec, start, stop) {
+  rlang::warn(
+    "identify_interval() is experimental and outside the tested v0.1 scope.",
+    .frequency = "once", .frequency_id = "identify_interval"
+  )
   if (!inherits(spec, "cr_spec")) {
     stop("`spec` must be a cr_spec object.", call. = FALSE)
   }
@@ -145,6 +174,10 @@ identify_interval <- function(spec, start, stop) {
 #' @rdname identify
 #' @export
 identify_missing <- function(spec, ...) {
+  rlang::warn(
+    "identify_missing() is experimental and outside the tested v0.1 scope.",
+    .frequency = "once", .frequency_id = "identify_missing"
+  )
   if (!inherits(spec, "cr_spec")) {
     stop("`spec` must be a cr_spec object.", call. = FALSE)
   }
