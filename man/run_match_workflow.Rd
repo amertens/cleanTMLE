@@ -4,7 +4,13 @@
 \alias{run_match_workflow}
 \title{Run Propensity-Score Matching Workflow}
 \usage{
-run_match_workflow(lock, ps_fit, caliper = NULL, override_clean_room = FALSE)
+run_match_workflow(
+  lock,
+  ps_fit,
+  caliper = NULL,
+  allow_outcome_access = FALSE,
+  override_clean_room = NULL
+)
 }
 \arguments{
 \item{lock}{A \code{cleanroom_lock} from \code{\link[=create_analysis_lock]{create_analysis_lock()}}.}
@@ -14,7 +20,10 @@ run_match_workflow(lock, ps_fit, caliper = NULL, override_clean_room = FALSE)
 \item{caliper}{Numeric; maximum PS distance (logit scale) allowed for a
 match. Default: \code{0.2 * sd(logit(ps))}.}
 
-\item{override_clean_room}{Logical; if \code{TRUE}, skips the outcome-access check.  Default \code{FALSE}.}
+\item{allow_outcome_access}{Logical; if \code{TRUE}, skips the
+outcome-access check. Default \code{FALSE}.}
+
+\item{override_clean_room}{Deprecated. Use \code{allow_outcome_access}.}
 }
 \value{
 An object of class \code{match_result} containing the causal risk
@@ -24,4 +33,28 @@ difference estimate, SE, 95\% CI, p-value, and the matched dataset.
 Performs greedy 1:1 nearest-neighbor matching on the logit of the
 propensity score, then estimates the average treatment effect in the
 matched sample as the simple risk difference.
+}
+\section{Variance}{
+
+The paired-difference SE in the returned object conditions on the fixed
+matched dataset and does not propagate matching-draw variance -- the
+variability from which controls are selected when re-sampling. Abadie and
+Imbens (2008) show that the standard paired SE is inconsistent for this
+reason; Abadie and Imbens (2016) show that matching on the estimated
+propensity score does not restore consistency of the naive bootstrap.
+The principled solution is a full-pipeline nonparametric bootstrap that
+re-runs PS estimation, matching, and TMLE on each resample.
+Use \code{bootstrap_rd_variance(estimator = "match_tmle")} to obtain a
+bootstrap SE that captures matching-draw variance.
+\code{select_variance_method(estimator = "match_tmle")} can confirm
+which variance method achieves nominal oracle coverage for the study's
+data-generating process and sample size.
+}
+
+\references{
+Abadie, A. and Imbens, G. W. (2008). On the failure of the bootstrap for
+matching estimators. \emph{Econometrica}, 76(6), 1537--1557.
+
+Abadie, A. and Imbens, G. W. (2016). Matching on the estimated propensity
+score. \emph{Econometrica}, 84(2), 781--807.
 }

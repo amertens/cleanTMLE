@@ -4,12 +4,18 @@
 \alias{run_crude_workflow}
 \title{Run Crude (Unadjusted) Risk Difference Workflow}
 \usage{
-run_crude_workflow(lock, override_clean_room = FALSE)
+run_crude_workflow(
+  lock,
+  allow_outcome_access = FALSE,
+  override_clean_room = NULL
+)
 }
 \arguments{
 \item{lock}{A \code{cleanroom_lock} from \code{\link[=create_analysis_lock]{create_analysis_lock()}}.}
 
-\item{override_clean_room}{Logical; if \code{TRUE}, skips the outcome-access check.  Default \code{FALSE}.}
+\item{allow_outcome_access}{Logical; if \code{TRUE}, skips the outcome-access check. Default \code{FALSE}.}
+
+\item{override_clean_room}{Deprecated. Use \code{allow_outcome_access}.}
 }
 \value{
 A list with elements \code{estimate}, \code{se}, \code{ci_lower}, \code{ci_upper},

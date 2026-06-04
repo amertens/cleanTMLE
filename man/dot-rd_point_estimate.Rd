@@ -9,13 +9,14 @@
   treatment,
   outcome,
   covariates,
-  estimator = c("tmle", "iptw"),
+  estimator = c("tmle", "iptw", "match_tmle"),
   sl_library = c("SL.glm"),
   truncate = 0.01
 )
 }
 \description{
 Internal helper used by the bootstrap. Returns a single risk-difference
-point estimate from a data frame using either TMLE or stabilised IPTW.
+point estimate from a data frame using TMLE, stabilised IPTW, or
+propensity-score-matched TMLE.
 }
 \keyword{internal}

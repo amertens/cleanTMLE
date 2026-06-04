@@ -1,5 +1,18 @@
 # cleanTMLE 0.1.5 (development)
 
+## Data-quality stress test: positivity is now a default threat
+
+* **`default_dq_scenarios()`** now returns five threats for every preset.
+  `near_positivity` joins covariate missingness, treatment misclassification,
+  outcome misclassification, and unmeasured confounding as a default scenario.
+  The near-positivity threat amplifies the centred propensity-score log-odds by
+  a `slopes` multiplier so a subgroup approaches deterministic treatment and the
+  estimated propensity scores reach the boundary. Default slope grids are mild
+  for `regulatory_standard` and `exploratory` and heavier for `stress`. This is
+  the same mechanism that `run_plasmode_dq_stress()` already dispatched and that
+  the candidate-divergence study exercises, so the default run and the
+  demonstration now use an identical code path.
+
 ## FIORD selector: second stage (variance-method selection)
 
 * **`bootstrap_rd_variance(estimator = "match_tmle")`** is a new estimator

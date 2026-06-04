@@ -54,3 +54,11 @@ at each evaluation time, define a binary outcome I(T <= t, event),
 and apply the standard AIPW formula.
 }
 }
+\section{Experimental}{
+
+\code{estimate_aipwrisk()} is outside the tested v0.1 scope of cleanTMLE, which
+covers binary point exposure, binary outcome, and the marginal risk
+difference only. Time-to-event estimators are exported for early adopters
+but are not yet validated through the staged workflow and the API may change.
+}
+

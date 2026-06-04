@@ -193,3 +193,50 @@ test_that("run_plasmode_dq_stress is reproducible under fixed seeds", {
                                   verbose = FALSE)
   expect_equal(res1$metrics, res2$metrics)
 })
+
+
+test_that("near_positivity inflates the lightly-truncated candidate's error", {
+  # A constructed near-positivity design: amplifying the centred PS log-odds
+  # pushes a subgroup toward deterministic treatment, so the inverse-probability
+  # weight tail explodes for a lightly truncated candidate. The empirical SD and
+  # RMSE should rise above the undisturbed baseline.
+  set.seed(2026)
+  dat  <- sim_func1(n = 500, seed = 11)
+  lock <- create_analysis_lock(
+    data        = dat,
+    treatment   = "treatment",
+    outcome     = "event_24",
+    covariates  = c("age", "sex", "biomarker", "comorbidity"),
+    sl_library  = "SL.glm",
+    plasmode_reps = 10L,
+    seed        = 11L
+  )
+  candidates <- list(
+    tmle_candidate("aggressive", "GLM, trunc=0.001",
+                   g_library = "SL.glm", truncation = 0.001)
+  )
+
+  res <- run_plasmode_dq_stress(
+    lock,
+    tmle_candidates = candidates,
+    effect_sizes    = c(0.05),
+    reps            = 10L,
+    data_quality_scenarios = list(
+      near_positivity = list(slopes = c(3.0, 4.0))
+    ),
+    verbose = FALSE
+  )
+
+  m <- res$metrics
+  expect_true("near_positivity" %in% m$scenario)
+
+  base_sd  <- m$emp_sd[m$scenario == "none"][1]
+  base_rmse <- m$rmse[m$scenario == "none"][1]
+  np_sd   <- max(m$emp_sd[m$scenario == "near_positivity"])
+  np_rmse <- max(m$rmse[m$scenario == "near_positivity"])
+
+  # Inflated dispersion: at least one near-positivity severity worsens the
+  # empirical SD and the RMSE relative to baseline.
+  expect_gt(np_sd, base_sd)
+  expect_gt(np_rmse, base_rmse)
+})

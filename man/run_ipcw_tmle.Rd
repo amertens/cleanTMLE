@@ -9,7 +9,8 @@ run_ipcw_tmle(
   ps_fit = NULL,
   censoring_library = NULL,
   weight_truncation = 0.99,
-  override_clean_room = FALSE
+  allow_outcome_access = FALSE,
+  override_clean_room = NULL
 )
 }
 \arguments{
@@ -28,8 +29,9 @@ SuperLearner library.}
 \item{weight_truncation}{Upper-quantile cap for the IPCW weights to
 bound extreme values. Default \code{0.99}.}
 
-\item{override_clean_room}{Logical; if \code{TRUE}, skips the
-outcome-access check. Default \code{FALSE}.}
+\item{allow_outcome_access}{Logical; if \code{TRUE}, skips the outcome-access check. Default \code{FALSE}.}
+
+\item{override_clean_room}{Deprecated. Use \code{allow_outcome_access}.}
 }
 \value{
 A list of class \code{tmle_fit} (and \code{cr_result}) containing the

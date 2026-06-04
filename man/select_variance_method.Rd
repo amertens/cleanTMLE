@@ -10,7 +10,7 @@ select_variance_method(
   treatment,
   outcome,
   covariates,
-  estimator = c("tmle", "iptw"),
+  estimator = c("tmle", "iptw", "match_tmle"),
   methods = c("influence", "bootstrap"),
   target_coverage = 0.95,
   R_boot = 200L,
@@ -25,10 +25,15 @@ select_variance_method(
 
 \item{treatment, outcome, covariates}{Column names.}
 
-\item{estimator}{Locked point estimator: \code{"tmle"} or \code{"iptw"}.}
+\item{estimator}{Locked point estimator: \code{"tmle"}, \code{"iptw"}, or
+\code{"match_tmle"}. For \code{"match_tmle"}, the \code{"influence"} method uses the
+paired-difference SE on the matched cohort (analogous to
+\code{\link[=run_match_workflow]{run_match_workflow()}}); the \code{"bootstrap"} method re-runs the full
+matching pipeline on each resample via \code{\link[=bootstrap_rd_variance]{bootstrap_rd_variance()}}.}
 
 \item{methods}{Variance methods to compare. \code{"influence"} uses the
-IF/IPTW analytic SE; \code{"bootstrap"} uses \code{\link[=bootstrap_rd_variance]{bootstrap_rd_variance()}}.}
+IF/paired-difference analytic SE; \code{"bootstrap"} uses
+\code{\link[=bootstrap_rd_variance]{bootstrap_rd_variance()}}.}
 
 \item{target_coverage}{Nominal coverage (default 0.95).}
 
@@ -36,7 +41,7 @@ IF/IPTW analytic SE; \code{"bootstrap"} uses \code{\link[=bootstrap_rd_variance]
 
 \item{sl_library}{SuperLearner library for TMLE.}
 
-\item{truncate}{IPTW truncation.}
+\item{truncate}{IPTW / match_tmle PS truncation.}
 }
 \value{
 A list with \code{selected} (the chosen method), \code{coverage} (named

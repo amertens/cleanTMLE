@@ -141,7 +141,7 @@ estimate_tmle_risk_point <- function(data, treatment = NULL, outcome = NULL,
       g_sl <- SuperLearner::SuperLearner(
         Y = A_train, X = W_train, family = binomial(),
         SL.library = sl_library,
-        env = asNamespace("SuperLearner")
+        env = .cleantmle_sl_env()
       )
       ps_cf[val_idx] <- pmax(pmin(
         as.numeric(predict(g_sl, newdata = W_val)$pred),
@@ -153,7 +153,7 @@ estimate_tmle_risk_point <- function(data, treatment = NULL, outcome = NULL,
       Q_sl <- SuperLearner::SuperLearner(
         Y = Y_train, X = AW_train, family = binomial(),
         SL.library = sl_library,
-        env = asNamespace("SuperLearner")
+        env = .cleantmle_sl_env()
       )
       Q_aw_cf[val_idx] <- as.numeric(predict(Q_sl, newdata = AW_val)$pred)
 

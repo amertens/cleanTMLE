@@ -9,7 +9,7 @@ bootstrap_rd_variance(
   treatment,
   outcome,
   covariates,
-  estimator = c("tmle", "iptw"),
+  estimator = c("tmle", "iptw", "match_tmle"),
   R = 1000L,
   sl_library = c("SL.glm"),
   truncate = 0.01,
@@ -22,14 +22,17 @@ bootstrap_rd_variance(
 
 \item{treatment, outcome, covariates}{Column names.}
 
-\item{estimator}{\code{"tmle"} (delegates to \code{\link[tmle:tmle]{tmle::tmle()}}) or \code{"iptw"}
-(stabilised inverse-probability weighting).}
+\item{estimator}{One of \code{"tmle"} (delegates to \code{\link[tmle:tmle]{tmle::tmle()}}),
+\code{"iptw"} (stabilised inverse-probability weighting), or
+\code{"match_tmle"} (greedy 1:1 NN propensity-score matching followed by
+TMLE on the matched cohort; the bootstrap re-runs the full pipeline
+on each resample, capturing matching-draw variance).}
 
 \item{R}{Number of bootstrap resamples.}
 
 \item{sl_library}{SuperLearner library for the TMLE nuisance fits.}
 
-\item{truncate}{Propensity-score truncation for IPTW.}
+\item{truncate}{Propensity-score truncation for IPTW and match_tmle.}
 
 \item{conf_level}{Confidence level for the percentile interval.}
 
@@ -47,4 +50,25 @@ to be conservative or invalid: stabilised IPTW (the IF variance treats the
 propensity score as known; Robins and Rotnitzky 1992) and any estimator
 run on a non-i.i.d. sample such as a matched cohort. It is the recommended
 second-stage variance method in the FIORD selector (Nance et al. 2026).
+}
+\section{Why bootstrap for matched estimators}{
+
+The paired-difference SE returned by \code{\link[=run_match_workflow]{run_match_workflow()}} conditions on
+the fixed matched dataset and does not propagate matching-draw variance --
+the variability arising from which controls happen to be selected on
+re-sampling. Abadie and Imbens (2008, 2016) show that the standard paired
+SE is inconsistent for this reason. With \code{estimator = "match_tmle"}, each
+bootstrap resample re-runs the full pipeline (PS fit -> greedy 1:1 NN
+matching -> TMLE on the matched cohort), capturing matching-draw variance
+and yielding a consistent SE. Monte Carlo evidence in Mertens (2026) shows
+this corrects modest under-coverage (from 0.89 to 0.95) in good-overlap
+settings where the IF-SE is anti-conservative for matched estimators.
+}
+
+\references{
+Abadie, A. and Imbens, G. W. (2008). On the failure of the bootstrap for
+matching estimators. \emph{Econometrica}, 76(6), 1537--1557.
+
+Abadie, A. and Imbens, G. W. (2016). Matching on the estimated propensity
+score. \emph{Econometrica}, 84(2), 781--807.
 }

@@ -8,7 +8,8 @@ fit_tmle_outcome_mechanism(
   lock,
   g_fit,
   sl_library = NULL,
-  override_clean_room = FALSE
+  allow_outcome_access = FALSE,
+  override_clean_room = NULL
 )
 }
 \arguments{
@@ -21,8 +22,9 @@ fit_tmle_outcome_mechanism(
 uses the locked primary TMLE spec Q-library if available, then falls
 back to \code{lock$sl_library}.}
 
-\item{override_clean_room}{Logical; if \code{TRUE}, skips the outcome-
-access check.  Default \code{FALSE}.}
+\item{allow_outcome_access}{Logical; if \code{TRUE}, skips the outcome-access check. Default \code{FALSE}.}
+
+\item{override_clean_room}{Deprecated. Use \code{allow_outcome_access}.}
 }
 \value{
 An object of class \code{tmle_mechanism} with \code{type = "outcome"}

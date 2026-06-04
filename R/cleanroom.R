@@ -626,7 +626,7 @@ fit_ps_superlearner <- function(lock, truncate = 0.01,
     X          = W,
     family     = binomial(),
     SL.library = sl_library,
-    env        = asNamespace("SuperLearner"),
+    env        = .cleantmle_sl_env(),
     cvControl  = list(V = cv_folds)
   )
 
@@ -1292,7 +1292,7 @@ run_plasmode_feasibility <- function(lock,
       X          = data[cc, covariates, drop = FALSE],
       family     = stats::binomial(),
       SL.library = q0_library,
-      env        = asNamespace("SuperLearner")
+      env        = .cleantmle_sl_env()
     )
     p_base[cc] <- as.numeric(Q0_sl$SL.predict)
     if (any(!cc)) {
@@ -1348,7 +1348,7 @@ run_plasmode_feasibility <- function(lock,
             g_sl  <- SuperLearner::SuperLearner(
               Y = A, X = W_mat, family = binomial(),
               SL.library = g_lib,
-              env = asNamespace("SuperLearner")
+              env = .cleantmle_sl_env()
             )
             ps_hat <- as.numeric(g_sl$SL.predict)
           } else {
@@ -1370,7 +1370,7 @@ run_plasmode_feasibility <- function(lock,
             q_sl <- SuperLearner::SuperLearner(
               Y = Y_sim, X = AW, family = binomial(),
               SL.library = q_lib,
-              env = asNamespace("SuperLearner")
+              env = .cleantmle_sl_env()
             )
             ds_a1 <- AW; ds_a1[[treatment]] <- 1L
             ds_a0 <- AW; ds_a0[[treatment]] <- 0L
@@ -2098,7 +2098,7 @@ run_ipcw_tmle <- function(lock, ps_fit = NULL,
       sl <- SuperLearner::SuperLearner(
         Y = R, X = resp_X, family = stats::binomial(),
         SL.library = cens_lib,
-        env = asNamespace("SuperLearner"))
+        env = .cleantmle_sl_env())
       as.numeric(sl$SL.predict)
     } else {
       glm_resp <- stats::glm(R ~ ., data = resp_X, family = stats::binomial())
@@ -2293,7 +2293,7 @@ fit_tmle_treatment_mechanism <- function(lock, ps_fit = NULL,
       g_sl <- SuperLearner::SuperLearner(
         Y = A[train_idx], X = W[train_idx, , drop = FALSE],
         family = binomial(), SL.library = lock$sl_library,
-        env = asNamespace("SuperLearner")
+        env = .cleantmle_sl_env()
       )
       ps[val_idx] <- as.numeric(
         predict(g_sl, newdata = W[val_idx, , drop = FALSE])$pred)
@@ -2441,7 +2441,7 @@ fit_tmle_outcome_mechanism <- function(lock, g_fit, sl_library = NULL,
         X          = AW[train_idx, , drop = FALSE],
         family     = binomial(),
         SL.library = sl_library,
-        env        = asNamespace("SuperLearner")
+        env        = .cleantmle_sl_env()
       )
 
       AW_val <- AW[val_idx, , drop = FALSE]
@@ -2461,7 +2461,7 @@ fit_tmle_outcome_mechanism <- function(lock, g_fit, sl_library = NULL,
       X          = AW[fit_idx, , drop = FALSE],
       family     = binomial(),
       SL.library = sl_library,
-      env        = asNamespace("SuperLearner")
+      env        = .cleantmle_sl_env()
     )
     AW_a1   <- AW; AW_a1[[treatment]] <- 1L
     AW_a0   <- AW; AW_a0[[treatment]] <- 0L

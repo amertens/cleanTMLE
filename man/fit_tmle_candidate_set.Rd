@@ -8,7 +8,8 @@ fit_tmle_candidate_set(
   lock,
   candidates = NULL,
   ps_fit = NULL,
-  override_clean_room = FALSE
+  allow_outcome_access = FALSE,
+  override_clean_room = NULL
 )
 }
 \arguments{
@@ -21,7 +22,9 @@ of SuperLearner library vectors (legacy API). If \code{NULL}, uses
 \item{ps_fit}{Optional \code{ps_fit} object; reused across candidates to
 avoid redundant PS estimation.}
 
-\item{override_clean_room}{Logical; if \code{TRUE}, skips the outcome-access check.  Default \code{FALSE}.}
+\item{allow_outcome_access}{Logical; if \code{TRUE}, skips the outcome-access check. Default \code{FALSE}.}
+
+\item{override_clean_room}{Deprecated. Use \code{allow_outcome_access}.}
 }
 \value{
 A named list of TMLE estimate objects (failed candidates dropped).

@@ -43,13 +43,13 @@ dat <- sim_func1(n = 400, seed = 42)
 The function index below labels each exported function by what it
 uses internally from the outcome side of the data:
 
-- **No outcome access**:uses W, A, metadata, lock objects,
+- **No outcome access**: uses W, A, metadata, lock objects,
   synthetic outcomes, or diagnostics not involving Y.
-- **Marginal Y only**:uses event counts or marginal outcome
+- **Marginal Y only**: uses event counts or marginal outcome
   support (no estimation of the A--Y association).
-- **Synthetic Y only**:uses plasmode-generated outcomes; no
+- **Synthetic Y only**: uses plasmode-generated outcomes; no
   observed Y.
-- **Negative-control Y only**:uses prespecified NC outcomes,
+- **Negative-control Y only**: uses prespecified NC outcomes,
   not the primary outcome.
 - **Primary Y**:estimates the observed
   treatment-primary-outcome association; requires authorization.

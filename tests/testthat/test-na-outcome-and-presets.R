@@ -45,9 +45,20 @@ test_that("default_dq_scenarios returns valid configs for each preset", {
   for (p in c("regulatory_standard", "exploratory", "stress")) {
     cfg <- default_dq_scenarios(p)
     expect_named(cfg, c("covariate_missingness", "treatment_misclass",
-                        "outcome_misclass", "unmeasured_confounding"))
+                        "outcome_misclass", "unmeasured_confounding",
+                        "near_positivity"))
     expect_true(!is.null(cfg$covariate_missingness$fractions))
     expect_true(!is.null(cfg$unmeasured_confounding$U_treatment_OR))
+  }
+})
+
+test_that("default_dq_scenarios carries five threats including near_positivity", {
+  for (p in c("regulatory_standard", "exploratory", "stress")) {
+    cfg <- default_dq_scenarios(p)
+    expect_length(cfg, 5L)
+    expect_true("near_positivity" %in% names(cfg))
+    expect_true(!is.null(cfg$near_positivity$slopes))
+    expect_true(all(cfg$near_positivity$slopes > 1))
   }
 })
 

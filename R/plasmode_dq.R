@@ -2,10 +2,13 @@
 #'
 #' Extends the plasmode feasibility framework to evaluate TMLE
 #' candidate robustness under controlled data-quality degradations:
-#' covariate missingness, treatment misclassification (with
-#' asymmetric sensitivity and specificity), outcome misclassification
-#' (optionally differential by treatment arm), and unmeasured
-#' confounding.
+#' covariate missingness (missing completely at random, missing at
+#' random, or missing not at random, with a choice of imputation
+#' handler), treatment misclassification (with asymmetric sensitivity
+#' and specificity), outcome misclassification (optionally differential
+#' by treatment arm), unmeasured confounding, and near-positivity
+#' (amplification of the covariate-to-treatment association toward
+#' deterministic treatment).
 #'
 #' @name plasmode_dq
 NULL
@@ -17,11 +20,18 @@ NULL
 #' tunable by preset.  Saves the user from constructing the verbose
 #' nested list by hand for routine cases.
 #'
-#' @param preset Character; one of `"regulatory_standard"` (4 threats,
+#' @param preset Character; one of `"regulatory_standard"` (five threats,
 #'   moderate severities; the default), `"exploratory"` (lighter, faster),
 #'   or `"stress"` (heavier severities).
 #' @return A named list suitable for the `data_quality_scenarios`
-#'   argument of [run_plasmode_dq_stress()].
+#'   argument of [run_plasmode_dq_stress()]. Every preset returns the
+#'   same five threats: `covariate_missingness`, `treatment_misclass`,
+#'   `outcome_misclass`, `unmeasured_confounding`, and `near_positivity`.
+#'   The `near_positivity` element carries a `slopes` vector of
+#'   multipliers (greater than 1) applied to the centred propensity-score
+#'   log-odds, so a subgroup approaches deterministic treatment and the
+#'   estimated propensity scores reach the boundary. This is the same
+#'   covariate-to-treatment amplification used by the divergence study.
 #' @examples
 #' default_dq_scenarios()
 #' default_dq_scenarios("exploratory")
@@ -38,7 +48,8 @@ default_dq_scenarios <- function(preset = c("regulatory_standard",
                                    specificity = c(0.99, 0.95)),
       unmeasured_confounding = list(U_prevalence  = 0.20,
                                     U_treatment_OR = c(1.5, 2.0),
-                                    U_outcome_OR   = c(1.5, 2.0))
+                                    U_outcome_OR   = c(1.5, 2.0)),
+      near_positivity       = list(slopes = c(1.5, 2.0))
     ),
     exploratory = list(
       covariate_missingness = list(fractions = c(0.10)),
@@ -46,7 +57,8 @@ default_dq_scenarios <- function(preset = c("regulatory_standard",
       outcome_misclass      = list(sensitivity = 0.90, specificity = 0.95),
       unmeasured_confounding = list(U_prevalence  = 0.20,
                                     U_treatment_OR = 1.5,
-                                    U_outcome_OR   = 1.5)
+                                    U_outcome_OR   = 1.5),
+      near_positivity       = list(slopes = 1.5)
     ),
     stress = list(
       covariate_missingness = list(fractions = c(0.10, 0.20, 0.40)),
@@ -56,7 +68,8 @@ default_dq_scenarios <- function(preset = c("regulatory_standard",
                                    specificity = c(0.95, 0.90)),
       unmeasured_confounding = list(U_prevalence  = 0.20,
                                     U_treatment_OR = c(2.0, 3.0),
-                                    U_outcome_OR   = c(2.0, 3.0))
+                                    U_outcome_OR   = c(2.0, 3.0)),
+      near_positivity       = list(slopes = c(2.0, 3.0, 4.0))
     )
   )
 }
@@ -136,7 +149,7 @@ print_locked_spec <- function(lock) {
     g_sl   <- SuperLearner::SuperLearner(
       Y = A, X = W_data[, covariates, drop = FALSE],
       family = binomial(), SL.library = g_lib,
-      env = asNamespace("SuperLearner")
+      env = .cleantmle_sl_env()
     )
     ps_hat <- as.numeric(g_sl$SL.predict)
   } else {
@@ -159,7 +172,7 @@ print_locked_spec <- function(lock) {
   if (use_sl_q) {
     q_sl <- SuperLearner::SuperLearner(
       Y = Y_sim, X = AW, family = binomial(), SL.library = q_lib,
-      env = asNamespace("SuperLearner")
+      env = .cleantmle_sl_env()
     )
     AW_a1 <- AW; AW_a1[[treatment]] <- 1L
     AW_a0 <- AW; AW_a0[[treatment]] <- 0L
@@ -522,6 +535,15 @@ print_locked_spec <- function(lock) {
 #'   \item{\code{unmeasured_confounding}}{List with \code{U_prevalence},
 #'     \code{U_treatment_OR}, and \code{U_outcome_OR} (the latter two
 #'     of equal length).}
+#'   \item{\code{near_positivity}}{List with \code{slopes} (numeric vector of
+#'     multipliers greater than 1). Each multiplier scales the centred
+#'     log-odds of the lock-data propensity model, amplifying the
+#'     covariate-to-treatment association so a subgroup approaches
+#'     deterministic treatment and the estimated propensity score reaches the
+#'     boundary. This stresses positivity (the inverse-probability weight tail)
+#'     rather than the outcome surface, and it is the threat under which a
+#'     lightly truncated candidate degrades while a heavily truncated candidate
+#'     is protected.}
 #' }
 #'
 #' @return An object of class \code{plasmode_dq_results} containing
@@ -591,7 +613,7 @@ run_plasmode_dq_stress <- function(lock,
       Y = data[[outcome]][cc],
       X = data[cc, covariates, drop = FALSE],
       family = stats::binomial(), SL.library = q0_library,
-      env = asNamespace("SuperLearner"))
+      env = .cleantmle_sl_env())
     p_base <- as.numeric(predict(
       Q0_sl, newdata = data[, covariates, drop = FALSE])$pred)
   } else {
@@ -718,6 +740,19 @@ run_plasmode_dq_stress <- function(lock,
     }
   }
 
+  # Practical positivity violation: the covariate-to-treatment association is
+  # amplified so a subgroup approaches deterministic treatment and the estimated
+  # propensity score reaches the boundary. The `slopes` are multipliers (> 1) on
+  # the centred log-odds of the lock-data propensity model.
+  if (!is.null(dqs$near_positivity)) {
+    for (s in dqs$near_positivity$slopes) {
+      scenario_grid <- rbind(scenario_grid, data.frame(
+        scenario = "near_positivity",
+        level = sprintf("slope_x%.1f", s),
+        stringsAsFactors = FALSE))
+    }
+  }
+
   if (verbose) {
     cat(sprintf("DQ Stress Test: %d scenarios x %d effect sizes x %d reps x %d candidates\n",
                 nrow(scenario_grid), length(effect_sizes), reps, length(cand_ids)))
@@ -779,6 +814,10 @@ run_plasmode_dq_stress <- function(lock,
       u_trt_or_lvl <- as.numeric(m[2])
       u_out_or_lvl <- as.numeric(m[3])
     }
+    pos_slope_lvl <- NA_real_
+    if (sc_name == "near_positivity") {
+      pos_slope_lvl <- as.numeric(sub("slope_x", "", sc_level))
+    }
 
     for (es in effect_sizes) {
       rep_results <- vector("list", reps)
@@ -811,6 +850,17 @@ run_plasmode_dq_stress <- function(lock,
             log(u_out_or_lvl) * U
           p1_sim <- stats::plogis(lp1)
           p0_sim <- stats::plogis(lp0)
+        }
+
+        if (sc_name == "near_positivity") {
+          # Amplify the covariate-to-treatment slopes about their mean so a
+          # subgroup approaches deterministic treatment (PS -> 0/1). The outcome
+          # model is left unchanged; this threat stresses positivity, not the
+          # outcome surface.
+          lp_ps  <- stats::qlogis(ps_base)
+          lp_bar <- mean(lp_ps)
+          ps_pos <- stats::plogis(lp_bar + pos_slope_lvl * (lp_ps - lp_bar))
+          A_rep  <- stats::rbinom(n, 1L, ps_pos)
         }
 
         p_obs  <- ifelse(A_rep == 1, p1_sim, p0_sim)

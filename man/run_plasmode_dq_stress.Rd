@@ -11,6 +11,7 @@ run_plasmode_dq_stress(
   reps = 50L,
   data_quality_scenarios = list(),
   q0_library = NULL,
+  fit_timeout = Inf,
   verbose = TRUE
 )
 }
@@ -79,6 +80,15 @@ of equal length instead of (or alongside) the marginal pair.}
 \item{\code{unmeasured_confounding}}{List with \code{U_prevalence},
 \code{U_treatment_OR}, and \code{U_outcome_OR} (the latter two
 of equal length).}
+\item{\code{near_positivity}}{List with \code{slopes} (numeric vector of
+multipliers greater than 1). Each multiplier scales the centred
+log-odds of the lock-data propensity model, amplifying the
+covariate-to-treatment association so a subgroup approaches
+deterministic treatment and the estimated propensity score reaches the
+boundary. This stresses positivity (the inverse-probability weight tail)
+rather than the outcome surface, and it is the threat under which a
+lightly truncated candidate degrades while a heavily truncated candidate
+is protected.}
 }
 }
 \section{Clean-room stage}{

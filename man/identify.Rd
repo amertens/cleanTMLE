@@ -66,3 +66,11 @@ by \code{\link[=specify_models]{specify_models()}}. Each function declares one a
 outcome, treatment, censoring, competing risks, subject identifier, time
 interval, or missingness.
 }
+\section{Experimental}{
+
+The \verb{identify_*()} family is outside the tested v0.1 scope of cleanTMLE.
+These functions are exported so that users can begin exercising the
+model-specification DSL, but they are not yet validated through the
+staged workflow and the API may change in a future release.
+}
+

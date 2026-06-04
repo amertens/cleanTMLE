@@ -6,14 +6,16 @@
 \usage{
 .check_outcome_access(
   lock,
-  override_clean_room = FALSE,
+  allow_outcome_access = FALSE,
   caller = "Stage 4 function"
 )
 }
 \arguments{
 \item{lock}{A \code{cleanroom_lock}.}
 
-\item{override_clean_room}{Logical; if \code{TRUE} the check is skipped.}
+\item{allow_outcome_access}{Logical; if \code{TRUE} the outcome-guard check
+is skipped. Use this argument in place of the deprecated
+\code{override_clean_room}.}
 
 \item{caller}{Character; name of the calling function (for error messages).}
 }

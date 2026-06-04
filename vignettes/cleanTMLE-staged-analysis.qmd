@@ -70,7 +70,7 @@ Eight terms that appear repeatedly in this vignette and in the targeted-learning
 
 Two more terms come up in the second half of the vignette: **plasmode simulation** (a simulation that keeps the real covariate and treatment structure but generates a synthetic outcome with a known truth) and **IPCW** (inverse-probability-of-censoring weighting, used to handle missing outcomes).
 
-## The plain workflow: TMLE in five estimators on one figure
+## The plain workflow: four estimators on one figure
 
 Before introducing any governance machinery, we run the full estimator menu on the clinical anchor and compare them on a single figure. This is the workflow you can lift straight into a methods-development analysis.
 
@@ -164,8 +164,8 @@ ggplot(plain_results,
   geom_point(size = 3) +
   geom_errorbarh(aes(xmin = ci_lower, xmax = ci_upper), height = 0.2) +
   labs(x = "Risk difference (95% CI)", y = NULL,
-       title = "Five estimators on one figure",
-       subtitle = "Crude vs IPTW vs g-computation vs AIPW vs TMLE") +
+       title = "Four estimators on one figure",
+       subtitle = "Crude vs PS matching vs IPTW vs TMLE") +
   theme_minimal(base_size = 11)
 ```
 
@@ -176,7 +176,7 @@ A few things to read from the forest plot:
 - The confidence intervals are not the same width. IPTW's IF-based SE assumes the propensity score is known; in practice it has been estimated, so the IPTW SE is conservative. TMLE's SE accounts for the estimation of the propensity score.
 - The matched estimator's CI is wider than the full-cohort TMLE's CI because matching restricts the analysis to the overlap subset and discards unmatched controls.
 
-That is the entire core workflow. Everything in the rest of this vignette is *governance and audit machinery* on top of these five estimators — for studies that need a reproducible pre-outcome dossier — not a different estimator.
+That is the entire core workflow. Everything in the rest of this vignette is *governance and audit machinery* on top of these four estimators, for studies that need a reproducible pre-outcome dossier, and is not a different estimator.
 
 ## When to read the rest
 
@@ -1473,8 +1473,7 @@ The package does not enforce institutional governance (role separation,
 independent review boards, blinded data managers); those are
 organisational responsibilities.
 What it does provide is software scaffolding that makes the staged
-workflow reproducible, auditable, and less susceptible to unintentional
-outcome-informed decision making.
+workflow reproducible and auditable.
 
 ```{r session-info}
 sessionInfo()

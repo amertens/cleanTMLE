@@ -79,6 +79,14 @@ incidence is estimated using the weighted Aalen-Johansen estimator
 in discrete time.
 }
 }
+\section{Experimental}{
+
+\code{estimate_ipwrisk()} is outside the tested v0.1 scope of cleanTMLE, which
+covers binary point exposure, binary outcome, and the marginal risk
+difference only. Time-to-event estimators are exported for early adopters
+but are not yet validated through the staged workflow and the API may change.
+}
+
 \examples{
 \dontrun{
 data(example1, package = "cleanTMLE")

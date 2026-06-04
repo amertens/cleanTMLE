@@ -119,7 +119,7 @@ fit_ps_parallel <- function(lock, cluster = NULL, truncate = NULL, ...) {
       family     = binomial(),
       SL.library = lock$sl_library,
       cluster    = cluster,
-      env        = asNamespace("SuperLearner"),
+      env        = .cleantmle_sl_env(),
       ...
     )
   } else {
@@ -128,7 +128,7 @@ fit_ps_parallel <- function(lock, cluster = NULL, truncate = NULL, ...) {
       X          = W,
       family     = binomial(),
       SL.library = lock$sl_library,
-      env        = asNamespace("SuperLearner"),
+      env        = .cleantmle_sl_env(),
       ...
     )
   }
@@ -302,7 +302,7 @@ run_negative_control_tmle <- function(lock, variable, ps_fit,
       sl <- SuperLearner::SuperLearner(
         Y = Y_nc, X = AW, family = binomial(),
         SL.library = sl_library,
-        env = asNamespace("SuperLearner")
+        env = .cleantmle_sl_env()
       )
       AW_a1 <- AW; AW_a1[[lock$treatment]] <- 1L
       AW_a0 <- AW; AW_a0[[lock$treatment]] <- 0L
@@ -448,7 +448,7 @@ run_matched_tmle <- function(lock, ps_fit, subset_idx,
       sl <- SuperLearner::SuperLearner(
         Y = Y[fit_idx], X = AW[fit_idx, , drop = FALSE], family = binomial(),
         SL.library = sl_library,
-        env = asNamespace("SuperLearner")
+        env = .cleantmle_sl_env()
       )
       AW_a1 <- AW; AW_a1[[lock$treatment]] <- 1L
       AW_a0 <- AW; AW_a0[[lock$treatment]] <- 0L

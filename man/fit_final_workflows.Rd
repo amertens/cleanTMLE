@@ -8,7 +8,8 @@ fit_final_workflows(
   lock,
   ps_fit,
   workflows = c("match", "iptw", "tmle"),
-  override_clean_room = FALSE
+  allow_outcome_access = FALSE,
+  override_clean_room = NULL
 )
 }
 \arguments{
@@ -22,8 +23,9 @@ Default: \code{c("match", "iptw", "tmle")}.  Matching and IPTW serve as
 secondary comparators; the primary TMLE uses the locked specification
 from \code{\link[=lock_primary_tmle_spec]{lock_primary_tmle_spec()}} when available.}
 
-\item{override_clean_room}{Logical; if \code{TRUE}, skips the outcome-
-access check.  Default \code{FALSE}.}
+\item{allow_outcome_access}{Logical; if \code{TRUE}, skips the outcome-access check. Default \code{FALSE}.}
+
+\item{override_clean_room}{Deprecated. Use \code{allow_outcome_access}.}
 }
 \value{
 A named list with elements named by the requested workflows.
