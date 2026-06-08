@@ -6,8 +6,11 @@
 \description{
 Extends the plasmode feasibility framework to evaluate TMLE
 candidate robustness under controlled data-quality degradations:
-covariate missingness, treatment misclassification (with
-asymmetric sensitivity and specificity), outcome misclassification
-(optionally differential by treatment arm), and unmeasured
-confounding.
+covariate missingness (missing completely at random, missing at
+random, or missing not at random, with a choice of imputation
+handler), treatment misclassification (with asymmetric sensitivity
+and specificity), outcome misclassification (optionally differential
+by treatment arm), unmeasured confounding, and near-positivity
+(amplification of the covariate-to-treatment association toward
+deterministic treatment).
 }

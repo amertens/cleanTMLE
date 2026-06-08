@@ -366,6 +366,45 @@ print_locked_spec <- function(lock) {
 }
 
 
+#' Introduce MNAR covariate missingness (value-dependent), then impute
+#'
+#' Missingness not at random: the probability that a covariate is missing
+#' depends on its own (unobserved) value, so median imputation is biased in a
+#' way that cannot be diagnosed from the observed data. Larger standardised
+#' values are more likely to be set missing; the column is then median-imputed,
+#' which systematically pulls the high tail toward the centre. This is the
+#' strongest of the three missingness mechanisms.
+#'
+#' @param data data.frame whose covariate columns will be degraded.
+#' @param covariates character vector of column names to degrade.
+#' @param base_fraction baseline missingness fraction in (0, 1) at the column
+#'   mean (the logit intercept).
+#' @param strength slope (on the logit scale) of the dependence of the
+#'   missingness probability on the standardised covariate value. Default 1.5.
+#' @keywords internal
+.degrade_missingness_mnar <- function(data, covariates, base_fraction,
+                                      strength = 1.5) {
+  n  <- nrow(data)
+  p0 <- min(max(base_fraction, 1e-6), 1 - 1e-6)
+  for (v in covariates) {
+    x  <- data[[v]]
+    sx <- stats::sd(x, na.rm = TRUE)
+    z  <- if (is.finite(sx) && sx > 0) (x - mean(x, na.rm = TRUE)) / sx else rep(0, n)
+    pmiss <- stats::plogis(stats::qlogis(p0) + strength * z)
+    miss  <- stats::rbinom(n, 1L, pmiss) == 1L
+    data[[v]][miss] <- NA
+  }
+  for (v in covariates) {
+    bad <- is.na(data[[v]])
+    if (any(bad)) {
+      med <- stats::median(data[[v]][!bad], na.rm = TRUE)
+      data[[v]][bad] <- if (is.na(med)) 0 else med
+    }
+  }
+  data
+}
+
+
 #' Apply asymmetric (sensitivity, specificity) misclassification to A.
 #'
 #' Interpretation:
@@ -523,6 +562,14 @@ print_locked_spec <- function(lock) {
 #'     Because missingness depends on the arm and the column is
 #'     median-imputed, this scenario is a stronger test than MCAR: the
 #'     imputation is biased rather than merely inefficient.}
+#'   \item{\code{covariate_missingness_mnar}}{MNAR (value-dependent).
+#'     List with \code{fractions} (baseline missingness fractions at the
+#'     column mean), optional \code{variables}, and optional \code{strength}
+#'     (logit-scale slope of the dependence of the missingness probability on
+#'     the standardised covariate value; default 1.5). The probability that a
+#'     covariate is missing depends on its own unobserved value, so median
+#'     imputation is biased in a way that cannot be diagnosed from the observed
+#'     data. This is the strongest of the three missingness mechanisms.}
 #'   \item{\code{treatment_misclass}}{List with optional \code{rates}
 #'     (numeric vector for symmetric flips) and / or asymmetric
 #'     \code{sensitivity} and \code{specificity} (numeric vectors of
@@ -664,6 +711,14 @@ run_plasmode_dq_stress <- function(lock,
     for (f in dqs$covariate_missingness_mar$fractions) {
       scenario_grid <- rbind(scenario_grid, data.frame(
         scenario = "cov_miss_mar", level = as.character(f),
+        stringsAsFactors = FALSE))
+    }
+  }
+
+  if (!is.null(dqs$covariate_missingness_mnar)) {
+    for (f in dqs$covariate_missingness_mnar$fractions) {
+      scenario_grid <- rbind(scenario_grid, data.frame(
+        scenario = "cov_miss_mnar", level = as.character(f),
         stringsAsFactors = FALSE))
     }
   }
@@ -912,6 +967,16 @@ run_plasmode_dq_stress <- function(lock,
           or_a <- spec$treatment_OR %||% 3
           W_fit <- .degrade_missingness_mar(data, miss_vars, frac,
                                             A = A_rep, treatment_OR = or_a)
+        }
+        # Covariate missingness (MNAR; value-dependent + median impute).
+        if (sc_name == "cov_miss_mnar") {
+          frac <- as.numeric(sc_level)
+          spec <- dqs$covariate_missingness_mnar
+          miss_vars <- spec$variables
+          if (is.null(miss_vars)) miss_vars <- covariates
+          strength <- spec$strength %||% 1.5
+          W_fit <- .degrade_missingness_mnar(data, miss_vars, frac,
+                                             strength = strength)
         }
 
         # Fit all candidates for this replicate inside a killable subprocess

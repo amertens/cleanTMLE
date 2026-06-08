@@ -9,13 +9,20 @@ default_dq_scenarios(
 )
 }
 \arguments{
-\item{preset}{Character; one of \code{"regulatory_standard"} (4 threats,
+\item{preset}{Character; one of \code{"regulatory_standard"} (five threats,
 moderate severities; the default), \code{"exploratory"} (lighter, faster),
 or \code{"stress"} (heavier severities).}
 }
 \value{
 A named list suitable for the \code{data_quality_scenarios}
-argument of \code{\link[=run_plasmode_dq_stress]{run_plasmode_dq_stress()}}.
+argument of \code{\link[=run_plasmode_dq_stress]{run_plasmode_dq_stress()}}. Every preset returns the
+same five threats: \code{covariate_missingness}, \code{treatment_misclass},
+\code{outcome_misclass}, \code{unmeasured_confounding}, and \code{near_positivity}.
+The \code{near_positivity} element carries a \code{slopes} vector of
+multipliers (greater than 1) applied to the centred propensity-score
+log-odds, so a subgroup approaches deterministic treatment and the
+estimated propensity scores reach the boundary. This is the same
+covariate-to-treatment amplification used by the divergence study.
 }
 \description{
 Returns a recommended scenario list for \code{\link[=run_plasmode_dq_stress]{run_plasmode_dq_stress()}},

@@ -68,6 +68,14 @@ optional \code{variables}, and optional \code{treatment_OR}
 Because missingness depends on the arm and the column is
 median-imputed, this scenario is a stronger test than MCAR: the
 imputation is biased rather than merely inefficient.}
+\item{\code{covariate_missingness_mnar}}{MNAR (value-dependent).
+List with \code{fractions} (baseline missingness fractions at the
+column mean), optional \code{variables}, and optional \code{strength}
+(logit-scale slope of the dependence of the missingness probability on
+the standardised covariate value; default 1.5). The probability that a
+covariate is missing depends on its own unobserved value, so median
+imputation is biased in a way that cannot be diagnosed from the observed
+data. This is the strongest of the three missingness mechanisms.}
 \item{\code{treatment_misclass}}{List with optional \code{rates}
 (numeric vector for symmetric flips) and / or asymmetric
 \code{sensitivity} and \code{specificity} (numeric vectors of

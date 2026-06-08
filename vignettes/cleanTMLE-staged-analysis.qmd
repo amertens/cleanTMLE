@@ -852,8 +852,21 @@ dq_results <- run_plasmode_dq_stress(
   effect_sizes    = c(0.05),
   reps            = 30L,
   data_quality_scenarios = list(
-    covariate_missingness = list(
+    # Practical positivity violation (amplify covariate -> treatment slopes).
+    near_positivity = list(
+      slopes = c(2.0, 3.0)
+    ),
+    # Covariate missingness under three mechanisms, each median-imputed.
+    # MCAR is unbiased by construction; MAR (treatment-dependent) and MNAR
+    # (value-dependent) make the imputation biased and are stronger tests.
+    covariate_missingness = list(            # MCAR
       fractions = c(0.05, 0.10, 0.20)
+    ),
+    covariate_missingness_mar = list(        # MAR (treatment-dependent)
+      fractions = c(0.10, 0.20), treatment_OR = 3
+    ),
+    covariate_missingness_mnar = list(       # MNAR (value-dependent)
+      fractions = c(0.10, 0.20), strength = 1.5
     ),
     treatment_misclass = list(
       sensitivity = c(0.99, 0.95, 0.90),

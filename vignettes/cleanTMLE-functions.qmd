@@ -324,12 +324,19 @@ dq_results <- run_plasmode_dq_stress(
   effect_sizes    = c(0.05),
   reps            = 30L,
   data_quality_scenarios = list(
-    # Scenario 1: outcome misclassification, two (sens, spec) pairs
+    # Practical positivity violation
+    near_positivity = list(slopes = c(2.0, 3.0)),
+    # Covariate missingness: MCAR, MAR (treatment-dependent), MNAR
+    # (value-dependent). All median-imputed; MAR/MNAR bias the imputation.
+    covariate_missingness      = list(fractions = c(0.10, 0.20)),
+    covariate_missingness_mar  = list(fractions = c(0.10, 0.20), treatment_OR = 3),
+    covariate_missingness_mnar = list(fractions = c(0.10, 0.20), strength = 1.5),
+    # Outcome misclassification, two (sens, spec) pairs
     outcome_misclass = list(
       sensitivity = c(0.95, 0.90),
       specificity = c(0.99, 0.95)
     ),
-    # Scenario 2: unmeasured confounding, two beta (OR) values
+    # Unmeasured confounding, two (OR) values
     unmeasured_confounding = list(
       U_prevalence   = 0.20,
       U_treatment_OR = c(1.5, 2.0),
