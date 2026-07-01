@@ -2,6 +2,16 @@
 
 ## Bug fixes
 
+* **`extract_tmle_estimate()`** now returns the model-based (TMLE plug-in)
+  treatment-specific risks as `risks$treated` and `risks$control`; their
+  difference equals the reported ATE. This lets
+  reporting code (e.g. `clean_risk_report_table()`) show the
+  confounding-adjusted arm risks the estimator actually targeted instead of
+  reconstructing them as `crude_arm_risk +/- ATE/2`, which forced symmetry
+  around the crude midpoint and could fall outside `[0, 1]`. The staged-analysis
+  vignette's risk-report and E-value chunks now use these fields; no ATE value
+  changes. Covered by a new assertion in `test-cleanroom.R`.
+
 * **`run_plasmode_dq_stress()`** no longer aborts when a degraded scenario cell
   has fewer than two converging replicates. The SE-calibration ratio (`se_cal`)
   is now computed with an explicit `NA` guard, because the empirical SD is

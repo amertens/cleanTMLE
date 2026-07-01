@@ -240,7 +240,7 @@ The vignette proceeds in the following conceptual steps:
 10. Post-outcome sensitivity analyses, interpretation, and archived
     analysis record.
 
-The Muntner et al. (2020) clean-room governance framework
+The Muntner et al. (2024) clean-room governance framework
 (role separation, restricted access, protocols, audit) is the
 source of the staging idea and is the broader notion of a clean
 room. cleanTMLE is the *software layer* of that workflow: it
@@ -1304,18 +1304,21 @@ via `clean_risk_report_table()`.
 
 ```{r risk-report-vignette, eval = exists("tmle_fit")}
 ate <- tmle_fit$estimates$ATE
-crude_r1 <- mean(lock$data[[lock$outcome]][lock$data[[lock$treatment]] == 1])
-crude_r0 <- mean(lock$data[[lock$outcome]][lock$data[[lock$treatment]] == 0])
+# Model-based (TMLE plug-in) treatment-specific risks, taken directly from
+# the fit rather than reconstructed from crude arm means. Their difference
+# equals the reported ATE.
+r1 <- tmle_fit$risks$treated
+r0 <- tmle_fit$risks$control
 
 risk_rows <- list(
   list(time_point = 24, treatment_strategy = "Treated",
        n_observed = sum(lock$data[[lock$treatment]] == 1),
-       risk = crude_r1 + ate$estimate / 2,
+       risk = r1,
        estimator = "Modular TMLE",
        nuisance_specification = paste(lock$sl_library, collapse = "+")),
   list(time_point = 24, treatment_strategy = "Control",
        n_observed = sum(lock$data[[lock$treatment]] == 0),
-       risk = crude_r0 - ate$estimate / 2,
+       risk = r0,
        risk_difference = ate$estimate,
        risk_ci_lower = ate$ci_lower,
        risk_ci_upper = ate$ci_upper,
@@ -1359,10 +1362,13 @@ association.
 
 ```{r evalue}
 ate <- tmle_fit$estimates$ATE
-# Approximate risk ratio from TMLE risk difference
-# Using crude arm risks for illustration
-r0_hat <- crude$r0
-rr_hat <- (r0_hat + ate$estimate) / r0_hat
+# Confounding-adjusted risk ratio from the model-based (TMLE plug-in) arm
+# risks the estimator targeted, not the crude control risk. The CI bound
+# maps the risk-difference lower limit onto the risk-ratio scale at the
+# adjusted control risk.
+r1_hat <- tmle_fit$risks$treated
+r0_hat <- tmle_fit$risks$control
+rr_hat <- r1_hat / r0_hat
 rr_lo  <- (r0_hat + ate$ci_lower) / r0_hat
 ev <- compute_evalue(rr_hat, ci_bound = min(rr_lo, 1/rr_lo))
 cat(sprintf("E-value: %.2f (CI bound: %.2f)\n", ev["e_value"], ev["e_value_ci"]))

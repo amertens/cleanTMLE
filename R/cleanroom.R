@@ -2611,7 +2611,12 @@ run_tmle_targeting_step <- function(g_fit, Q_fit) {
 #'
 #' @param tmle_upd A `tmle_update` object from [run_tmle_targeting_step()].
 #'
-#' @return An object of class `tmle_fit` (inherits from `cr_result`).
+#' @return An object of class `tmle_fit` (inherits from `cr_result`). Its
+#'   `estimates$ATE` holds the estimate, SE, CI, and p-value, and `risks` holds
+#'   the model-based treatment-specific risks `risks$treated` and
+#'   `risks$control` (the TMLE plug-in arm risks; their difference equals the
+#'   ATE). Report arm risks from these fields rather than reconstructing them
+#'   from crude means and the ATE.
 #'
 #' @export
 extract_tmle_estimate <- function(tmle_upd) {
@@ -2622,6 +2627,14 @@ extract_tmle_estimate <- function(tmle_upd) {
   psi <- tmle_upd$psi
   eic <- tmle_upd$eic
   n   <- tmle_upd$n
+
+  # Model-based (TMLE plug-in) treatment-specific risks. These are the
+  # confounding-adjusted arm risks the estimator actually targeted; the ATE
+  # is exactly their difference (psi = mean(Q_a1_upd) - mean(Q_a0_upd)), so
+  # reporting code should use these rather than reconstructing arm risks from
+  # crude means and the ATE.
+  risk_treated <- mean(tmle_upd$Q_a1_upd)
+  risk_control <- mean(tmle_upd$Q_a0_upd)
 
   # eic may contain NAs at rows with missing outcome (complete-case Q fit
   # plus Y NA in the (Y - Q_aw_upd) term). Use the n_eff = sum(!is.na(eic))
@@ -2646,6 +2659,10 @@ extract_tmle_estimate <- function(tmle_upd) {
         ci_upper = ci_hi,
         p_value  = p_value
       )
+    ),
+    risks = list(
+      treated = risk_treated,
+      control = risk_control
     ),
     tmle_obj        = tmle_upd,
     influence_curve = eic,

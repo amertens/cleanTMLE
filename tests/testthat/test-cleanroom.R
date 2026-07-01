@@ -456,6 +456,14 @@ test_that("run_tmle_targeting_step and extract_tmle_estimate work", {
   expect_true(!is.na(tmle_est$estimates$ATE$estimate))
   expect_true(!is.na(tmle_est$estimates$ATE$se))
   expect_output(print(tmle_est), "TMLE")
+
+  # Model-based arm risks are exposed and their difference is exactly the ATE
+  # (guards against reconstructing arm risks as crude +/- ATE/2).
+  expect_true(all(c("treated", "control") %in% names(tmle_est$risks)))
+  expect_equal(tmle_est$risks$treated - tmle_est$risks$control,
+               tmle_est$estimates$ATE$estimate)
+  expect_true(tmle_est$risks$treated >= 0 && tmle_est$risks$treated <= 1)
+  expect_true(tmle_est$risks$control >= 0 && tmle_est$risks$control <= 1)
 })
 
 
