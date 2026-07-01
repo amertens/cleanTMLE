@@ -1,5 +1,16 @@
 # cleanTMLE 0.1.5 (development)
 
+## Bug fixes
+
+* **`run_plasmode_dq_stress()`** no longer aborts when a degraded scenario cell
+  has fewer than two converging replicates. The SE-calibration ratio (`se_cal`)
+  is now computed with an explicit `NA` guard, because the empirical SD is
+  undefined for a single value; this matches the behaviour already used in
+  `run_plasmode_feasibility()`. Affected cells report `NA` for `emp_sd` and
+  `se_cal` rather than raising `"missing value where TRUE/FALSE needed"`, which
+  previously aborted the whole stress test. No previously reported value
+  changes. Covered by a new regression test in `test-plasmode_dq.R`.
+
 ## Data-quality stress test: positivity is now a default threat
 
 * **`default_dq_scenarios()`** now returns five threats for every preset.

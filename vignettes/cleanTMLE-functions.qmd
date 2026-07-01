@@ -359,6 +359,13 @@ gate <- authorize_outcome_analysis(audit)
 print(gate)
 ```
 
+The stress test is robust to non-converging cells. If a degraded scenario
+is severe enough that fewer than two replicates converge for a candidate,
+that cell reports `NA` for `emp_sd` and `se_cal` (and drops out of the
+SE-calibration summary) rather than aborting the run; `bias`, `rmse`, and
+`coverage` are still reported from the replicates that did converge, and
+`n_converged` records how many contributed to each row.
+
 ::: {.callout-warning}
 ## Common misuse
 

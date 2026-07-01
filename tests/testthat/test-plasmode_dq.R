@@ -195,6 +195,44 @@ test_that("run_plasmode_dq_stress is reproducible under fixed seeds", {
 })
 
 
+test_that("run_plasmode_dq_stress is NA-safe when a cell has < 2 converged reps", {
+  # Regression: with reps = 1 the empirical SD is NA, so the se_cal computation
+  # `if (emp_sd > 0)` previously threw "missing value where TRUE/FALSE needed"
+  # and aborted the whole stress test. The guard must treat an NA emp_sd as a
+  # missing calibration ratio (se_cal = NA), not error. The same situation arises
+  # at higher reps whenever only one replicate converges in a degraded cell.
+  set.seed(2026)
+  dat  <- sim_func1(n = 300, seed = 1)
+  lock <- create_analysis_lock(
+    data        = dat,
+    treatment   = "treatment",
+    outcome     = "event_24",
+    covariates  = c("age", "sex", "biomarker"),
+    sl_library  = "SL.glm",
+    plasmode_reps = 1L,
+    seed        = 3L
+  )
+  candidates <- list(
+    tmle_candidate("glm_t01", "GLM, trunc=0.01",
+                   g_library = "SL.glm", truncation = 0.01)
+  )
+  # Before the fix this call aborted; the test fails here if the guard regresses.
+  res <- run_plasmode_dq_stress(
+    lock,
+    tmle_candidates = candidates,
+    effect_sizes    = c(0.05),
+    reps            = 1L,
+    data_quality_scenarios = list(
+      covariate_missingness = list(fractions = c(0.10))
+    ),
+    verbose = FALSE
+  )
+  expect_s3_class(res, "plasmode_dq_results")
+  # emp_sd is NA at reps = 1, so se_cal must be NA rather than triggering an error.
+  expect_true(all(is.na(res$metrics$se_cal)))
+})
+
+
 test_that("near_positivity inflates the lightly-truncated candidate's error", {
   # A constructed near-positivity design: amplifying the centred PS log-odds
   # pushes a subgroup toward deterministic treatment, so the inverse-probability

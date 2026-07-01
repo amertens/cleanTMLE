@@ -41,7 +41,14 @@ An object of class \code{plasmode_dq_results} containing
 \describe{
 \item{metrics}{data.frame with columns scenario, level,
 effect_size, candidate, bias, rmse, coverage, emp_sd,
-mean_se, se_cal, n_converged.}
+mean_se, se_cal, n_converged. When a degraded scenario cell
+is severe enough that fewer than two replicates converge,
+the empirical SD (\code{emp_sd}) and the SE-calibration
+ratio (\code{se_cal}) are \code{NA}, while \code{bias},
+\code{rmse}, and \code{coverage} are still reported from the
+converged replicate(s). Such a cell does not abort the
+stress test; \code{n_converged} records how many replicates
+contributed to each row.}
 \item{scenarios}{the input \code{data_quality_scenarios}.}
 \item{baseline}{rows of metrics where scenario == "none".}
 }

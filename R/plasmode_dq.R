@@ -597,7 +597,14 @@ print_locked_spec <- function(lock) {
 #'   \describe{
 #'     \item{metrics}{data.frame with columns scenario, level,
 #'       effect_size, candidate, bias, rmse, coverage, emp_sd,
-#'       mean_se, se_cal, n_converged.}
+#'       mean_se, se_cal, n_converged. When a degraded scenario cell
+#'       is severe enough that fewer than two replicates converge,
+#'       the empirical SD (\code{emp_sd}) and the SE-calibration
+#'       ratio (\code{se_cal}) are \code{NA}, while \code{bias},
+#'       \code{rmse}, and \code{coverage} are still reported from the
+#'       converged replicate(s). Such a cell does not abort the
+#'       stress test; \code{n_converged} records how many replicates
+#'       contributed to each row.}
 #'     \item{scenarios}{the input \code{data_quality_scenarios}.}
 #'     \item{baseline}{rows of metrics where scenario == "none".}
 #'   }
@@ -1024,7 +1031,8 @@ run_plasmode_dq_stress <- function(lock,
                                      truth_vv <= ci_his[valid]), 3),
           emp_sd      = round(emp_sd, 5),
           mean_se     = round(mean_se, 5),
-          se_cal      = round(if (emp_sd > 0) mean_se / emp_sd else NA, 3),
+          se_cal      = round(if (!is.na(emp_sd) && emp_sd > 0)
+                                mean_se / emp_sd else NA_real_, 3),
           n_converged = sum(valid),
           stringsAsFactors = FALSE
         )

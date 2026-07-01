@@ -264,6 +264,159 @@ hist.ipw <- function(x, type = c("ps", "weights"), ...) {
 }
 
 
+#' Heatmap of candidate performance across data-quality threats
+#'
+#' Plots a tile grid showing RMSE, bias, coverage, or another operating
+#' characteristic from a [run_plasmode_dq_stress()] result. Candidates run
+#' along the x-axis; scenario-by-severity combinations run along the y-axis,
+#' with the undisturbed baseline row at the top so degradation is immediately
+#' visible.
+#'
+#' @param x A `plasmode_dq_results` object from [run_plasmode_dq_stress()].
+#' @param metric Character; metric to display. One of `"rmse"` (default),
+#'   `"bias"`, `"coverage"`, `"emp_sd"`, or `"se_cal"`.
+#' @param effect_size Numeric scalar; which effect size to display. `NULL`
+#'   (default) uses the first available effect size.
+#' @param scenarios Character vector of scenario names to include, or `NULL`
+#'   (default) for all scenarios in the metrics table.
+#' @param label_values Logical; print the metric value inside each tile.
+#'   Default `TRUE`.
+#' @param digits Integer; decimal places for tile labels. Default `3`.
+#' @param low,high Character colour strings for the gradient endpoints.
+#'   Defaults (`"#FFF5F0"` to `"#67000D"`) map low values to near-white and
+#'   high values to dark red, which is appropriate for RMSE and bias (lower is
+#'   better). For coverage, where higher is better, pass
+#'   `low = "#67000D", high = "#009E73"` to reverse the direction.
+#' @param ... Not currently used.
+#'
+#' @return A ggplot object.
+#'
+#' @seealso [run_plasmode_dq_stress()], [summarize_dq_degradation()]
+#'
+#' @examples
+#' \dontrun{
+#' dq <- run_plasmode_dq_stress(lock, tmle_candidates, reps = 20)
+#' plot_dq_heatmap(dq)
+#' plot_dq_heatmap(dq, metric = "coverage")
+#' plot_dq_heatmap(dq, metric = "bias", scenarios = c("none", "unmeasured_U"))
+#' }
+#'
+#' @export
+plot_dq_heatmap <- function(x,
+                             metric       = c("rmse", "bias", "coverage",
+                                              "emp_sd", "se_cal"),
+                             effect_size  = NULL,
+                             scenarios    = NULL,
+                             label_values = TRUE,
+                             digits       = 3L,
+                             low          = "#FFF5F0",
+                             high         = "#67000D",
+                             ...) {
+  if (!inherits(x, "plasmode_dq_results"))
+    stop("`x` must be a plasmode_dq_results object.", call. = FALSE)
+  if (!requireNamespace("ggplot2", quietly = TRUE))
+    stop("ggplot2 is required. Install it with install.packages('ggplot2').",
+         call. = FALSE)
+
+  metric <- match.arg(metric)
+  m      <- x$metrics
+
+  # Effect-size filter
+  es_vals <- sort(unique(m$effect_size))
+  if (is.null(effect_size)) {
+    effect_size <- es_vals[[1L]]
+    if (length(es_vals) > 1L)
+      message("plot_dq_heatmap: multiple effect sizes (",
+              paste(es_vals, collapse = ", "), "); using ", effect_size,
+              ". Pass effect_size = ... to change.")
+  }
+  m <- m[m$effect_size == effect_size, , drop = FALSE]
+
+  if (!is.null(scenarios))
+    m <- m[m$scenario %in% scenarios, , drop = FALSE]
+
+  if (nrow(m) == 0L)
+    stop("No rows remain after filtering. Check effect_size / scenarios.",
+         call. = FALSE)
+
+  # Y-axis labels: "Baseline" for scenario == "none", else "scenario [level]"
+  m$y_label <- ifelse(
+    m$scenario == "none",
+    "Baseline",
+    ifelse(m$level == 0,
+           m$scenario,
+           paste0(m$scenario, " [", m$level, "]"))
+  )
+
+  # Row ordering: baseline first, then scenarios sorted by name and level
+  base_rows  <- m[m$scenario == "none",  , drop = FALSE]
+  other_rows <- m[m$scenario != "none",  , drop = FALSE]
+  other_rows <- other_rows[order(other_rows$scenario, other_rows$level), ]
+  m          <- rbind(base_rows, other_rows)
+  # Reverse for ggplot so baseline appears at the top
+  m$y_label  <- factor(m$y_label, levels = rev(unique(m$y_label)))
+
+  # Candidate ordering follows the original object
+  cand_order  <- unique(x$metrics$candidate)
+  m$candidate <- factor(m$candidate, levels = cand_order)
+
+  metric_label <- switch(metric,
+    rmse     = "RMSE",
+    bias     = "Bias",
+    coverage = "Coverage",
+    emp_sd   = "Empirical SD",
+    se_cal   = "SE calibration (mean SE / emp SD)"
+  )
+
+  # For coverage, green = good (high), so invert the gradient
+  if (metric == "coverage") {
+    tmp  <- low
+    low  <- high
+    high <- tmp
+  }
+
+  p <- ggplot2::ggplot(
+      m,
+      ggplot2::aes(x = .data$candidate,
+                   y = .data$y_label,
+                   fill = .data[[metric]])
+    ) +
+    ggplot2::geom_tile(colour = "white", linewidth = 0.5) +
+    ggplot2::scale_fill_gradient(low = low, high = high,
+                                  name = metric_label, na.value = "grey80") +
+    ggplot2::labs(
+      x        = "Candidate",
+      y        = "Scenario × severity",
+      title    = paste0("DQ stress-test heatmap: ", metric_label),
+      subtitle = paste0("Effect size = ", effect_size)
+    ) +
+    ggplot2::theme_minimal(base_size = 11) +
+    ggplot2::theme(
+      axis.text.x     = ggplot2::element_text(angle = 30, hjust = 1),
+      panel.grid      = ggplot2::element_blank(),
+      plot.title      = ggplot2::element_text(face = "bold"),
+      legend.position = "right"
+    )
+
+  if (isTRUE(label_values)) {
+    z         <- m[[metric]]
+    m$.label  <- ifelse(is.na(z), "", format(round(z, digits), nsmall = digits))
+    p <- p +
+      ggplot2::geom_text(
+        data        = m,
+        mapping     = ggplot2::aes(x = .data$candidate,
+                                   y = .data$y_label,
+                                   label = .data$.label),
+        colour      = "grey10",
+        size        = 3,
+        inherit.aes = FALSE
+      )
+  }
+
+  p
+}
+
+
 #' Internal weight histogram plotter
 #' @keywords internal
 .hist_weights <- function(fit, type = "ps") {
