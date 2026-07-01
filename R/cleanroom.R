@@ -47,20 +47,20 @@ NULL
     )
   }
 
-  # Soft authorisation check. A cleanroom lock reaches Stage 4 authorised only
-  # if unmask_outcome() recorded a passing pre-outcome gate (`.outcome_authorized`).
-  # An unmasked-but-never-authorised lock (including one that was never masked)
-  # is the gap this closes: warn once per session rather than block, so the
-  # analyst is told the primary analysis ran without a recorded authorisation.
-  if (!isTRUE(lock$.outcome_authorized) &&
-      !isTRUE(.cleanTMLE_state$warned_unauthorized)) {
-    .cleanTMLE_state$warned_unauthorized <- TRUE
-    warning(
-      caller, ": running Stage 4 on a lock with no recorded outcome ",
-      "authorisation. Pass the pre-outcome gate and call ",
-      "unmask_outcome(lock, original_lock, audit = <audit>) to record it, ",
-      "or create the lock with cleanroom_enabled = FALSE for a plain ",
-      "pipeline. (Soft enforcement; shown once per session.)",
+  # Authorisation check. A cleanroom lock reaches Stage 4 authorised only if a
+  # passing pre-outcome gate was recorded on it (`.outcome_authorized`), via
+  # unmask_outcome(audit = ) or assert_outcome_authorized(audit, lock = ). An
+  # unmasked-but-unauthorised lock, including one that was never masked, is
+  # refused: this is the gate enforcement the clean-room design requires, not
+  # merely outcome masking.
+  if (!isTRUE(lock$.outcome_authorized)) {
+    stop(
+      caller, ": outcome analysis is not authorised for this lock. Pass the ",
+      "pre-outcome gate and record it with ",
+      "unmask_outcome(lock, original_lock, audit = <audit>) or ",
+      "assert_outcome_authorized(audit, lock = <lock>); or set ",
+      "allow_outcome_access = TRUE to override; or create the lock with ",
+      "cleanroom_enabled = FALSE for a plain pipeline.",
       call. = FALSE
     )
   }

@@ -320,7 +320,7 @@ test_that("run_match_workflow returns match_result", {
                   covariates = c("age", "sex", "biomarker"), data = dat)
   class(mock_ps) <- c("ps_fit", "cr_result")
 
-  m_fit <- run_match_workflow(lock, mock_ps)
+  m_fit <- run_match_workflow(lock, mock_ps, allow_outcome_access = TRUE)
 
   expect_s3_class(m_fit, "match_result")
   expect_true(!is.na(m_fit$estimate))
@@ -348,7 +348,7 @@ test_that("run_iptw_workflow returns iptw_result", {
                   covariates = c("age", "sex", "biomarker"), data = dat)
   class(mock_ps) <- c("ps_fit", "cr_result")
 
-  i_fit <- run_iptw_workflow(lock, mock_ps)
+  i_fit <- run_iptw_workflow(lock, mock_ps, allow_outcome_access = TRUE)
 
   expect_s3_class(i_fit, "iptw_result")
   expect_true(!is.na(i_fit$estimate))
@@ -371,7 +371,8 @@ test_that("run_iptw_workflow with trimming", {
                   covariates = c("age", "sex"), data = dat)
   class(mock_ps) <- c("ps_fit", "cr_result")
 
-  i_fit <- run_iptw_workflow(lock, mock_ps, trim = 0.01)
+  i_fit <- run_iptw_workflow(lock, mock_ps, trim = 0.01,
+                             allow_outcome_access = TRUE)
   expect_s3_class(i_fit, "iptw_result")
 })
 
@@ -416,7 +417,7 @@ test_that("fit_tmle_outcome_mechanism returns outcome mechanism", {
   class(mock_ps) <- c("ps_fit", "cr_result")
 
   g_fit <- fit_tmle_treatment_mechanism(lock, ps_fit = mock_ps)
-  Q_fit <- fit_tmle_outcome_mechanism(lock, g_fit)
+  Q_fit <- fit_tmle_outcome_mechanism(lock, g_fit, allow_outcome_access = TRUE)
 
   expect_s3_class(Q_fit, "tmle_mechanism")
   expect_equal(Q_fit$type, "outcome")
@@ -442,7 +443,8 @@ test_that("run_tmle_targeting_step and extract_tmle_estimate work", {
   class(mock_ps) <- c("ps_fit", "cr_result")
 
   g_fit    <- fit_tmle_treatment_mechanism(lock, ps_fit = mock_ps)
-  Q_fit    <- fit_tmle_outcome_mechanism(lock, g_fit)
+  Q_fit    <- fit_tmle_outcome_mechanism(lock, g_fit,
+                                         allow_outcome_access = TRUE)
   tmle_upd <- run_tmle_targeting_step(g_fit, Q_fit)
 
   expect_s3_class(tmle_upd, "tmle_update")
@@ -584,6 +586,7 @@ test_that("fit_final_workflows runs all three workflows", {
     outcome = "event_24", covariates = c("age", "sex", "biomarker"),
     seed = 93L
   )
+  lock$.outcome_authorized <- TRUE  # authorised lock -> all inner workflows run
   ps_fit <- fit_ps_glm(lock)
   result <- fit_final_workflows(lock, ps_fit)
 
@@ -606,6 +609,7 @@ test_that("fit_tmle_candidate_set returns results with candidate specs", {
     outcome = "event_24", covariates = c("age", "sex", "biomarker"),
     seed = 94L
   )
+  lock$.outcome_authorized <- TRUE  # authorised lock -> candidate fits run
 
   candidates <- list(
     tmle_candidate("glm_t01", g_library = "SL.glm", truncation = 0.01),

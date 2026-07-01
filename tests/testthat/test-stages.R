@@ -163,6 +163,7 @@ test_that("sensitivity_truncation returns data.frame", {
   dat  <- sim_func1(n = 200, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex", "biomarker"), seed = 1)
+  lock$.outcome_authorized <- TRUE  # authorised lock; sensitivity re-estimates
   sens <- sensitivity_truncation(lock, thresholds = c(0.01, 0.05))
   expect_true(is.data.frame(sens))
   expect_equal(nrow(sens), 2)
@@ -387,42 +388,67 @@ test_that("assert_outcome_authorized errors when not authorized", {
   expect_error(assert_outcome_authorized(audit), "NOT authorised")
 })
 
-test_that("unmask_outcome warns without an audit and stamps authorization (soft)", {
+test_that("unmask_outcome errors without an audit and can be forced (hard)", {
   dat  <- sim_func1(n = 150, seed = 4)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex", "biomarker"), seed = 4)
   masked <- mask_outcome(lock)
-  expect_warning(un <- unmask_outcome(masked, lock),
-                 "authorisation was not verified")
+  # No audit on a cleanroom lock -> hard error.
+  expect_error(unmask_outcome(masked, lock), "requires an .audit.")
+  # Forced unmask warns but proceeds and stamps authorization.
+  expect_warning(un <- unmask_outcome(masked, lock, allow_unauthorized = TRUE),
+                 "forced without an audit")
   expect_true(isTRUE(un$.outcome_authorized))
   expect_false(isTRUE(un$.outcome_masked))
   expect_identical(un$data[["event_24"]], lock$data[["event_24"]])
 })
 
-test_that("unmask_outcome warns on a non-authorising gate but still proceeds (soft)", {
+test_that("unmask_outcome errors on a non-authorising gate unless forced (hard)", {
   dat  <- sim_func1(n = 100, seed = 7)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex"), seed = 7)
   masked <- mask_outcome(lock)
   audit  <- create_audit_log(lock)          # no checkpoints -> gate STOP
-  expect_warning(un <- unmask_outcome(masked, lock, audit = audit),
-                 "did NOT authorise")
+  expect_error(unmask_outcome(masked, lock, audit = audit), "did NOT authorise")
+  expect_warning(
+    un <- unmask_outcome(masked, lock, audit = audit, allow_unauthorized = TRUE),
+    "forced via allow_unauthorized")
   expect_true(isTRUE(un$.outcome_authorized))
 })
 
-test_that(".check_outcome_access warns once on an unauthorised cleanroom lock (soft)", {
-  st <- .cleanTMLE_state
-  st$warned_unauthorized <- FALSE
+test_that("unmask_outcome authorises through a passing gate (hard)", {
+  dat  <- sim_func1(n = 300, seed = 9)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex", "biomarker"), seed = 9)
+  lock <- define_negative_control(lock, "nc_outcome")
+  masked <- mask_outcome(lock)
+  audit  <- create_audit_log(lock)
+  audit  <- record_checkpoint(audit, checkpoint_cohort_adequacy(lock))
+  ps     <- fit_ps_glm(lock)
+  diag   <- compute_ps_diagnostics(ps)
+  audit  <- record_checkpoint(audit,
+              checkpoint_balance(diag, lock_hash = lock$lock_hash))
+  nc     <- run_negative_control(lock, "nc_outcome", ps)
+  audit  <- record_checkpoint(audit,
+              checkpoint_residual_bias(nc, lock_hash = lock$lock_hash))
+
+  un <- unmask_outcome(masked, lock, audit = audit)   # gate GO -> no error
+  expect_true(isTRUE(un$.outcome_authorized))
+  # A Stage 4 estimator now runs without an override.
+  expect_silent(.check_outcome_access(un, caller = "test"))
+})
+
+test_that(".check_outcome_access enforces authorization on a cleanroom lock (hard)", {
   dat  <- sim_func1(n = 100, seed = 8)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex"), seed = 8)
-  # Unauthorised cleanroom lock: soft warning, and only once per session.
-  expect_warning(.check_outcome_access(lock, caller = "test"),
-                 "no recorded outcome authorisation")
-  expect_silent(.check_outcome_access(lock, caller = "test"))
-
-  # A plain (cleanroom_enabled = FALSE) lock is exempt and never warns.
-  st$warned_unauthorized <- FALSE
+  # Unauthorised cleanroom lock (never masked) -> hard error.
+  expect_error(.check_outcome_access(lock, caller = "test"),
+               "not authorised")
+  # The explicit override lets it through.
+  expect_silent(.check_outcome_access(lock, allow_outcome_access = TRUE,
+                                      caller = "test"))
+  # A plain (cleanroom_enabled = FALSE) lock is exempt.
   simple <- create_simple_lock(dat, "treatment", "event_24",
                                c("age", "sex"), seed = 8)
   expect_silent(.check_outcome_access(simple, caller = "test"))
@@ -493,7 +519,7 @@ test_that("unmask_outcome restores outcome", {
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex"), seed = 1)
   masked   <- mask_outcome(lock)
-  unmasked <- unmask_outcome(masked, lock)
+  unmasked <- unmask_outcome(masked, lock, allow_unauthorized = TRUE)
   expect_identical(unmasked$data[["event_24"]], lock$data[["event_24"]])
   expect_false(isTRUE(unmasked$.outcome_masked))
 })
@@ -510,7 +536,7 @@ test_that("Stage 4 functions allow override_clean_room", {
   dat  <- sim_func1(n = 200, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex"), seed = 1)
-  # Non-masked lock should work fine without override
-  result <- run_crude_workflow(lock)
+  # A non-masked but unauthorised cleanroom lock now requires the override.
+  result <- run_crude_workflow(lock, allow_outcome_access = TRUE)
   expect_true(is.numeric(result$estimate))
 })

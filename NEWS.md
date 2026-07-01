@@ -2,16 +2,25 @@
 
 ## Clean-room governance
 
-* **Soft Stage-4 authorisation guard.** `unmask_outcome()` gains an optional
-  `audit=` argument: on a cleanroom-enabled lock it checks the pre-outcome gate
-  via `authorize_outcome_analysis()` and *warns* (rather than blocks) when the
-  gate does not authorise, or when no audit is supplied. It stamps the lock
-  `.outcome_authorized = TRUE`. The Stage-4 outcome guard
-  (`.check_outcome_access()`) now warns once per session when a cleanroom lock
-  reaches a Stage-4 estimator with no recorded authorisation, including a lock
-  that was never masked. This closes the "unmasked or never-masked lock runs the
-  primary analysis with no recorded authorisation" gap softly; enforcement
-  remains advisory (warn-only) and `cleanroom_enabled = FALSE` locks are exempt.
+* **Stage-4 authorisation is now enforced (breaking).** The pre-outcome gate,
+  not merely outcome masking, controls Stage 4. A cleanroom-enabled lock reaches
+  an outcome estimator only if a passing pre-outcome gate has been recorded on
+  it (`.outcome_authorized`); an unmasked-but-unauthorised lock, including one
+  that was never masked, is now **refused** by `.check_outcome_access()` rather
+  than silently allowed. Authorisation is recorded two ways:
+    - `unmask_outcome(lock, original_lock, audit = <audit>)` checks the gate via
+      `authorize_outcome_analysis()` before revealing the outcome and errors on a
+      non-authorising gate (or a missing `audit`) unless
+      `allow_unauthorized = TRUE` is passed (which warns and forces, for
+      simulations or forced re-analysis).
+    - `assert_outcome_authorized(audit, lock = <lock>)` checks the gate and, on
+      success, returns the lock stamped as authorised. This is the recommended
+      way to authorise an unmasked staged lock.
+  `cleanroom_enabled = FALSE` locks (e.g. `create_simple_lock()`) are exempt, and
+  the per-estimator `allow_outcome_access = TRUE` override still bypasses the
+  guard. Existing code that ran Stage 4 without authorising must now authorise
+  (or pass an override); the bundled staged vignette and `run_simulation.R` were
+  updated accordingly.
 
 ## Bug fixes
 

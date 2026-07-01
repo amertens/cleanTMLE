@@ -1661,10 +1661,20 @@ authorize_outcome_analysis <- function(audit = NULL,
 #' @section Clean-room stage: Pre-Outcome Gate assertion.
 #'
 #' @param audit A \code{cleantmle_audit}.
+#' @param lock Optional \code{cleanroom_lock}. When supplied, the pre-outcome
+#'   gate is checked and, on success, the lock is stamped
+#'   \code{.outcome_authorized = TRUE} and returned so that Stage 4 estimators
+#'   run. This is the recommended way to authorise an unmasked staged lock.
+#' @param allow_unauthorized Logical; when \code{lock} is supplied, force the
+#'   authorisation stamp even if the gate does not authorise (a warning is
+#'   raised). Default \code{FALSE}.
 #' @param ... Additional arguments passed to
-#'   \code{\link{authorize_outcome_analysis}}.
+#'   \code{\link{authorize_outcome_analysis}} (used when \code{lock} is
+#'   \code{NULL}).
 #'
-#' @return \code{invisible(TRUE)} if authorised.
+#' @return When \code{lock} is \code{NULL}, \code{invisible(TRUE)} if authorised
+#'   (otherwise an error). When \code{lock} is supplied, the stamped
+#'   \code{cleanroom_lock}.
 #'
 #' @examples
 #' dat   <- sim_func1(n = 500, seed = 1)
@@ -1684,7 +1694,12 @@ authorize_outcome_analysis <- function(audit = NULL,
 #' assert_outcome_authorized(audit)
 #'
 #' @export
-assert_outcome_authorized <- function(audit, ...) {
+assert_outcome_authorized <- function(audit, lock = NULL,
+                                      allow_unauthorized = FALSE, ...) {
+  if (!is.null(lock)) {
+    return(.authorize_outcome_lock(lock, audit, allow_unauthorized,
+                                   caller = "assert_outcome_authorized"))
+  }
   gate <- authorize_outcome_analysis(audit, ...)
   if (!isTRUE(gate$authorized)) {
     stop(
@@ -1885,6 +1900,55 @@ mask_outcome <- function(lock) {
 }
 
 
+# Internal: verify and record outcome authorisation on a lock, or stop.
+# Shared by unmask_outcome() and assert_outcome_authorized(). Locks created
+# with cleanroom_enabled = FALSE are exempt (plain pipeline). With an audit,
+# the pre-outcome gate is checked via authorize_outcome_analysis(); a
+# non-authorising gate stops unless allow_unauthorized = TRUE (then it warns
+# and forces). Without an audit, a cleanroom lock stops unless
+# allow_unauthorized = TRUE. On success the lock is stamped
+# .outcome_authorized = TRUE and returned.
+.authorize_outcome_lock <- function(lock, audit = NULL,
+                                    allow_unauthorized = FALSE,
+                                    caller = "unmask_outcome") {
+  if (!isTRUE(lock$cleanroom_enabled)) {
+    lock$.outcome_authorized <- TRUE
+    return(lock)
+  }
+  if (is.null(audit)) {
+    if (!isTRUE(allow_unauthorized)) {
+      stop(caller, "(): a cleanroom lock requires an `audit` to record ",
+           "outcome authorisation from the pre-outcome gate. Supply audit = ,",
+           " or pass allow_unauthorized = TRUE to force.", call. = FALSE)
+    }
+    warning(caller, "(): outcome authorisation forced without an audit ",
+            "(allow_unauthorized = TRUE); the pre-outcome gate was not checked.",
+            call. = FALSE)
+    lock$.outcome_authorized <- TRUE
+    return(lock)
+  }
+  gate <- tryCatch(authorize_outcome_analysis(audit), error = function(e) NULL)
+  authorized <- !is.null(gate) && isTRUE(gate$authorized)
+  if (!authorized) {
+    reason <- if (is.null(gate)) {
+      "could not evaluate the pre-outcome gate from `audit`"
+    } else {
+      paste0("pre-outcome gate did NOT authorise outcome analysis (decision: ",
+             gate$decision, "; rationale: ", gate$rationale, ")")
+    }
+    if (!isTRUE(allow_unauthorized)) {
+      stop(caller, "(): ", reason,
+           ". Resolve the gate before accessing the outcome, or pass ",
+           "allow_unauthorized = TRUE to force.", call. = FALSE)
+    }
+    warning(caller, "(): ", reason,
+            "; forced via allow_unauthorized = TRUE.", call. = FALSE)
+  }
+  lock$.outcome_authorized <- TRUE
+  lock
+}
+
+
 #' Restore the Outcome Column from an Original Lock
 #'
 #' Copies the outcome column from \code{original_lock} back into
@@ -1895,13 +1959,16 @@ mask_outcome <- function(lock) {
 #' @param lock A \code{cleanroom_lock} whose outcome column is masked.
 #' @param original_lock The original \code{cleanroom_lock} holding the
 #'   true outcome values.
-#' @param audit Optional audit log (from \code{\link{create_audit_log}}). When
-#'   supplied on a cleanroom-enabled lock, the pre-outcome gate is checked via
-#'   \code{\link{authorize_outcome_analysis}} and a non-authorising decision
-#'   raises a \emph{warning} (soft enforcement) rather than blocking. When
-#'   omitted, a warning notes that authorisation was not verified. Either way
-#'   the returned lock is stamped \code{.outcome_authorized = TRUE} so the
-#'   downstream Stage 4 guard does not re-warn.
+#' @param audit Audit log (from \code{\link{create_audit_log}}) carrying the
+#'   recorded checkpoints. On a cleanroom-enabled lock the pre-outcome gate is
+#'   checked via \code{\link{authorize_outcome_analysis}} before the outcome is
+#'   revealed; a non-authorising gate raises an error unless
+#'   \code{allow_unauthorized = TRUE}. When \code{NULL} (the default) a
+#'   cleanroom lock errors unless \code{allow_unauthorized = TRUE}.
+#' @param allow_unauthorized Logical; if \code{TRUE}, force unmasking even when
+#'   the gate does not authorise or no \code{audit} is supplied (a warning is
+#'   raised). Use for simulation studies or forced re-analysis. Default
+#'   \code{FALSE}.
 #'
 #' @return A modified \code{cleanroom_lock} with the outcome column restored,
 #'   \code{lock$.outcome_masked} set to \code{FALSE}, and
@@ -1912,11 +1979,13 @@ mask_outcome <- function(lock) {
 #' lock         <- create_analysis_lock(dat, "treatment", "event_24",
 #'                                      c("age", "sex", "biomarker"), seed = 1)
 #' masked       <- mask_outcome(lock)
-#' unmasked     <- unmask_outcome(masked, lock)
+#' # Force unmasking outside a full gate flow (e.g. a demo or simulation):
+#' unmasked     <- unmask_outcome(masked, lock, allow_unauthorized = TRUE)
 #' identical(unmasked$data[["event_24"]], lock$data[["event_24"]])  # TRUE
 #'
 #' @export
-unmask_outcome <- function(lock, original_lock, audit = NULL) {
+unmask_outcome <- function(lock, original_lock, audit = NULL,
+                           allow_unauthorized = FALSE) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
   if (!inherits(original_lock, "cleanroom_lock"))
@@ -1927,34 +1996,13 @@ unmask_outcome <- function(lock, original_lock, audit = NULL) {
     stop("Outcome column '", outcome_col,
          "' not found in original_lock$data.", call. = FALSE)
 
-  # Soft outcome-authorisation record. Verify the pre-outcome gate when an
-  # audit is supplied; in soft mode a non-authorising gate warns rather than
-  # blocks. Without an audit, warn that authorisation was not verified. The
-  # lock is stamped either way so the Stage 4 guard does not re-warn.
-  if (isTRUE(lock$cleanroom_enabled)) {
-    if (!is.null(audit)) {
-      gate <- tryCatch(authorize_outcome_analysis(audit),
-                       error = function(e) NULL)
-      if (is.null(gate)) {
-        warning("unmask_outcome(): could not evaluate the pre-outcome gate ",
-                "from `audit`; outcome authorisation was not verified.",
-                call. = FALSE)
-      } else if (!isTRUE(gate$authorized)) {
-        warning("unmask_outcome(): the pre-outcome gate did NOT authorise ",
-                "outcome analysis (decision: ", gate$decision, "). Rationale: ",
-                gate$rationale, ". Proceeding in soft mode; resolve this ",
-                "before treating the result as confirmatory.", call. = FALSE)
-      }
-    } else {
-      warning("unmask_outcome(): no `audit` supplied, so outcome ",
-              "authorisation was not verified against the pre-outcome gate. ",
-              "Pass audit = <audit> to record a checked authorisation.",
-              call. = FALSE)
-    }
-  }
+  # Verify and record outcome authorisation BEFORE revealing the outcome. This
+  # errors on a cleanroom lock unless the gate authorises (or the caller forces
+  # with allow_unauthorized = TRUE).
+  lock <- .authorize_outcome_lock(lock, audit, allow_unauthorized,
+                                  caller = "unmask_outcome")
 
   lock$data[[outcome_col]] <- original_lock$data[[outcome_col]]
   lock$.outcome_masked     <- FALSE
-  lock$.outcome_authorized <- TRUE
   lock
 }

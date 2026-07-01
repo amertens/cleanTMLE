@@ -1041,6 +1041,12 @@ balance checkpoint but never the DQ checkpoint.
 gate <- authorize_outcome_analysis(audit)
 print(gate)
 audit <- record_checkpoint(audit, gate)
+
+# Record the passing gate on the lock. This stamps `.outcome_authorized`, so the
+# Stage 4 estimators below run; without it they refuse the outcome. (For a
+# masked lock, `unmask_outcome(lock, original_lock, audit = audit)` does the same
+# check as it reveals the outcome.)
+lock <- assert_outcome_authorized(audit, lock = lock)
 ```
 
 ```{r dlog-gate}
