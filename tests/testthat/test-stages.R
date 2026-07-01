@@ -387,6 +387,47 @@ test_that("assert_outcome_authorized errors when not authorized", {
   expect_error(assert_outcome_authorized(audit), "NOT authorised")
 })
 
+test_that("unmask_outcome warns without an audit and stamps authorization (soft)", {
+  dat  <- sim_func1(n = 150, seed = 4)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex", "biomarker"), seed = 4)
+  masked <- mask_outcome(lock)
+  expect_warning(un <- unmask_outcome(masked, lock),
+                 "authorisation was not verified")
+  expect_true(isTRUE(un$.outcome_authorized))
+  expect_false(isTRUE(un$.outcome_masked))
+  expect_identical(un$data[["event_24"]], lock$data[["event_24"]])
+})
+
+test_that("unmask_outcome warns on a non-authorising gate but still proceeds (soft)", {
+  dat  <- sim_func1(n = 100, seed = 7)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 7)
+  masked <- mask_outcome(lock)
+  audit  <- create_audit_log(lock)          # no checkpoints -> gate STOP
+  expect_warning(un <- unmask_outcome(masked, lock, audit = audit),
+                 "did NOT authorise")
+  expect_true(isTRUE(un$.outcome_authorized))
+})
+
+test_that(".check_outcome_access warns once on an unauthorised cleanroom lock (soft)", {
+  st <- .cleanTMLE_state
+  st$warned_unauthorized <- FALSE
+  dat  <- sim_func1(n = 100, seed = 8)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 8)
+  # Unauthorised cleanroom lock: soft warning, and only once per session.
+  expect_warning(.check_outcome_access(lock, caller = "test"),
+                 "no recorded outcome authorisation")
+  expect_silent(.check_outcome_access(lock, caller = "test"))
+
+  # A plain (cleanroom_enabled = FALSE) lock is exempt and never warns.
+  st$warned_unauthorized <- FALSE
+  simple <- create_simple_lock(dat, "treatment", "event_24",
+                               c("age", "sex"), seed = 8)
+  expect_silent(.check_outcome_access(simple, caller = "test"))
+})
+
 
 # ── New Phase 2 Tests: Decision Log ─────────────────────────────────────
 

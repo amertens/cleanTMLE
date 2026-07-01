@@ -1,5 +1,18 @@
 # cleanTMLE 0.1.5 (development)
 
+## Clean-room governance
+
+* **Soft Stage-4 authorisation guard.** `unmask_outcome()` gains an optional
+  `audit=` argument: on a cleanroom-enabled lock it checks the pre-outcome gate
+  via `authorize_outcome_analysis()` and *warns* (rather than blocks) when the
+  gate does not authorise, or when no audit is supplied. It stamps the lock
+  `.outcome_authorized = TRUE`. The Stage-4 outcome guard
+  (`.check_outcome_access()`) now warns once per session when a cleanroom lock
+  reaches a Stage-4 estimator with no recorded authorisation, including a lock
+  that was never masked. This closes the "unmasked or never-masked lock runs the
+  primary analysis with no recorded authorisation" gap softly; enforcement
+  remains advisory (warn-only) and `cleanroom_enabled = FALSE` locks are exempt.
+
 ## Bug fixes
 
 * **`extract_tmle_estimate()`** now returns the model-based (TMLE plug-in)

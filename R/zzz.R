@@ -1,3 +1,7 @@
+# Package-level mutable state (e.g. once-per-session warning flags). Created at
+# namespace load; persists for the session.
+.cleanTMLE_state <- new.env(parent = emptyenv())
+
 #' @keywords internal
 .onLoad <- function(libname, pkgname) {
   # Generate example1 data if not already available
