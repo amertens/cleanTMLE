@@ -1,32 +1,6 @@
 # Tests for staged workflow infrastructure (R/stages.R)
-
-test_that("attach_estimand adds estimand to lock", {
-  dat  <- sim_func1(n = 100, seed = 1)
-  lock <- create_analysis_lock(dat, "treatment", "event_24",
-                               c("age", "sex"), seed = 1)
-  lock2 <- attach_estimand(lock,
-    description = "Test question",
-    population  = "Test pop",
-    contrast    = "risk_difference"
-  )
-  expect_true(!is.null(lock2$estimand))
-  expect_equal(lock2$estimand$contrast, "risk_difference")
-  expect_equal(lock2$estimand$description, "Test question")
-  # Hash should be unchanged
-
-  expect_equal(lock2$lock_hash, lock$lock_hash)
-})
-
-test_that("declare_sensitivity_plan appends plans", {
-  dat  <- sim_func1(n = 100, seed = 1)
-  lock <- create_analysis_lock(dat, "treatment", "event_24",
-                               c("age", "sex"), seed = 1)
-  lock <- declare_sensitivity_plan(lock, "plan1", "First plan")
-  lock <- declare_sensitivity_plan(lock, "plan2", "Second plan")
-  expect_length(lock$sensitivity_plans, 2)
-  expect_equal(lock$sensitivity_plans$plan1$label, "plan1")
-  expect_equal(lock$sensitivity_plans$plan2$label, "plan2")
-})
+# (attach_estimand and declare_sensitivity_plan moved to cleanroomGov, tested
+# there.)
 
 test_that("define_negative_control registers variable", {
   dat  <- sim_func1(n = 100, seed = 1)
@@ -194,12 +168,8 @@ test_that("print methods do not error", {
   dat  <- sim_func1(n = 200, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex", "biomarker"), seed = 1)
-  lock <- attach_estimand(lock, description = "Test", contrast = "risk_difference")
-  lock <- declare_sensitivity_plan(lock, "sp1", "Test plan")
   lock <- define_negative_control(lock, "nc_outcome")
 
-  expect_output(print(lock), "Estimand")
-  expect_output(print(lock), "Sensitivity Plans")
   expect_output(print(lock), "Negative Controls")
 
   cp <- checkpoint_cohort_adequacy(lock)

@@ -517,7 +517,7 @@ These metadata do not alter the reproducibility hash (which depends only
 on the core analytic specification) but provide the structured record
 that an outcome-blind staged review requires.
 
-```{r estimand}
+```{r estimand, eval = have_gov}
 lock <- attach_estimand(lock,
   description          = "Effect of treatment on 24-month event risk",
   population           = "Adults with simulated disease",
@@ -529,7 +529,7 @@ lock <- attach_estimand(lock,
 )
 ```
 
-```{r sensitivity-plan}
+```{r sensitivity-plan, eval = have_gov}
 lock <- declare_sensitivity_plan(lock,
   label       = "truncation_sensitivity",
   description = "Re-estimate under alternate PS truncation thresholds",
