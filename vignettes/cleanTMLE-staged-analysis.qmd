@@ -25,6 +25,13 @@ knitr::opts_chunk$set(
   message    = FALSE
 )
 library(cleanTMLE)
+
+# The estimand-reporting / note-taking helpers (event-process, target-
+# population, missing-data, and cumulative-risk tables) live in the companion
+# package cleanroomGov. Chunks that demonstrate them run only when it is
+# installed, so this vignette renders with or without it.
+have_gov <- requireNamespace("cleanroomGov", quietly = TRUE)
+if (have_gov) library(cleanroomGov)
 ```
 
 ## Read this first
@@ -390,11 +397,13 @@ post-baseline events should not be assigned a generic role of
 "censoring." Each event should be mapped to the causal question,
 to the corresponding ICH E9(R1) intercurrent-event strategy where
 applicable, and to the operational role it plays in estimation.
-The package supports this mapping with three structured helpers:
-`clean_event_process_table()`, `clean_target_population()`, and
-`clean_missing_data_plan()`.
+The companion package `cleanroomGov` supports this mapping with three
+structured helpers: `clean_event_process_table()`,
+`clean_target_population()`, and `clean_missing_data_plan()`. (These
+note-taking helpers were split out of `cleanTMLE`; the chunks below run when
+`cleanroomGov` is installed.)
 
-```{r event-process-vignette}
+```{r event-process-vignette, eval = have_gov}
 events <- clean_event_process_table(list(
   list(event_name = "Primary event by 24 months",
        event_variable = "event_24",
@@ -420,7 +429,7 @@ events <- clean_event_process_table(list(
 print(events)
 ```
 
-```{r target-pop-vignette}
+```{r target-pop-vignette, eval = have_gov}
 tp <- clean_target_population(
   target_population = "full eligible population",
   reference_group   = "Control",
@@ -429,7 +438,7 @@ tp <- clean_target_population(
 print(tp)
 ```
 
-```{r missing-plan-vignette}
+```{r missing-plan-vignette, eval = have_gov}
 plan <- clean_missing_data_plan(list(
   "baseline covariate missingness" = list(
     timing = "baseline", presumed_mechanism = "MCAR",
@@ -1308,7 +1317,7 @@ risk difference, the risk ratio, event counts, and the estimator
 that produced each row are reported in a single structured table
 via `clean_risk_report_table()`.
 
-```{r risk-report-vignette, eval = exists("tmle_fit")}
+```{r risk-report-vignette, eval = exists("tmle_fit") && have_gov}
 ate <- tmle_fit$estimates$ATE
 # Model-based (TMLE plug-in) treatment-specific risks, taken directly from
 # the fit rather than reconstructed from crude arm means. Their difference

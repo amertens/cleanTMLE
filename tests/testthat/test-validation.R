@@ -39,18 +39,7 @@ test_that("Unweighted SMD matches direct computation on simulated data", {
                ref_bmi, tolerance = 1e-10)
 })
 
-# 3. clean_check_event_processes vs hand-computed sums ---------------
-
-test_that("Coherence check matches hand-computed component sums", {
-  df <- data.frame(time_point = c(30, 90, 180),
-                   event_of_interest_risk = c(0.01, 0.02, 0.05),
-                   competing_event_risk   = c(0.005, 0.015, 0.04),
-                   composite_risk         = c(0.015, 0.035, 0.09))
-  out <- clean_check_event_processes(df, tolerance = 1e-10)
-  expect_equal(out$component_sum,
-               df$event_of_interest_risk + df$competing_event_risk)
-  expect_true(all(out$flag == "OK"))
-})
+# 3. (Coherence-check validation moved to the cleanroomGov package.)
 
 # 4. DQ stress directional check: bias under outcome misclassification
 #    should attenuate a positive risk difference toward 0 -----------------
@@ -97,18 +86,4 @@ test_that("checkpoint_weights output is gate-compatible", {
   expect_true(res$decision %in% c("GO", "FLAG", "STOP"))
 })
 
-# 6. clean_risk_report_table preserves numeric types ---------------
-
-test_that("Risk report table preserves numeric columns", {
-  rows <- list(
-    list(time_point = 180, treatment_strategy = "A", risk = 0.05,
-         events = 25, n_observed = 500, estimator = "TMLE"),
-    list(time_point = 180, treatment_strategy = "B", risk = 0.07,
-         events = 35, n_observed = 500, estimator = "TMLE",
-         risk_difference = 0.02))
-  out <- clean_risk_report_table(rows)
-  expect_type(out$risk, "double")
-  expect_type(out$events, "double")
-  expect_type(out$n_observed, "double")
-  expect_equal(out$risk_difference[2], 0.02)
-})
+# 6. (Risk-report-table validation moved to the cleanroomGov package.)
