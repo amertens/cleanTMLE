@@ -1400,7 +1400,7 @@ the lock hash, providing a traceable record of the analytic path.
 print(audit)
 ```
 
-```{r stage-manifest}
+```{r stage-manifest, eval = have_gov}
 build_stage_manifest(audit)
 ```
 
@@ -1416,7 +1416,7 @@ stages traversed, their decisions, and the overall outcome.
 This is useful for inclusion in study reports or supplementary
 materials.
 
-```{r stage-path}
+```{r stage-path, eval = have_gov}
 summarize_stage_path(audit)
 ```
 

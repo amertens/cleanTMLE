@@ -110,17 +110,7 @@ test_that("record_checkpoint adds checkpoint to audit", {
   expect_equal(audit$entries[[1]]$decision, cp1$decision)
 })
 
-test_that("build_stage_manifest produces output", {
-  dat  <- sim_func1(n = 100, seed = 1)
-  lock <- create_analysis_lock(dat, "treatment", "event_24",
-                               c("age", "sex"), seed = 1)
-  audit <- create_audit_log(lock)
-  audit <- record_stage(audit, "Stage 1a", "Lock created")
-
-  out <- capture.output(build_stage_manifest(audit))
-  expect_true(length(out) > 0)
-  expect_true(any(grepl("Stage 1a", out)))
-})
+# (build_stage_manifest moved to cleanroomGov, tested there.)
 
 test_that("as.data.frame.cleantmle_checkpoint works", {
   dat  <- sim_func1(n = 300, seed = 1)
@@ -460,17 +450,7 @@ test_that("export_decision_log returns empty df when no entries", {
 
 # ── New Phase 2 Tests: Stage Path Narrative ──────────────────────────────
 
-test_that("summarize_stage_path produces narrative", {
-  dat  <- sim_func1(n = 100, seed = 1)
-  lock <- create_analysis_lock(dat, "treatment", "event_24",
-                               c("age", "sex"), seed = 1)
-  audit <- create_audit_log(lock)
-  audit <- record_stage(audit, "Stage 1a", "Lock created", decision = NA)
-  audit <- record_stage(audit, "Check Point 1", "Evaluated", decision = "GO")
-  out <- capture.output(summarize_stage_path(audit))
-  expect_true(any(grepl("Stage 1a", out)))
-  expect_true(any(grepl("GO", out)))
-})
+# (summarize_stage_path moved to cleanroomGov, tested there.)
 
 
 # ── New Phase 2 Tests: Outcome Masking ───────────────────────────────────
