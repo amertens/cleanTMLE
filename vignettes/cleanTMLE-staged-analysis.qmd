@@ -25,13 +25,6 @@ knitr::opts_chunk$set(
   message    = FALSE
 )
 library(cleanTMLE)
-
-# The estimand-reporting / note-taking helpers (event-process, target-
-# population, missing-data, and cumulative-risk tables) live in the companion
-# package cleanroomGov. Chunks that demonstrate them run only when it is
-# installed, so this vignette renders with or without it.
-have_gov <- requireNamespace("cleanroomGov", quietly = TRUE)
-if (have_gov) library(cleanroomGov)
 ```
 
 ## Read this first
@@ -291,9 +284,9 @@ study dossier. It is assembled across the stages demonstrated below,
 and the review team reads it before authorising the primary analysis.
 Its components are:
 
-- Protocol and target-trial timing (`attach_estimand()`); see *Define the causal question and estimand*.
+- Protocol and target-trial timing (prespecified estimand record); see *Define the causal question and estimand*.
 - Cohort flow and attrition (`attrition_table()`); see *Stage 1b*.
-- Event-process classification (`clean_event_process_table()`, `clean_check_event_processes()`); see *From target trial specification to event-process classification*.
+- Event-process classification (structured event-process table and coherence check); see *From target trial specification to event-process classification*.
 - Covariate and missingness summary (`make_table1()` and missingness checks); see *Stage 1a* covariate sanitisation.
 - PS overlap and balance (`compute_ps_diagnostics()`, `love_plot()`, `love_plot_threeway()`); see *Stage 2a*.
 - Treatment- and IPCW-weight diagnostics (`clean_weight_diagnostics()`, `extreme_weights()`); see *Outcome-blind diagnostics before fitting the final estimator*.
@@ -397,63 +390,13 @@ post-baseline events should not be assigned a generic role of
 "censoring." Each event should be mapped to the causal question,
 to the corresponding ICH E9(R1) intercurrent-event strategy where
 applicable, and to the operational role it plays in estimation.
-The companion package `cleanroomGov` supports this mapping with three
-structured helpers: `clean_event_process_table()`,
-`clean_target_population()`, and `clean_missing_data_plan()`. (These
-note-taking helpers were split out of `cleanTMLE`; the chunks below run when
-`cleanroomGov` is installed.)
-
-```{r event-process-vignette, eval = have_gov}
-events <- clean_event_process_table(list(
-  list(event_name = "Primary event by 24 months",
-       event_variable = "event_24",
-       role_in_estimand = "outcome event",
-       primary_handling = "modelled directly"),
-  list(event_name = "Death from other causes",
-       event_variable = "death_other",
-       role_in_estimand = "competing event",
-       ICH_E9R1_strategy = "composite or competing-risk strategy",
-       primary_handling = "competing-risk cumulative incidence",
-       justification = "Death precludes measurement of the primary event"),
-  list(event_name = "Loss to follow-up",
-       event_variable = "lost_fu",
-       role_in_estimand = "missing outcome process",
-       primary_handling = "IPCW",
-       identification_assumption = "MAR conditional on baseline covariates"),
-  list(event_name = "Treatment switching",
-       event_variable = "treat_switch",
-       role_in_estimand = "intercurrent event",
-       ICH_E9R1_strategy = "treatment-policy strategy",
-       primary_handling = "kept under assigned strategy")
-), censoring_handling = "IPCW for missing outcome")
-print(events)
-```
-
-```{r target-pop-vignette, eval = have_gov}
-tp <- clean_target_population(
-  target_population = "full eligible population",
-  reference_group   = "Control",
-  rationale         = "Marginal effect under each treatment strategy",
-  implications_for_interpretation = "ATE on the risk-difference scale")
-print(tp)
-```
-
-```{r missing-plan-vignette, eval = have_gov}
-plan <- clean_missing_data_plan(list(
-  "baseline covariate missingness" = list(
-    timing = "baseline", presumed_mechanism = "MCAR",
-    handling_primary = "median imputation",
-    nuisance_model_used = "n/a"),
-  "outcome missingness" = list(
-    timing = "follow-up", presumed_mechanism = "MAR",
-    handling_primary = "IPCW-TMLE",
-    nuisance_model_used = "SuperLearner response model",
-    identification_assumption = "MAR conditional on (A, W)"),
-  "censoring or loss to follow-up" = list(
-    timing = "follow-up", presumed_mechanism = "administrative",
-    handling_primary = "right-censoring at end of follow-up window")))
-print(plan)
-```
+For example, the primary event is modelled directly, death from
+other causes is a competing event, loss to follow-up is a
+missing-outcome process handled by IPCW, and treatment switching is
+an intercurrent event kept under the assigned treatment strategy.
+This classification, the target population and reference group, and
+the missing-data plan are prespecified and recorded with the
+analysis before the outcome is unmasked.
 
 ---
 
@@ -511,31 +454,12 @@ In this vignette we proceed without masking for clarity, but the
 functions are available for production workflows.
 :::
 
-We enrich the lock with the estimand, sensitivity plan, and a negative
-control declaration.
-These metadata do not alter the reproducibility hash (which depends only
-on the core analytic specification) but provide the structured record
-that an outcome-blind staged review requires.
-
-```{r estimand, eval = have_gov}
-lock <- attach_estimand(lock,
-  description          = "Effect of treatment on 24-month event risk",
-  population           = "Adults with simulated disease",
-  treatment_strategies = c("Treatment", "Control"),
-  outcome_label        = "Primary event by 24 months",
-  followup             = "24 months",
-  contrast             = "risk_difference",
-  statistical_estimand = "E_W[E(Y|A=1,W) - E(Y|A=0,W)] under exchangeability + positivity"
-)
-```
-
-```{r sensitivity-plan, eval = have_gov}
-lock <- declare_sensitivity_plan(lock,
-  label       = "truncation_sensitivity",
-  description = "Re-estimate under alternate PS truncation thresholds",
-  settings    = list(truncation = c(0.01, 0.05, 0.10))
-)
-```
+We prespecify the estimand (a marginal risk difference for the
+primary event by 24 months) and a truncation sensitivity plan
+alongside the lock, and declare a negative-control outcome. This
+metadata does not alter the reproducibility hash (which depends only
+on the core analytic specification) but provides the structured
+record that an outcome-blind staged review requires.
 
 ```{r neg-control-decl}
 lock <- define_negative_control(lock, "nc_outcome",
@@ -1313,33 +1237,29 @@ not an artefact of a single modelling strategy.
 ## Reporting cumulative risks and contrasts
 
 Treatment-specific risks at the prespecified follow-up time, the
-risk difference, the risk ratio, event counts, and the estimator
-that produced each row are reported in a single structured table
-via `clean_risk_report_table()`.
+risk difference, and its confidence interval are reported in a
+single compact table. The arm risks are the model-based (TMLE
+plug-in) risks taken directly from the fit; their difference equals
+the reported risk difference.
 
-```{r risk-report-vignette, eval = exists("tmle_fit") && have_gov}
+```{r risk-report-vignette, eval = exists("tmle_fit")}
 ate <- tmle_fit$estimates$ATE
-# Model-based (TMLE plug-in) treatment-specific risks, taken directly from
-# the fit rather than reconstructed from crude arm means. Their difference
-# equals the reported ATE.
+# Model-based (TMLE plug-in) treatment-specific risks, taken directly from the
+# fit rather than reconstructed from crude arm means; their difference equals
+# the reported ATE.
 r1 <- tmle_fit$risks$treated
 r0 <- tmle_fit$risks$control
 
-risk_rows <- list(
-  list(time_point = 24, treatment_strategy = "Treated",
-       n_observed = sum(lock$data[[lock$treatment]] == 1),
-       risk = r1,
-       estimator = "Modular TMLE",
-       nuisance_specification = paste(lock$sl_library, collapse = "+")),
-  list(time_point = 24, treatment_strategy = "Control",
-       n_observed = sum(lock$data[[lock$treatment]] == 0),
-       risk = r0,
-       risk_difference = ate$estimate,
-       risk_ci_lower = ate$ci_lower,
-       risk_ci_upper = ate$ci_upper,
-       estimator = "Modular TMLE",
-       nuisance_specification = paste(lock$sl_library, collapse = "+")))
-print(clean_risk_report_table(risk_rows))
+risk_report <- data.frame(
+  treatment_strategy = c("Treated", "Control"),
+  n_observed         = c(sum(lock$data[[lock$treatment]] == 1),
+                         sum(lock$data[[lock$treatment]] == 0)),
+  risk               = c(r1, r0),
+  risk_difference    = c(NA, ate$estimate),
+  ci_lower           = c(NA, ate$ci_lower),
+  ci_upper           = c(NA, ate$ci_upper))
+knitr::kable(risk_report, digits = 4,
+             caption = "Treatment-specific risks at 24 months and the risk-difference contrast (modular TMLE).")
 ```
 
 ### Why hazard ratios are secondary in this workflow
@@ -1400,24 +1320,9 @@ the lock hash, providing a traceable record of the analytic path.
 print(audit)
 ```
 
-```{r stage-manifest, eval = have_gov}
-build_stage_manifest(audit)
-```
-
 ```{r audit-df}
 trail_df <- export_audit_trail(audit)
 knitr::kable(trail_df, caption = "Audit trail for the staged analysis.")
-```
-
-### Stage path narrative
-
-`summarize_stage_path()` produces a human-readable narrative of the
-stages traversed, their decisions, and the overall outcome.
-This is useful for inclusion in study reports or supplementary
-materials.
-
-```{r stage-path, eval = have_gov}
-summarize_stage_path(audit)
 ```
 
 ### Decision log
