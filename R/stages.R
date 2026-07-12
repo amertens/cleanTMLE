@@ -1508,7 +1508,33 @@ authorize_outcome_analysis <- function(audit = NULL,
 
   class(cp)        <- c("pre_outcome_gate", "cleantmle_checkpoint")
   cp$authorized    <- (cp$decision != "STOP")
+  # Bind the authorisation token to the exact audit state it was minted from,
+  # so a checkpoint added or removed after authorisation is detectable
+  # downstream (see run_clean_tmle_primary()).
+  cp$audit_fingerprint <- .audit_fingerprint(audit)
   cp
+}
+
+
+# Order-independent fingerprint of an audit's (stage, decision, action) multiset.
+# Used to bind a gate token to the audit it was granted on: any checkpoint added,
+# removed, or whose decision or action text (e.g. the recorded selected
+# candidate) is edited after authorisation changes this value. sha256 via digest
+# when available, with a labelled non-cryptographic checksum fallback.
+.audit_fingerprint <- function(audit) {
+  if (!inherits(audit, "cleantmle_audit") || length(audit$entries) == 0L)
+    return(NA_character_)
+  parts <- vapply(audit$entries, function(e) {
+    dec <- if (is.null(e$decision) || length(e$decision) != 1L) "NA"
+           else as.character(e$decision)
+    act <- if (is.null(e$action) || length(e$action) != 1L) "NA"
+           else as.character(e$action)
+    paste(e$stage, dec, act, sep = "=")
+  }, character(1L))
+  key <- paste(sort(parts), collapse = "|")
+  if (requireNamespace("digest", quietly = TRUE))
+    digest::digest(key, algo = "sha256")
+  else paste0("checksum:", sum(utf8ToInt(key)))
 }
 
 

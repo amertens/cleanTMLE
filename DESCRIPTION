@@ -45,6 +45,7 @@ Imports:
     sandwich,
     digest
 Suggests:
+    cleanroomGov,
     nnet,
     tmle,
     SuperLearner,

@@ -214,6 +214,19 @@ ic_histogram <- function(tmle_result, bins = 30L) {
 #' @param seed Integer; random seed. Default: 42.
 #' @param verbose Logical; if \code{TRUE}, print progress messages.
 #'
+#' @section Enforcement (important):
+#' \code{run_clean_tmle()} is the \strong{unguarded convenience wrapper}. It
+#' builds its lock internally and reads the outcome unconditionally once its
+#' internal Stage-2a/2b checks pass, so it does \emph{not} enforce a
+#' pre-outcome authorisation gate (the lock hash is not known to the caller
+#' until after the call, so no token can be required). The internal lock is
+#' therefore created with \code{cleanroom_enabled = FALSE} to label this
+#' honestly. For the software-enforced clean-room path, where the outcome is
+#' not read until a hash- and audit-bound authorisation is recorded, use the
+#' two-pass split: \code{\link{run_clean_tmle_preoutcome}()} ->
+#' \code{\link{authorize_outcome_analysis}()} ->
+#' \code{\link{run_clean_tmle_primary}()}.
+#'
 #' @return A list of class \code{clean_tmle_result} containing:
 #'   \describe{
 #'     \item{decision_log}{The decision-log data.frame.}
@@ -275,6 +288,12 @@ run_clean_tmle <- function(data,
 
   dlog <- init_decision_log()
 
+  if (verbose)
+    message("run_clean_tmle(): unguarded convenience path (reads the outcome ",
+            "once internal checks pass). For the enforced clean-room gate, use ",
+            "run_clean_tmle_preoutcome() -> authorize_outcome_analysis() -> ",
+            "run_clean_tmle_primary().")
+
   # Auto-detect covariates
   if (is.null(covariates)) {
     exclude <- c(Avar, Yvar, time_var, cens_var, "id", "subject")
@@ -286,13 +305,18 @@ run_clean_tmle <- function(data,
 
   trunc_lower <- truncation[1]
 
+  # Unguarded path: label the lock honestly as a plain (non-clean-room)
+  # pipeline, since this wrapper reads the outcome without a pre-outcome
+  # authorisation token. Use run_clean_tmle_preoutcome()/_primary() for
+  # the enforced path.
   lock <- create_analysis_lock(
-    data       = data,
-    treatment  = Avar,
-    outcome    = Yvar,
-    covariates = covariates,
-    sl_library = learner_lib,
-    seed       = as.integer(seed)
+    data              = data,
+    treatment         = Avar,
+    outcome           = Yvar,
+    covariates        = covariates,
+    sl_library        = learner_lib,
+    seed              = as.integer(seed),
+    cleanroom_enabled = FALSE
   )
 
   dlog <- log_decision_entry(dlog, "Stage 1", "SL library",

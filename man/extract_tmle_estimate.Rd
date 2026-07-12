@@ -10,7 +10,12 @@ extract_tmle_estimate(tmle_upd)
 \item{tmle_upd}{A \code{tmle_update} object from \code{\link[=run_tmle_targeting_step]{run_tmle_targeting_step()}}.}
 }
 \value{
-An object of class \code{tmle_fit} (inherits from \code{cr_result}).
+An object of class \code{tmle_fit} (inherits from \code{cr_result}). Its
+\code{estimates$ATE} holds the estimate, SE, CI, and p-value, and \code{risks} holds
+the model-based treatment-specific risks \code{risks$treated} and
+\code{risks$control} (the TMLE plug-in arm risks; their difference equals the
+ATE). Report arm risks from these fields rather than reconstructing them
+from crude means and the ATE.
 }
 \description{
 Extracts the final TMLE point estimate, influence-curve standard error,

@@ -4,17 +4,30 @@
 \alias{unmask_outcome}
 \title{Restore the Outcome Column from an Original Lock}
 \usage{
-unmask_outcome(lock, original_lock)
+unmask_outcome(lock, original_lock, audit = NULL, allow_unauthorized = FALSE)
 }
 \arguments{
 \item{lock}{A \code{cleanroom_lock} whose outcome column is masked.}
 
 \item{original_lock}{The original \code{cleanroom_lock} holding the
 true outcome values.}
+
+\item{audit}{Audit log (from \code{\link{create_audit_log}}) carrying the
+recorded checkpoints. On a cleanroom-enabled lock the pre-outcome gate is
+checked via \code{\link{authorize_outcome_analysis}} before the outcome is
+revealed; a non-authorising gate raises an error unless
+\code{allow_unauthorized = TRUE}. When \code{NULL} (the default) a
+cleanroom lock errors unless \code{allow_unauthorized = TRUE}.}
+
+\item{allow_unauthorized}{Logical; if \code{TRUE}, force unmasking even when
+the gate does not authorise or no \code{audit} is supplied (a warning is
+raised). Use for simulation studies or forced re-analysis. Default
+\code{FALSE}.}
 }
 \value{
-A modified \code{cleanroom_lock} with the outcome column
-restored and \code{lock$.outcome_masked} set to \code{FALSE}.
+A modified \code{cleanroom_lock} with the outcome column restored,
+\code{lock$.outcome_masked} set to \code{FALSE}, and
+\code{lock$.outcome_authorized} set to \code{TRUE}.
 }
 \description{
 Copies the outcome column from \code{original_lock} back into
@@ -29,7 +42,8 @@ dat          <- sim_func1(n = 200, seed = 1)
 lock         <- create_analysis_lock(dat, "treatment", "event_24",
                                      c("age", "sex", "biomarker"), seed = 1)
 masked       <- mask_outcome(lock)
-unmasked     <- unmask_outcome(masked, lock)
+# Force unmasking outside a full gate flow (e.g. a demo or simulation):
+unmasked     <- unmask_outcome(masked, lock, allow_unauthorized = TRUE)
 identical(unmasked$data[["event_24"]], lock$data[["event_24"]])  # TRUE
 
 }

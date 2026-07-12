@@ -2,6 +2,47 @@
 
 ## Clean-room governance
 
+* **Split, enforced entry point (`run_clean_tmle_preoutcome()` /
+  `run_clean_tmle_primary()`).** `run_clean_tmle()` builds its lock internally
+  and reads the outcome unconditionally, so it cannot require a pre-outcome
+  authorisation. The new two-pass split does:
+    - `run_clean_tmle_preoutcome()` runs the outcome-blind stages (cohort
+      adequacy, PS balance, optional candidate selection / DQ stress, optional
+      negative controls), assembles a reviewer-facing dossier, and returns an
+      **unauthorised** lock plus a gate token.
+    - `run_clean_tmle_primary(pre, authorization)` reads the outcome only after
+      verifying that the token authorises the analysis, matches the lock hash,
+      and matches the current audit fingerprint. Wrong-lock tokens, audits
+      changed after authorisation, and STOP gates are all refused;
+      `allow_outcome_access = TRUE` is the logged escape hatch.
+* **Gate tokens are now tamper-evident.** `authorize_outcome_analysis()` binds
+  the returned `pre_outcome_gate` to an `audit_fingerprint` (a sha256 of the
+  audit's `(stage, decision)` multiset), so a checkpoint added or removed after
+  authorisation is detectable downstream.
+* **`build_dossier()` / `clean_tmle_dossier`.** The pre-outcome study dossier is
+  now a first-class object (estimand + lock fingerprint, PS balance, candidate
+  selection and DQ degradation, negative controls, and the pre-outcome decision
+  with audit trail); it is returned as `pre$dossier` and has a `print` method.
+* **`run_clean_tmle()` labelled honestly.** The convenience wrapper now builds
+  its internal lock with `cleanroom_enabled = FALSE` and prints a one-line
+  pointer to the enforced two-pass path, so the enforced and convenient paths
+  are no longer the same name doing different things. Note the side effect: the
+  lock returned in `res$lock` is now a plain (non-clean-room) lock, so reusing it
+  for a later Stage-4 call (e.g. `sensitivity_truncation(res$lock)`) runs
+  unguarded. Use `create_analysis_lock()` and the two-pass path if you need the
+  returned lock to keep enforcing the outcome guard.
+* **Hardened `run_clean_tmle_primary()` authorisation (fixes from an internal
+  review).** The audit-fingerprint check now fails closed: a token whose
+  fingerprint is `NA` (for example one minted from an empty audit) is refused
+  rather than accepted, closing a bypass in which a forged empty-audit token
+  could authorise a STOP `pre`. The audit fingerprint now also hashes each
+  entry's `action` text (not just stage and decision), so editing the recorded
+  selected candidate after authorisation is detected. And
+  `run_clean_tmle_preoutcome()` now binds the selected candidate to the lock via
+  `lock_primary_tmle_spec()`, so `run_clean_tmle_primary()` estimates with the
+  selected candidate's truncation and outcome-model library instead of silently
+  using the default locked library.
+
 * **Stage-4 authorisation is now enforced (breaking).** The pre-outcome gate,
   not merely outcome masking, controls Stage 4. A cleanroom-enabled lock reaches
   an outcome estimator only if a passing pre-outcome gate has been recorded on

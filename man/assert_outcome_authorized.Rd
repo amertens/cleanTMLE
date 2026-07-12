@@ -4,16 +4,28 @@
 \alias{assert_outcome_authorized}
 \title{Assert That Outcome Analysis Is Authorised}
 \usage{
-assert_outcome_authorized(audit, ...)
+assert_outcome_authorized(audit, lock = NULL, allow_unauthorized = FALSE, ...)
 }
 \arguments{
 \item{audit}{A \code{cleantmle_audit}.}
 
+\item{lock}{Optional \code{cleanroom_lock}. When supplied, the pre-outcome
+gate is checked and, on success, the lock is stamped
+\code{.outcome_authorized = TRUE} and returned so that Stage 4 estimators
+run. This is the recommended way to authorise an unmasked staged lock.}
+
+\item{allow_unauthorized}{Logical; when \code{lock} is supplied, force the
+authorisation stamp even if the gate does not authorise (a warning is
+raised). Default \code{FALSE}.}
+
 \item{...}{Additional arguments passed to
-\code{\link{authorize_outcome_analysis}}.}
+\code{\link{authorize_outcome_analysis}} (used when \code{lock} is
+\code{NULL}).}
 }
 \value{
-\code{invisible(TRUE)} if authorised.
+When \code{lock} is \code{NULL}, \code{invisible(TRUE)} if authorised
+(otherwise an error). When \code{lock} is supplied, the stamped
+\code{cleanroom_lock}.
 }
 \description{
 Calls \code{\link{authorize_outcome_analysis}} and raises an error if

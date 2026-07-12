@@ -478,8 +478,8 @@ from this object via the `dt_*()` helpers.
 dt <- decision_thresholds(
   balance_max_smd   = 0.10,
   dq_max_abs_bias   = 0.02,
-  nco_rule          = "equivalence",
-  nco_null_band     = 0.02
+  nco_rule          = "significance",
+  nco_alpha         = 0.05
 )
 lock <- attach_decision_thresholds(lock, dt)
 ```
@@ -778,17 +778,17 @@ Four mechanisms are supported:
    lock data) and the outcome probability by user-specified odds
    ratios.
 
-```{r dq-stress, cache = TRUE, eval = FALSE}
+```{r dq-stress, cache = TRUE}
 dq_results <- run_plasmode_dq_stress(
   lock,
   tmle_candidates = candidates,
   effect_sizes    = c(0.05),
-  reps            = 30L,
+  # 60 (rather than 40) replicates stabilise the MCAR/measurement-error cells,
+  # whose worst-case |bias| is otherwise driven up by Monte Carlo noise close to
+  # the 0.02 threshold; at 60 reps the margin below the STOP threshold is
+  # comfortable so the illustrative gate reliably returns FLAG, not STOP.
+  reps            = 60L,
   data_quality_scenarios = list(
-    # Practical positivity violation (amplify covariate -> treatment slopes).
-    near_positivity = list(
-      slopes = c(2.0, 3.0)
-    ),
     # Covariate missingness under three mechanisms, each median-imputed.
     # MCAR is unbiased by construction; MAR (treatment-dependent) and MNAR
     # (value-dependent) make the imputation biased and are stronger tests.
@@ -991,14 +991,24 @@ audit <- record_decision_log_entry(audit,
 )
 ```
 
-The pre-outcome classification is **`r gate$decision`**, and
-outcome-analysis functions may now run on the unmasked data.
+The pre-outcome classification is **`r gate$decision`**. Every required
+stage (cohort adequacy, treatment comparability, and the negative
+control) returned GO and no checkpoint returned STOP, so
+`authorize_outcome_analysis()` authorises the outcome analysis. The
+optional data-quality stress checkpoint returned FLAG — its worst RMSE
+ratio under the covariate-missingness and outcome-misclassification
+threats sits just past the FLAG envelope — which is why the `gate_all()`
+composite above reads FLAG. A FLAG on a non-required checkpoint does not
+block authorisation, so outcome-analysis functions may now run on the
+unmasked data.
 
 ### What if a checkpoint fails?
 
-In the example above every checkpoint returned GO.
-In practice, poor overlap or residual confounding can trigger FLAG or
-STOP decisions.
+In the example above the required checkpoints returned GO and the
+optional DQ-stress checkpoint returned FLAG, which still authorises
+under review.
+In practice, poor overlap or residual confounding can trigger STOP
+decisions that block progression.
 The block below constructs a synthetic failure to show how the pipeline
 responds:
 

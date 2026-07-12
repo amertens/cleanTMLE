@@ -101,6 +101,50 @@ The software workflow is necessary but not sufficient for high-stakes RWE. Exter
   external clean-room governance (role separation, data-access
   controls, independent checkpoint review, archived audit trail)
 
+## Three ways to run cleanTMLE (tiers of enforcement)
+
+Pick the tier by how much the study needs the outcome-access guarantee actually
+enforced, not just documented. The tier decides which entry point you call.
+
+**Tier 1 - exploratory, no guarantees.** One call, no gate. Use
+`create_simple_lock()` (or `run_clean_tmle()`, the unguarded convenience
+wrapper) to get crude / IPTW / matching / TMLE estimates onto one forest plot.
+Outcome blindness is the analyst's responsibility; nothing is enforced. Good for
+methods work and quick looks.
+
+**Tier 2 - software-audited, single analyst.** The staged split, run by one
+person who authorises on the strength of the pre-outcome gate. The outcome is
+**not read** until a hash- and audit-bound authorisation is recorded:
+
+```r
+pre  <- run_clean_tmle_preoutcome(          # builds the lock (Y unauthorised),
+          data, "A", "Y", covariates = W,   # runs checkpoints + candidate
+          learner_lib = lib)                # selection, assembles the dossier
+print(pre$dossier)                          # the reviewer-facing bundle
+auth <- authorize_outcome_analysis(pre$audit)   # the token: lock hash + audit fingerprint
+fit  <- run_clean_tmle_primary(pre, auth)   # refuses without a valid token
+fit$risk_difference
+```
+
+`run_clean_tmle_primary()` refuses to read the outcome unless the token
+authorises (gate is not STOP), its `lock_hash` matches the lock, and its
+`audit_fingerprint` matches the current audit (so a checkpoint added or removed
+after authorisation is detected). The escape hatch is
+`allow_outcome_access = TRUE`, which is logged as an override.
+
+**Tier 3 - submission-grade, personnel separation.** Same as Tier 2, but the
+person who runs `run_clean_tmle_preoutcome()` and reaches the gate is not the
+person who calls `run_clean_tmle_primary()`. The token is the artefact handed
+across the partition. cleanTMLE cannot enforce the personnel split (see *What
+external governance must still provide*); the hash- and fingerprint-bound token
+is what makes the handoff auditable.
+
+The reviewer-facing **dossier** (`pre$dossier`, a `clean_tmle_dossier`) is a
+first-class object: estimand and lock fingerprint, PS balance, outcome-blind
+candidate selection and DQ degradation, negative-control estimates, and the
+pre-outcome decision with its audit trail. No comparative treatment-outcome
+estimate is included.
+
 ## Cumulative-risk workflow considerations
 
 cleanTMLE provides software support for the analytic considerations that arise in cumulative-risk pharmacoepidemiology workflows:
