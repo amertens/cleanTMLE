@@ -324,60 +324,47 @@ reference, see `vignette("cleanTMLE-functions")`.
 ```{r eval = FALSE}
 library(cleanTMLE)
 
-# 1. Lock the analytic specification (Stage 1a)
-lock <- create_analysis_lock(
+# 1. Pre-outcome pass (Stages 1-3, outcome-blind). Builds the analysis lock
+#    (outcome masked), runs cohort adequacy, propensity-score overlap and
+#    balance, outcome-blind candidate selection and the DQ stress test, and the
+#    negative-control checks, and assembles the reviewer-facing dossier.
+pre <- run_clean_tmle_preoutcome(
   data        = study_data,
-  treatment   = "A",
-  outcome     = "Y",
+  Avar        = "A",
+  Yvar        = "Y",
   covariates  = baseline_covariates,
-  sl_library  = c("SL.glm", "SL.glmnet", "SL.ranger"),
+  learner_lib = c("SL.glm", "SL.glmnet", "SL.ranger"),
+  tmle_candidates      = candidates,
+  selection_rule       = "min_max_rmse",
+  dq_scenarios         = default_dq_scenarios(),
+  neg_control_outcomes = c("nc_1", "nc_2"),
   seed        = 2026
 )
-lock <- attach_estimand(lock,
-  description           = "Effect of A on 24-month event risk",
-  population            = "Adults eligible at index",
-  treatment_strategies  = c("Treatment", "Reference"),
-  outcome_label         = "Event by 24 months",
-  followup              = "24 months",
-  contrast              = "risk_difference"
-)
+print(pre$dossier)   # reviewer bundle; no treatment-outcome estimate yet
 
-# 2. Cohort flow / attrition
-attr_tbl <- attrition_table(raw_data, inclusion_rules)
+# 2. Pre-outcome authorisation. The token binds the lock hash and an audit
+#    fingerprint; the primary pass refuses to read the outcome without it.
+auth <- authorize_outcome_analysis(pre$audit, allow_flag = TRUE)
 
-# 3. Design diagnostics (Stage 2a)
-ps      <- fit_ps_superlearner(lock)
-ps_diag <- compute_ps_diagnostics(ps)
-wd      <- clean_weight_diagnostics(ps$weights,
-                                    treatment  = lock$data[[lock$treatment]],
-                                    covariates = lock$data[, lock$covariates])
+# 3. Primary analysis: reads the outcome only under a matching, authorising
+#    token (fails closed otherwise).
+fit  <- run_clean_tmle_primary(pre, authorization = auth)
 
-# 4. Baseline plasmode candidate selection (Stage 2b)
-plas <- run_plasmode_feasibility(lock, tmle_candidates = candidates, reps = 200)
-
-# 5. DQ stress testing (Stage 2c)
-dq   <- run_plasmode_dq_stress(lock, tmle_candidates = candidates,
-                               scenarios = default_dq_scenarios(), n_reps = 200)
-
-# 6. Decision log entries throughout
-audit <- init_decision_log(lock)
-audit <- log_decision_entry(audit, stage = "Stage 2c", decision = "GO",
-                            rationale = "All candidates within thresholds",
-                            reviewer = "lead_analyst")
-
-# 7. Pre-outcome gate
-gate  <- gate_all(checkpoint_cohort_adequacy(lock),
-                  checkpoint_balance(ps_diag),
-                  checkpoint_weights(ps$weights))
-
-# 8. Authorisation record
-auth  <- authorize_outcome_analysis(lock, gate)
-
-# 9. Primary analysis (only callable after authorisation)
-fit   <- run_clean_tmle(lock, ps_fit = ps)
+# Estimand and sensitivity-plan declarations live in the companion
+# cleanroomGov package:
+#   pre$lock <- cleanroomGov::attach_estimand(pre$lock, ...)
+#   pre$lock <- cleanroomGov::declare_sensitivity_plan(pre$lock, ...)
 ```
 
 ## Function Reference
+
+> **Companion package.** The estimand/sensitivity declarations
+> (`attach_estimand()`, `declare_sensitivity_plan()`), the stage-path summaries
+> (`build_stage_manifest()`, `summarize_stage_path()`), and the event-process
+> helpers (`clean_event_process_table()`, `clean_check_event_processes()`) moved
+> to the companion **cleanroomGov** package in the estimation/governance split.
+> Call them as `cleanroomGov::attach_estimand(...)`; they are marked
+> *(cleanroomGov)* below.
 
 ### Stage 1a: Analysis specification and lock
 
@@ -385,8 +372,8 @@ fit   <- run_clean_tmle(lock, ps_fit = ps)
 |----------|---------|
 | `create_analysis_lock()` | Lock the analytic specification (data, treatment, outcome, covariates, SL library, plasmode settings) |
 | `validate_analysis_lock()` | Verify lock integrity via hash check |
-| `attach_estimand()` | Attach causal question, population, contrast, and follow-up metadata |
-| `declare_sensitivity_plan()` | Pre-register a sensitivity analysis |
+| `attach_estimand()` *(cleanroomGov)* | Attach causal question, population, contrast, and follow-up metadata |
+| `declare_sensitivity_plan()` *(cleanroomGov)* | Pre-register a sensitivity analysis |
 | `define_negative_control()` | Register a negative control variable |
 
 ### Stage 1b: Cohort adequacy and design precision (Check Point 1)
@@ -472,10 +459,10 @@ fit   <- run_clean_tmle(lock, ps_fit = ps)
 | `record_stage()` | Append a stage entry |
 | `record_checkpoint()` | Append a checkpoint entry |
 | `export_audit_trail()` | Export trail as a data.frame |
-| `build_stage_manifest()` | Print a stage-path summary |
+| `build_stage_manifest()` *(cleanroomGov)* | Print a stage-path summary |
 | `record_decision_log_entry()` | Record a structured analyst decision |
 | `export_decision_log()` | Export decision log as a data.frame |
-| `summarize_stage_path()` | Compact narrative of the analysis path |
+| `summarize_stage_path()` *(cleanroomGov)* | Compact narrative of the analysis path |
 
 ### Cross-workflow summaries
 

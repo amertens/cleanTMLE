@@ -1028,8 +1028,12 @@ cat(sprintf("Rationale: %s\n", fake_composite$rationale))
 ```
 
 When the gate returns STOP, no outcome code should execute.
-In `run_clean_tmle()` this is checked automatically; in the modular
-workflow the analyst inspects the gate decision and branches accordingly.
+`run_clean_tmle_primary()` enforces this automatically (it refuses to read
+the outcome unless the token authorises); in this modular workflow the
+guard is `assert_outcome_authorized(audit, lock = lock)`, which stamps the
+lock only on a passing gate, and the Stage 4 estimators then refuse an
+unauthorised lock. The `run_clean_tmle()` convenience wrapper is unguarded
+and does not perform this check.
 
 The most consequential STOP in this workflow usually comes from the
 DQ stress test rather than from balance. The block below shows a

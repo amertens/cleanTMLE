@@ -162,3 +162,17 @@ test_that("run_clean_tmle_preoutcome binds the selected candidate to the lock", 
   expect_false(is.null(pre$lock$primary_tmle_spec))
   expect_equal(pre$lock$primary_tmle_spec$candidate_id, pre$selected$candidate_id)
 })
+
+test_that("run_clean_tmle_preoutcome DQ branch accepts dq_scenarios (arg name matches)", {
+  skip_on_cran()
+  d     <- sim_func1(n = 400, seed = 4)
+  cands <- list(tmle_candidate("t01", truncation = 0.01))
+  pre <- run_clean_tmle_preoutcome(
+    data = d, Avar = "treatment", Yvar = "event_24",
+    covariates = c("age", "sex", "biomarker"),
+    learner_lib = c("SL.glm", "SL.mean"), tmle_candidates = cands,
+    run_selection = TRUE, plasmode_reps = 5L,
+    dq_scenarios = list(covariate_missingness = list(fractions = c(0.10))),
+    ps_method = "glm", seed = 4, verbose = FALSE)
+  expect_false(is.null(pre$dq_results))
+})

@@ -111,8 +111,8 @@ run_clean_tmle_preoutcome <- function(data, Avar, Yvar, covariates = NULL,
       reps = as.integer(plasmode_reps), verbose = verbose)
     if (!is.null(dq_scenarios)) {
       dq_results <- run_plasmode_dq_stress(
-        lock, tmle_candidates = tmle_candidates, scenarios = dq_scenarios,
-        verbose = verbose)
+        lock, tmle_candidates = tmle_candidates,
+        data_quality_scenarios = dq_scenarios, verbose = verbose)
     }
     selected <- select_tmle_candidate(plasmode_results, rule = selection_rule,
                                       dq_results = dq_results)
