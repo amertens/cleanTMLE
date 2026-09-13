@@ -348,19 +348,26 @@ test_that("assert_outcome_authorized errors when not authorized", {
   expect_error(assert_outcome_authorized(audit), "NOT authorised")
 })
 
-test_that("unmask_outcome errors without an audit and can be forced (hard)", {
+test_that("unmask_outcome is a plain reversal since 0.2.0; the two-pass path stays strict", {
   dat  <- sim_func1(n = 150, seed = 4)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex", "biomarker"), seed = 4)
   masked <- mask_outcome(lock)
-  # No audit on a cleanroom lock -> hard error.
-  expect_error(unmask_outcome(masked, lock), "requires an .audit.")
-  # Forced unmask warns but proceeds and stamps authorization.
-  expect_warning(un <- unmask_outcome(masked, lock, allow_unauthorized = TRUE),
-                 "forced without an audit")
+  # A plain cleanroom lock unmasks without an audit: masking is the honest
+  # blinding device, and no token is demanded (0.2.0 contract).
+  un <- unmask_outcome(masked, lock)
   expect_true(isTRUE(un$.outcome_authorized))
   expect_false(isTRUE(un$.outcome_masked))
   expect_identical(un$data[["event_24"]], lock$data[["event_24"]])
+  # A lock that opted into enforcement (the two-pass path) still errors
+  # without an audit, and forcing still warns.
+  strict <- masked
+  strict$require_authorization <- TRUE
+  expect_error(unmask_outcome(strict, lock), "requires an .audit.")
+  expect_warning(
+    un2 <- unmask_outcome(strict, lock, allow_unauthorized = TRUE),
+    "forced without an audit")
+  expect_true(isTRUE(un2$.outcome_authorized))
 })
 
 test_that("unmask_outcome errors on a non-authorising gate unless forced (hard)", {
@@ -398,17 +405,23 @@ test_that("unmask_outcome authorises through a passing gate (hard)", {
   expect_silent(.check_outcome_access(un, caller = "test"))
 })
 
-test_that(".check_outcome_access enforces authorization on a cleanroom lock (hard)", {
+test_that(".check_outcome_access: masking always enforced, authorization opt-in (0.2.0)", {
   dat  <- sim_func1(n = 100, seed = 8)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex"), seed = 8)
-  # Unauthorised cleanroom lock (never masked) -> hard error.
-  expect_error(.check_outcome_access(lock, caller = "test"),
-               "not authorised")
-  # The explicit override lets it through.
-  expect_silent(.check_outcome_access(lock, allow_outcome_access = TRUE,
+  # An unmasked cleanroom lock passes: no token is demanded by default.
+  expect_silent(.check_outcome_access(lock, caller = "test"))
+  # A masked lock is still refused.
+  expect_error(.check_outcome_access(mask_outcome(lock), caller = "test"),
+               "masked")
+  # A lock that opted into enforcement is refused until authorised.
+  strict <- lock
+  strict$require_authorization <- TRUE
+  expect_error(.check_outcome_access(strict, caller = "test"),
+               "requires a recorded pre-outcome authorisation")
+  expect_silent(.check_outcome_access(strict, allow_outcome_access = TRUE,
                                       caller = "test"))
-  # A plain (cleanroom_enabled = FALSE) lock is exempt.
+  # A plain (cleanroom_enabled = FALSE) lock is exempt from everything.
   simple <- create_simple_lock(dat, "treatment", "event_24",
                                c("age", "sex"), seed = 8)
   expect_silent(.check_outcome_access(simple, caller = "test"))

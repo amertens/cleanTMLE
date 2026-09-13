@@ -20,6 +20,7 @@ NULL
 #'
 #' @export
 init_decision_log <- function() {
+  .superseded("init_decision_log", "the design log on the lock (lock$design_log)")
   data.frame(
     stage     = character(0),
     metric    = character(0),
@@ -48,6 +49,7 @@ init_decision_log <- function() {
 log_decision_entry <- function(log, stage, metric, value,
                                decision = NA_character_,
                                rationale = "") {
+  .superseded("log_decision_entry", "the design log on the lock (lock$design_log)")
   new_row <- data.frame(
     stage     = stage,
     metric    = metric,
@@ -78,6 +80,7 @@ log_decision_entry <- function(log, stage, metric, value,
 #' @export
 save_decision_log <- function(log, path = "inst/decision_logs/decision_log.csv",
                               append = FALSE) {
+  .superseded("save_decision_log", "the design log on the lock (lock$design_log)")
   dir_path <- dirname(path)
   if (!dir.exists(dir_path)) dir.create(dir_path, recursive = TRUE)
 

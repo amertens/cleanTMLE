@@ -47,20 +47,21 @@ NULL
     )
   }
 
-  # Authorisation check. A cleanroom lock reaches Stage 4 authorised only if a
-  # passing pre-outcome gate was recorded on it (`.outcome_authorized`), via
-  # unmask_outcome(audit = ) or assert_outcome_authorized(audit, lock = ). An
-  # unmasked-but-unauthorised lock, including one that was never masked, is
-  # refused: this is the gate enforcement the clean-room design requires, not
-  # merely outcome masking.
-  if (!isTRUE(lock$.outcome_authorized)) {
+  # Authorisation check, opt-in since 0.2.0. Software-enforced authorisation
+  # applies only to locks that request it (`require_authorization = TRUE`,
+  # set by the two-pass entry point run_clean_tmle_preoutcome()). The default
+  # lock enforces masking only: the one honest blinding device is a
+  # physically absent outcome column, and what protects an analysis beyond
+  # that is statistical (the support verdict, the estimand ladder, the
+  # implausibility guard), not a token.
+  if (isTRUE(lock$require_authorization) &&
+      !isTRUE(lock$.outcome_authorized)) {
     stop(
-      caller, ": outcome analysis is not authorised for this lock. Pass the ",
-      "pre-outcome gate and record it with ",
+      caller, ": this lock requires a recorded pre-outcome authorisation ",
+      "(it came from run_clean_tmle_preoutcome()). Record it with ",
       "unmask_outcome(lock, original_lock, audit = <audit>) or ",
       "assert_outcome_authorized(audit, lock = <lock>); or set ",
-      "allow_outcome_access = TRUE to override; or create the lock with ",
-      "cleanroom_enabled = FALSE for a plain pipeline.",
+      "allow_outcome_access = TRUE to override.",
       call. = FALSE
     )
   }
@@ -311,6 +312,7 @@ decision_thresholds <- function(
     nco_rule               = c("equivalence", "significance"),
     nco_null_band          = 0.02,
     nco_adjust             = c("none", "bonferroni")) {
+  .superseded("decision_thresholds", "support_thresholds()")
   nco_rule   <- match.arg(nco_rule)
   nco_adjust <- match.arg(nco_adjust)
   obj <- list(
@@ -414,6 +416,7 @@ dt_nco <- function(dt) {
 #' @export
 attach_decision_thresholds <- function(lock,
                                        thresholds = decision_thresholds()) {
+  .superseded("attach_decision_thresholds", "support_thresholds(), passed to assess_support() and estimand_feasibility()")
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
   if (!inherits(thresholds, "cleantmle_thresholds"))
@@ -3078,6 +3081,7 @@ gate_check <- function(metrics, scenario_name = "plasmode", targets = NULL,
                        coverage_threshold = NULL,
                        max_abs_bias = NULL,
                        se_sd_window = c(0.8, 1.2)) {
+  .superseded("gate_check", "the verdicts carried on simulate_support() and plasmode results")
   # Ergonomic dispatch: accept a plasmode_results or plasmode_dq_results
   # object directly. The DQ path checks every degraded scenario; the
   # baseline-only path checks the "none" row(s).

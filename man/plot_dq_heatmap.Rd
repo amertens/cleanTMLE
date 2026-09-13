@@ -54,12 +54,11 @@ visible.
 \examples{
 \dontrun{
 dq <- run_plasmode_dq_stress(lock, tmle_candidates, reps = 20)
-plot_dq_heatmap(dq)
-plot_dq_heatmap(dq, metric = "coverage")
-plot_dq_heatmap(dq, metric = "bias", scenarios = c("none", "unmeasured_U"))
+cleanTMLE:::plot_dq_heatmap(dq)
 }
 
 }
 \seealso{
 \code{\link[=run_plasmode_dq_stress]{run_plasmode_dq_stress()}}, \code{\link[=summarize_dq_degradation]{summarize_dq_degradation()}}
 }
+\keyword{internal}

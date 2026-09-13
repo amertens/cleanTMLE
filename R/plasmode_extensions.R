@@ -209,8 +209,9 @@ resolve_truncation_rule <- function(rule, n = NULL) {
 #' quantiles, and a near-positivity-violation flag using
 #' `eps(n) = max(0.01, 5 / (sqrt(n) * ln(n)))` (Gruber 2009 §3.1).
 #'
-#' @param ps_fit A `cleanroom_ps_fit` produced by
-#'   [fit_ps_superlearner()] or [fit_ps_glm()].
+#' @param ps_fit A `ps_fit` produced by [fit_ps()], [fit_ps_superlearner()],
+#'   or [fit_ps_glm()]. Superseded: [assess_support()] returns the same
+#'   diagnostics and more in one object.
 #' @param truncation Numeric truncation bound; defaults to the
 #'   `sqrt_n_ln_n` rule applied to the fitted sample size.
 #'
@@ -232,23 +233,19 @@ resolve_truncation_rule <- function(rule, n = NULL) {
 #'
 #' @export
 run_positivity_diagnostics <- function(ps_fit, truncation = NULL) {
-  if (!inherits(ps_fit, "cleanroom_ps_fit"))
-    stop("`ps_fit` must be a cleanroom_ps_fit.", call. = FALSE)
-  ps <- as.numeric(ps_fit$ps)
-  a  <- as.integer(ps_fit$treatment)
+  .superseded("run_positivity_diagnostics",
+              "assess_support(), which carries the c-statistic, the graded verdict, and the stratum checks in one object")
+  if (!inherits(ps_fit, "ps_fit"))
+    stop("`ps_fit` must be a ps_fit object (before 0.2.0 this function ",
+         "demanded a class the package never produced, so it could not ",
+         "run at all).", call. = FALSE)
+  sup <- assess_support(ps_fit, tree_search = FALSE)
+  ps <- sup$g
+  a  <- sup$A
   n  <- length(ps)
   if (is.null(truncation))
     truncation <- resolve_truncation_rule("sqrt_n_ln_n", n)
   eps <- max(0.01, 5 / (sqrt(n) * log(n)))
-  # C-statistic (AUC) for the PS as classifier of A.
-  c_stat <- tryCatch({
-    ord <- order(ps)
-    a_ord <- a[ord]
-    n1 <- sum(a_ord); n0 <- sum(1L - a_ord)
-    if (n1 == 0 || n0 == 0) NA_real_
-    else (sum((cumsum(1L - a_ord) * a_ord)) - n1 * (n1 + 1) / 2) /
-         (n0 * n1)
-  }, error = function(e) NA_real_)
   summary_by_arm <- vapply(c(0L, 1L), function(level) {
     s <- ps[a == level]
     c(n = length(s), mean = mean(s), sd = stats::sd(s),
@@ -264,7 +261,7 @@ run_positivity_diagnostics <- function(ps_fit, truncation = NULL) {
                                  c(0, 0.01, 0.05, 0.5, 0.95, 0.99, 1),
                                  names = FALSE)
   list(
-    c_statistic   = c_stat,
+    c_statistic   = sup$c_statistic,
     summary_by_arm = summary_by_arm,
     pct_truncated = pct_truncated,
     g_quantiles   = stats::setNames(g_quantiles,
@@ -272,7 +269,9 @@ run_positivity_diagnostics <- function(ps_fit, truncation = NULL) {
                                        "q95","q99","max")),
     eps_threshold = eps,
     near_violation = any(ps < eps) || any(ps > 1 - eps),
-    truncation    = truncation
+    truncation    = truncation,
+    verdict       = sup$verdict,
+    support       = sup
   )
 }
 

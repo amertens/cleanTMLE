@@ -9,3 +9,4 @@
 ^vignettes/.*\.pdf$
 _cache/
 _files/
+^attic$

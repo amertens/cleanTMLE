@@ -7,8 +7,9 @@
 run_positivity_diagnostics(ps_fit, truncation = NULL)
 }
 \arguments{
-\item{ps_fit}{A \code{cleanroom_ps_fit} produced by
-\code{\link[=fit_ps_superlearner]{fit_ps_superlearner()}} or \code{\link[=fit_ps_glm]{fit_ps_glm()}}.}
+\item{ps_fit}{A \code{ps_fit} produced by \code{\link[=fit_ps]{fit_ps()}}, \code{\link[=fit_ps_superlearner]{fit_ps_superlearner()}},
+or \code{\link[=fit_ps_glm]{fit_ps_glm()}}. Superseded: \code{\link[=assess_support]{assess_support()}} returns the same
+diagnostics and more in one object.}
 
 \item{truncation}{Numeric truncation bound; defaults to the
 \code{sqrt_n_ln_n} rule applied to the fitted sample size.}

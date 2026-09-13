@@ -296,12 +296,10 @@ hist.ipw <- function(x, type = c("ps", "weights"), ...) {
 #' @examples
 #' \dontrun{
 #' dq <- run_plasmode_dq_stress(lock, tmle_candidates, reps = 20)
-#' plot_dq_heatmap(dq)
-#' plot_dq_heatmap(dq, metric = "coverage")
-#' plot_dq_heatmap(dq, metric = "bias", scenarios = c("none", "unmeasured_U"))
+#' cleanTMLE:::plot_dq_heatmap(dq)
 #' }
 #'
-#' @export
+#' @keywords internal
 plot_dq_heatmap <- function(x,
                              metric       = c("rmse", "bias", "coverage",
                                               "emp_sd", "se_cal"),

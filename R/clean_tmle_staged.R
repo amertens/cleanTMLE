@@ -85,6 +85,9 @@ run_clean_tmle_preoutcome <- function(data, Avar, Yvar, covariates = NULL,
     data = data, treatment = Avar, outcome = Yvar, covariates = covariates,
     sl_library = learner_lib, plasmode_reps = as.integer(plasmode_reps),
     seed = as.integer(seed))
+  # The two-pass entry point is the software-enforced path: its locks opt in
+  # to the authorisation requirement (since 0.2.0 the plain lock does not).
+  lock$require_authorization <- TRUE
   audit <- create_audit_log(lock)
 
   # Check Point 1: cohort adequacy (marginal Y only).

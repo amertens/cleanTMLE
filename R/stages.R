@@ -126,6 +126,7 @@ checkpoint_cohort_adequacy <- function(lock,
                                        min_prevalence = 0.01,
                                        stop_n_per_arm = NULL,
                                        stop_min_events = NULL) {
+  .superseded("checkpoint_cohort_adequacy", "assess_support() and estimand_feasibility()")
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
 
@@ -257,6 +258,7 @@ checkpoint_balance <- function(ps_diag,
                                min_ess_pct = 50,
                                stop_smd    = 0.20,
                                lock_hash   = NA_character_) {
+  .superseded("checkpoint_balance", "assess_support() and estimand_feasibility()")
   if (!inherits(ps_diag, "ps_diagnostics"))
     stop("`ps_diag` must be a ps_diagnostics object.", call. = FALSE)
 
@@ -401,6 +403,7 @@ define_negative_control <- function(lock, variable, type = "outcome",
 #'
 #' @export
 run_negative_control <- function(lock, variable, ps_fit) {
+  .superseded("run_negative_control", "run_negative_control_tmle()")
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
   if (!inherits(ps_fit, "ps_fit"))
@@ -521,6 +524,7 @@ checkpoint_residual_bias <- function(nc_results,
                                      null_band       = NULL,
                                      adjust          = c("none", "bonferroni"),
                                      lock_hash       = NA_character_) {
+  .superseded("checkpoint_residual_bias", "run_negative_control_ladder()")
   rule   <- match.arg(rule)
   adjust <- match.arg(adjust)
 
@@ -605,6 +609,7 @@ checkpoint_residual_bias <- function(nc_results,
 #'
 #' @export
 create_audit_log <- function(lock) {
+  .superseded("create_audit_log", "the lock's design log and the cleanroomGov reporting helpers")
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
 
@@ -635,6 +640,7 @@ create_audit_log <- function(lock) {
 #' @export
 record_stage <- function(audit, stage, action, decision = NA_character_,
                          details = "") {
+  .superseded("record_stage", "the lock's design log and the cleanroomGov reporting helpers")
   if (!inherits(audit, "cleantmle_audit"))
     stop("`audit` must be a cleantmle_audit object.", call. = FALSE)
 
@@ -663,6 +669,7 @@ record_stage <- function(audit, stage, action, decision = NA_character_,
 #'
 #' @export
 record_checkpoint <- function(audit, checkpoint) {
+  .superseded("record_checkpoint", "the lock's design log and the cleanroomGov reporting helpers")
   if (!inherits(checkpoint, "cleantmle_checkpoint"))
     stop("`checkpoint` must be a cleantmle_checkpoint object.", call. = FALSE)
 
@@ -694,6 +701,7 @@ record_checkpoint <- function(audit, checkpoint) {
 #'
 #' @export
 export_audit_trail <- function(audit) {
+  .superseded("export_audit_trail", "the lock's design log and cleanroomGov::build_stage_manifest()")
   if (!inherits(audit, "cleantmle_audit"))
     stop("`audit` must be a cleantmle_audit object.", call. = FALSE)
 
@@ -764,6 +772,7 @@ print.cleantmle_audit <- function(x, ...) {
 sensitivity_truncation <- function(lock,
                                    thresholds = c(0.01, 0.025, 0.05, 0.10),
                                    override_clean_room = FALSE) {
+  .superseded("sensitivity_truncation", "run_trimmed_tmle() and resolve_truncation_rule()")
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
   .check_outcome_access(lock, override_clean_room,
@@ -1157,6 +1166,7 @@ run_residual_confounding_stage <- function(lock,
                                            null_band        = NULL,
                                            adjust           = c("none",
                                                                 "bonferroni")) {
+  .superseded("run_residual_confounding_stage", "run_negative_control_tmle() and run_negative_control_ladder()")
   rule_missing <- missing(rule)
   rule   <- match.arg(rule)
   adjust <- match.arg(adjust)
@@ -1364,6 +1374,7 @@ authorize_outcome_analysis <- function(audit = NULL,
                                        lock_hash       = NULL,
                                        checkpoints     = NULL,
                                        block_on_any_stop = TRUE) {
+  .superseded("authorize_outcome_analysis", "the opt-in two-pass path (run_clean_tmle_preoutcome()); plain locks no longer require authorisation")
   # Polymorphic: accept either an audit, a list of checkpoints, or both.
   # When both are supplied, the union of evidence is used (audit entries
   # plus the explicit checkpoints).
@@ -1581,6 +1592,7 @@ authorize_outcome_analysis <- function(audit = NULL,
 #' @export
 assert_outcome_authorized <- function(audit, lock = NULL,
                                       allow_unauthorized = FALSE, ...) {
+  .superseded("assert_outcome_authorized", "the opt-in two-pass path (run_clean_tmle_preoutcome()); plain locks no longer require authorisation")
   if (!is.null(lock)) {
     return(.authorize_outcome_lock(lock, audit, allow_unauthorized,
                                    caller = "assert_outcome_authorized"))
@@ -1636,6 +1648,7 @@ record_decision_log_entry <- function(audit,
                                       description,
                                       rationale = "",
                                       metrics   = NULL) {
+  .superseded("record_decision_log_entry", "the design log on the lock, which declare_estimand_ladder() and run_estimand_ladder() write")
   if (!inherits(audit, "cleantmle_audit"))
     stop("`audit` must be a cleantmle_audit object.", call. = FALSE)
 
@@ -1677,6 +1690,7 @@ record_decision_log_entry <- function(audit,
 #'
 #' @export
 export_decision_log <- function(audit) {
+  .superseded("export_decision_log", "the design log on the lock (lock$design_log)")
   if (!inherits(audit, "cleantmle_audit"))
     stop("`audit` must be a cleantmle_audit object.", call. = FALSE)
 
@@ -1755,14 +1769,20 @@ mask_outcome <- function(lock) {
     return(lock)
   }
   if (is.null(audit)) {
-    if (!isTRUE(allow_unauthorized)) {
-      stop(caller, "(): a cleanroom lock requires an `audit` to record ",
-           "outcome authorisation from the pre-outcome gate. Supply audit = ,",
-           " or pass allow_unauthorized = TRUE to force.", call. = FALSE)
+    # Since 0.2.0 only a lock that opted into software-enforced
+    # authorisation (the two-pass path) demands an audit here; a plain
+    # cleanroom lock unmasks freely, and the design log, the support
+    # verdict, and the estimand ladder carry the record.
+    if (isTRUE(lock$require_authorization) && !isTRUE(allow_unauthorized)) {
+      stop(caller, "(): this lock requires an `audit` to record outcome ",
+           "authorisation from the pre-outcome gate. Supply audit = , ",
+           "or pass allow_unauthorized = TRUE to force.", call. = FALSE)
     }
-    warning(caller, "(): outcome authorisation forced without an audit ",
-            "(allow_unauthorized = TRUE); the pre-outcome gate was not checked.",
-            call. = FALSE)
+    if (isTRUE(lock$require_authorization)) {
+      warning(caller, "(): outcome authorisation forced without an audit ",
+              "(allow_unauthorized = TRUE); the pre-outcome gate was not ",
+              "checked.", call. = FALSE)
+    }
     lock$.outcome_authorized <- TRUE
     return(lock)
   }

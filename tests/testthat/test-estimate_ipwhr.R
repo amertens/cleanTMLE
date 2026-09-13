@@ -13,18 +13,7 @@ test_that("estimate_ipwhr produces hr object", {
                     names(fit$hr_table)))
 })
 
-test_that("hr_data extracts table", {
-  dat <- sim_func1(n = 200, seed = 21)
-  spec <- specify_models(data = dat) |>
-    identify_outcome(event, type = "time_to_event") |>
-    identify_treatment(treatment, formula = ~ age + sex)
-
-  fit <- estimate_ipwhr(spec)
-  hrd <- hr_data(fit)
-
-  expect_true(is.data.frame(hrd))
-  expect_true("hr" %in% names(hrd))
-})
+# hr_data() was archived in 0.2.0: fit$hr_table is the same data.frame.
 
 test_that("forest_plot returns ggplot", {
   dat <- sim_func1(n = 200, seed = 22)

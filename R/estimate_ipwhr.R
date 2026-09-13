@@ -143,26 +143,6 @@ estimate_ipwhr <- function(spec, covariates = NULL, trim = NULL, trunc = NULL,
 }
 
 
-#' Extract HR Data from an hr Object
-#'
-#' Returns the data.frame backing the hazard ratio results, suitable for
-#' forest plots or custom tables.
-#'
-#' @param x An object of class `hr`.
-#' @param ... Additional arguments (unused).
-#'
-#' @return A data.frame with columns: term, log_hr, hr, se, ci_lower,
-#'   ci_upper, p_value.
-#'
-#' @export
-hr_data <- function(x, ...) {
-  if (!inherits(x, "hr")) {
-    stop("`x` must be an hr object.", call. = FALSE)
-  }
-  x$hr_table
-}
-
-
 #' @export
 print.hr <- function(x, ...) {
   cat("IPW Hazard Ratio Estimates (Weighted Cox Model)\n")

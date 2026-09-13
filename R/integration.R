@@ -101,6 +101,7 @@ wrap_ps_fit <- function(lock, ps_scores, method = "external",
 #'
 #' @export
 fit_ps_parallel <- function(lock, cluster = NULL, truncate = NULL, ...) {
+  .superseded("fit_ps_parallel", "fit_ps(method = 'superlearner', cluster = )")
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
   if (!requireNamespace("SuperLearner", quietly = TRUE))
@@ -675,6 +676,7 @@ sanitize_covariates <- function(data, covariates = NULL, verbose = FALSE) {
 #' @export
 create_analysis_lock_from_yaml <- function(config_path, data,
                                            section = NULL) {
+  .superseded("create_analysis_lock_from_yaml", "create_analysis_lock()")
   if (!requireNamespace("yaml", quietly = TRUE))
     stop("Package 'yaml' is required. Install with: install.packages('yaml')",
          call. = FALSE)
@@ -938,6 +940,7 @@ love_plot_threeway <- function(ps_diag, matched_smds, threshold = 0.10) {
 #'
 #' @export
 gate_all <- function(..., allow_flag = TRUE) {
+  .superseded("gate_all", "the verdicts carried on assess_support(), simulate_support() and estimand_feasibility() results")
   checkpoints <- list(...)
   # Flatten if a list was passed
   if (length(checkpoints) == 1L && is.list(checkpoints[[1]]) &&
@@ -1209,6 +1212,7 @@ get_final_cohort <- function(attrition) {
 refine_ps_after_nco <- function(lock, ps_fit, additional_covariates,
                                 nc_variables, audit = NULL,
                                 rationale = "NCO suggested residual confounding") {
+  .superseded("refine_ps_after_nco", "run_negative_control_ladder()")
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
 

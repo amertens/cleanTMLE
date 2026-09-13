@@ -228,6 +228,7 @@ checkpoint_weights <- function(weights, treatment = NULL,
                                 ess_floor = NULL,
                                 extreme_prop_threshold = 0.01,
                                 lock_hash = NA_character_) {
+  .superseded("checkpoint_weights", "assess_support() and estimand_feasibility()")
   diag <- clean_weight_diagnostics(weights = weights,
                                     treatment = treatment,
                                     max_weight_threshold = max_weight_threshold,

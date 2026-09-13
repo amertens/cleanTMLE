@@ -91,6 +91,7 @@ default_dq_scenarios <- function(preset = c("regulatory_standard",
 #' }
 #' @export
 print_locked_spec <- function(lock) {
+  .superseded("print_locked_spec", "declare_estimand_ladder(), which records the selected specification on the lock")
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
   spec <- lock$primary_tmle_spec
@@ -1213,6 +1214,7 @@ gate_dq <- function(dq_results,
                     scenarios      = NULL,
                     thresholds     = NULL,
                     lock_hash      = NA_character_) {
+  .superseded("gate_dq", "the pass rule carried on simulate_support() and summarize_dq_degradation() output")
   if (!inherits(dq_results, "plasmode_dq_results"))
     stop("`dq_results` must be a plasmode_dq_results object.", call. = FALSE)
 
