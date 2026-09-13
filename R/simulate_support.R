@@ -171,27 +171,12 @@ print.support_surfaces <- function(x, ...) {
 .ss_est_matched_att <- function(Y, A, W, caliper_sd = 0.2,
                                 truncation = 0.01) {
   g <- pmin(pmax(.ss_fit_g(A, W), truncation), 1 - truncation)
-  lp <- stats::qlogis(g)
-  cal <- caliper_sd * stats::sd(lp)
-  tr_idx <- which(A == 1); ct_idx <- which(A == 0)
-  if (!length(tr_idx) || !length(ct_idx))
-    return(list(est = NA_real_, se = NA_real_, matched_treated = integer(0)))
-  used <- rep(FALSE, length(ct_idx))
-  m_t <- integer(0); m_c <- integer(0)
-  # Greedy nearest neighbour in random order (the seed is set by the caller).
-  for (i in sample(tr_idx)) {
-    d <- abs(lp[ct_idx] - lp[i]); d[used] <- Inf
-    j <- which.min(d)
-    if (is.finite(d[j]) && d[j] <= cal) {
-      used[j] <- TRUE
-      m_t <- c(m_t, i); m_c <- c(m_c, ct_idx[j])
-    }
-  }
-  if (length(m_t) < 10)
-    return(list(est = NA_real_, se = NA_real_, matched_treated = m_t))
-  diffs <- Y[m_t] - Y[m_c]
+  m <- .greedy_caliper_match(g, A, caliper_sd = caliper_sd)
+  if (length(m$treated) < 10)
+    return(list(est = NA_real_, se = NA_real_, matched_treated = m$treated))
+  diffs <- Y[m$treated] - Y[m$control]
   list(est = mean(diffs), se = sqrt(stats::var(diffs) / length(diffs)),
-       matched_treated = m_t)
+       matched_treated = m$treated)
 }
 
 

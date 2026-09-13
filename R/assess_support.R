@@ -153,24 +153,27 @@ print.support_thresholds <- function(x, ...) {
                             extreme_p = 0.10) {
   if (!requireNamespace("rpart", quietly = TRUE)) return(NULL)
   df <- data.frame(.A = A, X)
+  # A regression tree on the treatment indicator: with method = "class" a
+  # split that leaves both children in the majority class shows no
+  # misclassification gain, so rpart can stall exactly on the starved
+  # stratum this search exists to find.
   fit <- tryCatch(rpart::rpart(
-    .A ~ ., data = df, method = "class",
+    .A ~ ., data = df, method = "anova",
     control = rpart::rpart.control(maxdepth = max_depth, minbucket = min_n,
                                    cp = 0.001)),
     error = function(e) NULL)
   if (is.null(fit) || is.null(fit$frame) || nrow(fit$frame) < 2L) return(NULL)
   fr <- fit$frame
-  leaves <- which(fr$var == "<leaf>")
-  if (!length(leaves)) return(NULL)
-  where_node <- as.integer(rownames(fr))[fit$where]
+  leaf_rows <- which(fr$var == "<leaf>")
+  if (!length(leaf_rows)) return(NULL)
   rows <- list()
-  for (li in leaves) {
-    node_id <- as.integer(rownames(fr))[li]
-    in_leaf <- where_node == node_id
+  for (li in leaf_rows) {
+    in_leaf <- fit$where == li
     n_leaf  <- sum(in_leaf)
     if (n_leaf < min_n) next
     p <- mean(A[in_leaf])
     if (p >= extreme_p && p <= 1 - extreme_p) next
+    node_id <- as.integer(rownames(fr))[li]
     pth <- tryCatch(rpart::path.rpart(fit, nodes = node_id, print.it = FALSE),
                     error = function(e) NULL)
     rule <- if (is.null(pth)) NA_character_ else
