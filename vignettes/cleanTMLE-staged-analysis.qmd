@@ -178,6 +178,80 @@ A few things to read from the forest plot:
 
 That is the entire core workflow. Everything in the rest of this vignette is *governance and audit machinery* on top of these four estimators, for studies that need a reproducible pre-outcome dossier, and is not a different estimator.
 
+## Deciding the estimand before outcomes
+
+A traditional clean room blinds the analyst: the outcome team does not see
+the treatment-outcome association until the design is fixed. What it cannot
+do is tell the design team whether the design supports the estimand they
+plan to estimate. That failure is quiet. On a cohort with a severe practical
+positivity violation, the average treatment effect can come back with a
+narrow confidence interval and be wrong by an order of magnitude, because
+truncation limits variance but not extrapolation, and nothing in the
+estimator's own output distinguishes such an estimate from a real finding.
+In the Rescue.Co case study that motivates this package, the protocol
+contrast produced a time-to-arrival ATE of +14,637 minutes against a crude
+difference of seven hours the other way, with a confidence interval
+excluding zero.
+
+The design stage below is what the package adds over blinding alone, and
+none of it touches the outcome. The example is a cohort where one covariate
+nearly separates the arms.
+
+```{r estimand-decision, message=FALSE}
+set.seed(11)
+n  <- 800
+x1 <- rnorm(n); x2 <- rbinom(n, 1, 0.4)
+A  <- rbinom(n, 1, plogis(-2.2 + 3.2 * x1 + 0.5 * x2))
+y  <- rbinom(n, 1, plogis(-2 + 0.5 * x1 + 0.4 * A))
+sev <- data.frame(x1 = x1, x2 = x2, treatment = A, outcome = y)
+
+lock_s <- create_simple_lock(sev, "treatment", "outcome", c("x1", "x2"),
+                             sl_library = "SL.glm", seed = 11L)
+lock_s <- declare_estimand_ladder(lock_s, primary = "ATE",
+                                  fallbacks = c("trimmed_ATE", "ATT", "ATO"),
+                                  trigger = "SEVERE")
+ps_s  <- fit_ps(lock_s, method = "glm")
+sup_s <- assess_support(ps_s)
+sup_s
+```
+
+```{r estimand-decision-plot, fig.height=3.8}
+plot(sup_s)
+```
+
+The graded verdict (PASS, FLAG, SEVERE, FAIL, following the review-team
+decisions of Muntner et al. 2024) is computed from the share of the sample
+outside a prespecified propensity band and the largest inverse-probability
+weight, escalated when any covariate stratum is near-deterministic in
+treatment. The feasibility table then reads the same fit per estimand: the
+effect among the treated needs control weights bounded by
+`max g / (1 - g)`, and the overlap-weighted ATO's weights are bounded by
+one, so both remain estimable where the ATE is not.
+
+```{r estimand-decision-fea}
+estimand_feasibility(ps_s)
+```
+
+`who_is_unsupported(ps_s, vars = ...)` profiles the patients outside the
+band, which is what trimming would remove; trimming changes the estimand and
+the profile is what makes the change concrete. `simulate_support()` asks the
+dynamic version of the question, generating synthetic outcomes over a
+prespecified family of surfaces and reporting, per estimand, where its
+estimator stays within a bias tolerance at near-nominal coverage. Estimation
+then runs the declared ladder, labels every row with its estimand and
+verdict, refuses an infeasible primary unless an override reason is
+recorded, and logs every switch:
+
+```{r estimand-decision-ladder, message=FALSE, warning=FALSE}
+run_estimand_ladder(lock_s, ps_s, sl_library = "SL.glm", verbose = FALSE)
+```
+
+That is the package's answer to the question a clean room alone cannot
+answer: not only was the analyst blinded, but the comparison the study
+promised was checked for estimability before anyone saw an outcome, and the
+estimand that was finally estimated is the one the data can support, chosen
+by a rule that was declared in advance.
+
 ## When to read the rest
 
 Continue reading if any of the following apply:
@@ -185,9 +259,9 @@ Continue reading if any of the following apply:
 - You are running an analysis where the comparative answer will be reviewed by a third party, and you need a reproducible record of every analytic decision made before the comparative answer was seen.
 - You want to use the **plasmode candidate-selector** to pick between competing TMLE specifications before unblinding.
 - You want to use the **data-quality stress test** to check how the chosen estimator behaves under prespecified threats (measurement error, missingness, unmeasured confounding) before unblinding.
-- You are working inside an institutional clean-room arrangement and need the software-side artefacts (lock fingerprint, audit log, decision log, GO / FLAG / STOP record).
+- You are working inside an institutional clean-room arrangement and want the software-enforced two-pass entry point (`run_clean_tmle_preoutcome()`), whose locks require a recorded authorisation before Stage 4.
 
-If none of these apply, you can stop here and use the plain workflow above. cleanTMLE was designed to be useful at both levels of formality.
+If none of these apply, you can stop here and use the workflows above. cleanTMLE was designed to be useful at both levels of formality.
 
 ---
 

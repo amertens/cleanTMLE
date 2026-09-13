@@ -59,12 +59,83 @@ uses internally from the outcome side of the data:
   observed Y.
 - **Negative-control Y only**: uses prespecified NC outcomes,
   not the primary outcome.
-- **Primary Y**:estimates the observed
-  treatment-primary-outcome association; requires authorization.
+- **Primary Y**: estimates the observed
+  treatment-primary-outcome association. Since 0.2.0 the software
+  guard on these functions enforces outcome masking always, and a
+  recorded authorisation only on locks from the enforced two-pass
+  entry point (`run_clean_tmle_preoutcome()`).
 
 These labels describe what exported package functions use
 internally, not what a user with raw data access could inspect
 outside the package.
+
+## The 0.2.0 workflow: decide the estimand before outcomes
+
+The package's core question is whether a comparison is estimable, and with
+which estimand, before the outcome is unlocked. The workflow is five verbs:
+lock, assess, map, simulate, estimate. The example below builds a cohort
+with a severe practical positivity violation, the situation the Rescue.Co
+case study meets on its protocol contrast, and shows the design stage
+routing the analysis to a feasible estimand.
+
+```{r workflow-020, message=FALSE}
+set.seed(7)
+n  <- 800
+x1 <- rnorm(n); x2 <- rbinom(n, 1, 0.4)
+g  <- plogis(-2.2 + 3.2 * x1 + 0.5 * x2)   # a covariate nearly separates arms
+A  <- rbinom(n, 1, g)
+y  <- rbinom(n, 1, plogis(-2 + 0.5 * x1 + 0.4 * A))
+dat <- data.frame(x1 = x1, x2 = x2, treatment = A, outcome = y)
+
+lock <- create_simple_lock(dat, "treatment", "outcome", c("x1", "x2"),
+                           sl_library = "SL.glm", seed = 7L)
+lock <- declare_estimand_ladder(lock, primary = "ATE",
+                                fallbacks = c("trimmed_ATE", "ATT", "ATO"))
+
+ps  <- fit_ps(lock, method = "glm")
+sup <- assess_support(ps)
+sup
+```
+
+The verdict travels with every downstream estimate. `plot(sup)` draws the
+mirrored propensity histogram with the reference band shaded. The
+feasibility table then says which estimands the same fit can support: the
+ATE's weights explode where the ATT's control weights stay bounded by
+`max g / (1 - g)` and the ATO's weights are bounded by one by construction.
+
+```{r feasibility-020}
+fea <- estimand_feasibility(ps)
+fea
+head(who_is_unsupported(ps, vars = c("x1", "x2")))
+```
+
+The outcome-blind support simulation asks the same question dynamically:
+across a prespecified family of outcome surfaces (confounding along the
+propensity direction, effect modification along it, optional curvature),
+which estimators stay within a bias tolerance at near-nominal coverage.
+Replicates are generated under the generate-treatment plasmode design;
+keeping the observed treatment (the pre-0.2.0 baseline) induces a
+positivity violation by construction (Shaw et al. 2025) and survives only
+as a deprecated option.
+
+```{r simulate-020, eval=FALSE}
+sim <- simulate_support(lock, ps, reps = 200)
+plot(sim)          # the support map the gate reads
+```
+
+Estimation runs the declared ladder: the primary when feasible, otherwise
+every feasible fallback, each row labelled with its estimand, verdict,
+caveat and implausibility flags, and every switch logged.
+
+```{r ladder-020, message=FALSE, warning=FALSE}
+res <- run_estimand_ladder(lock, ps, sl_library = "SL.glm", verbose = FALSE)
+res
+```
+
+`design_report(lock, sup, fea)` assembles what a review team reads before
+outcomes are unlocked, with a one-line recommendation; its framing follows
+the blinded validity-diagnostics gate of Conover et al. (2025), where a
+failed comparison is labelled inestimable rather than estimated anyway.
 
 ---
 

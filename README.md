@@ -1,67 +1,74 @@
 # cleanTMLE
 
-**Outcome-Blind Staged Workflow for TMLE**
+**Decide, before outcome access, whether a comparison is estimable, and
+with which estimand. Then estimate it with TMLE.**
 
-cleanTMLE provides software infrastructure for an outcome-blind
-staged workflow in targeted-learning analyses. It helps analysts
-define an analysis lock, specify candidate TMLE estimators, run
-design diagnostics, compare candidates using baseline plasmode
-simulation, stress-test candidates under prespecified
-data-quality threats, record staged checkpoint
-decisions, and authorise the locked primary analysis.
+A clean-room design (Muntner et al. 2024) blinds the analyst: the design is
+fixed before anyone sees the treatment-outcome association. What blinding
+alone cannot do is tell the design team whether the design supports the
+estimand they plan to estimate. On a cohort with a severe practical
+positivity violation, the average treatment effect can come back with a
+narrow confidence interval and be wrong by an order of magnitude, because
+truncation limits variance but not extrapolation, and nothing in the
+estimator's own output separates such an estimate from a real finding.
+cleanTMLE's design stage answers the estimability question with no outcome
+access, and its estimation stage estimates exactly what the design stage
+declared.
 
-## What problem does cleanTMLE address?
+## The workflow
 
-In RWE studies, protocol design, fit-for-purpose data review, and
-estimator choice are often documented separately. Standard
-diagnostics assess overlap, balance, and effective sample size,
-but they do not characterise the full operating characteristics
-of a candidate TMLE specification on the cohort at hand.
-cleanTMLE provides an auditable software layer for pre-outcome
-estimator evaluation and prespecified data-quality stress
-testing, with a structured record of the analysis lock, the
-diagnostics, the candidate comparison, and the staged checkpoint
-decisions. It supports, and sits inside, careful causal design
-and broader clean-room governance.
+```r
+lock <- create_analysis_lock(data, "A", "Y", covariates)
+lock <- declare_estimand_ladder(lock, primary = "ATE",
+                                fallbacks = c("trimmed_ATE", "ATT", "ATO"))
 
-## Pre-outcome study dossier
+ps  <- fit_ps(lock)                  # SuperLearner, GLM, or external scores
+sup <- assess_support(ps)            # PASS / FLAG / SEVERE / FAIL, with the
+                                     # caveat that travels with every estimate
+fea <- estimand_feasibility(ps)      # which estimands these weights support
+who_is_unsupported(ps, vars = ...)   # who a trimmed analysis is not about
+sim <- simulate_support(lock, ps)    # outcome-blind support map over a
+                                     # prespecified outcome-surface family
+design_report(lock, sup, fea, sim)   # what the review team reads
 
-cleanTMLE's central artefact is a reviewer-facing pre-outcome study dossier: a structured bundle of analytic outputs the review team reads before authorising the primary analysis. The dossier contains:
-
-- Protocol and target-trial timing (`attach_estimand()`)
-- Cohort flow and attrition (`attrition_table()`)
-- Event-process classification (`clean_event_process_table()`, `clean_check_event_processes()`)
-- Covariate and missingness summary (`make_table1()`, missingness checks)
-- PS overlap and balance (`compute_ps_diagnostics()`, `love_plot()`, `love_plot_threeway()`)
-- Treatment- and IPCW-weight diagnostics (`clean_weight_diagnostics()`, `extreme_weights()`)
-- Event-count and precision adequacy (`checkpoint_cohort_adequacy()`)
-- Baseline plasmode candidate selection (`run_plasmode_feasibility()`, `select_tmle_candidate()`)
-- DQ stress-test results (`run_plasmode_dq_stress()`, `summarize_dq_degradation()`)
-- Negative-control eligibility and attrition (`run_residual_confounding_stage()`)
-- Staged checkpoint dashboard (`gate_all()`; aggregate `checkpoint_dashboard()` planned)
-- Decision log and audit log export (`export_decision_log()`)
-- Authorisation record for primary analysis (`authorize_outcome_analysis()`)
-
-The dossier is the artefact the reviewer reads. Comparative treatment-outcome estimates are not part of the dossier and are produced only after authorisation.
-
-## Workflow
-
-```
-Stage 0   Target-trial / protocol specification (external precondition)
-Stage 1a  Lock estimand, candidates, learners, truncation, thresholds
-Stage 1b  Cohort adequacy and marginal event support
-Stage 2a  Design diagnostics (PS, overlap, balance, ESS)
-Stage 2b  Baseline plasmode candidate selection
-Stage 2c  Data-quality stress testing
-Stage 3   Optional negative-control checks
-  Gate    Pre-outcome decision (GO / FLAG / STOP)
-Stage 4   Authorised primary analysis
-Post-outcome: sensitivity analyses and interpretation
+fit <- run_estimand_ladder(lock, ps) # the declared primary when feasible,
+                                     # plus every feasible fallback, each row
+                                     # labelled with estimand and verdict
 ```
 
-The data-quality stress test is a quantitative pre-outcome
-supplement to fit-for-purpose data review, not a formal QBA and
-not a substitute for source-data validation.
+The support verdict grades overlap on the fitted propensity (share of the
+sample outside a prespecified band, largest weight, with escalation when any
+covariate stratum is near-deterministic in treatment). The feasibility table
+reads the same fit per estimand: the ATT's control weights are bounded by
+max g/(1-g) and the overlap-weighted ATO's weights are bounded by one, so
+both can remain estimable where the ATE is not. The support simulation asks
+the dynamic version of the question under the generate-treatment plasmode
+design (the observed-treatment design induces a positivity violation by
+construction; Shaw et al. 2025, arXiv:2504.11740), with every estimand's
+truth computed from the generating model on every replicate. The ladder then
+makes estimand switching a pre-registered, logged decision instead of a
+silent substitution, and the implausibility guard flags any estimate the
+observed data cannot support.
+
+Outcome-blind candidate selection (`run_plasmode_feasibility()`,
+`select_tmle_candidate()`) and the prespecified data-quality stress test
+(`run_plasmode_dq_stress()`: covariate missingness in MCAR, MAR and MNAR
+forms, treatment and outcome misclassification, unmeasured confounding,
+near-positivity) evaluate nuisance strategies on synthetic outcomes before
+real outcome access. The stress test is a quantitative pre-outcome
+supplement to fit-for-purpose data review, not a formal QBA and not a
+substitute for source-data validation.
+
+## What cleanTMLE adds over a traditional clean room
+
+A traditional clean room provides blinding and an audit trail. cleanTMLE
+adds the two things a review team cannot get from blinding: a defensible,
+prespecified answer to "is this comparison estimable, and with which
+estimand", produced before outcomes are unlocked, and a doubly robust
+estimator for whatever the answer turns out to be. The published analogue is
+the blinded validity-diagnostics gate of Conover et al. (2025, JAMIA):
+named diagnostics computed while estimates stay blinded, unblinding only
+when they pass, and failed comparisons labelled inestimable.
 
 ## What cleanTMLE does not do
 
@@ -110,7 +117,10 @@ enforced, not just documented. The tier decides which entry point you call.
 `create_simple_lock()` (or `run_clean_tmle()`, the unguarded convenience
 wrapper) to get crude / IPTW / matching / TMLE estimates onto one forest plot.
 Outcome blindness is the analyst's responsibility; nothing is enforced. Good for
-methods work and quick looks.
+methods work and quick looks. Since 0.2.0 an ordinary `create_analysis_lock()`
+lock also runs Stage 4 without an authorisation token: the software enforces
+outcome masking always (`mask_outcome()` physically blanks the column), and
+the token requirement only on locks from the two-pass entry point below.
 
 **Tier 2 - software-audited, single analyst.** The staged split, run by one
 person who authorises on the strength of the pre-outcome gate. The outcome is

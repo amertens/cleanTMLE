@@ -503,7 +503,7 @@ run_trimmed_tmle <- function(lock, ps_fit,
   for (lo in levels) {
     keep <- g0 >= lo & g0 <= (1 - lo)
     dropped_t <- sum(!keep & A == 1); dropped_c <- sum(!keep & A == 0)
-    lab <- sprintf("trimmed g in [%.3f, %.3f]", lo, 1 - lo)
+    lab <- sprintf("trimmed g in [%.2f, %.2f]", lo, 1 - lo)
     if (sum(keep) < min_n || sum(A[keep] == 1) < min_per_arm ||
         sum(A[keep] == 0) < min_per_arm) {
       path[[length(path) + 1L]] <- list(level = lo, status = "too little left")
