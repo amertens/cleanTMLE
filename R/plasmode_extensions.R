@@ -97,6 +97,12 @@ recommend_cv_V <- function(n_eff) {
 #' - `"rich"`: GLM + glmnet + GAM + ranger + xgboost.
 #' - `"very_rich"`: above + BART (via `tmle.SL.dbarts2`) + HAL
 #'   (if installed).
+#' - `"rwe_wide"`: smooth learners for wide registry designs with sparse
+#'   indicator blocks: mean, three glmnet penalties (lasso, ridge, elastic
+#'   net), Bayesian GLM, MARS and GAM when installed, the PCA-GLM learners
+#'   [SL.glm.pca5()] and [SL.glm.pca10()], plus correlation-screened
+#'   variants of the flexible learners. No tree learners: on such designs a
+#'   tree ensemble in the treatment model can separate the arms.
 #'
 #' @param role One of `"Q"`, `"g"`, `"Delta"`.
 #' @param n_eff Effective sample size (from [compute_n_eff()]).
@@ -122,7 +128,7 @@ build_sl_library <- function(role = c("Q", "g", "Delta"),
                              n_eff,
                              p = NULL,
                              preset = c("auto", "small_n", "default",
-                                        "rich", "very_rich"),
+                                        "rich", "very_rich", "rwe_wide"),
                              include_screeners = FALSE) {
   role   <- match.arg(role)
   preset <- match.arg(preset)
@@ -138,8 +144,30 @@ build_sl_library <- function(role = c("Q", "g", "Delta"),
                   "SL.xgboost", "SL.mean"),
     very_rich = c("SL.glm", "SL.glmnet", "SL.gam", "SL.ranger",
                   "SL.xgboost", "tmle.SL.dbarts2", "SL.hal9001",
-                  "SL.mean")
+                  "SL.mean"),
+    # A library for wide registry designs with blocks of sparse indicator
+    # columns: smooth learners only (no trees; on such designs a tree
+    # ensemble in the treatment model can separate the arms), three glmnet
+    # penalties, and PCA-GLM learners so dimension reduction competes
+    # inside cross-validation. Screened variants of the two flexible
+    # learners ride along.
+    rwe_wide  = NULL
   )
+  if (preset == "rwe_wide") {
+    base <- list("SL.mean", "SL.glmnet", "SL.glmnet.ridge",
+                 "SL.glmnet.enet", "SL.bayesglm")
+    if (requireNamespace("earth", quietly = TRUE))
+      base <- c(base, "SL.earth")
+    if (requireNamespace("gam", quietly = TRUE))
+      base <- c(base, "SL.gam")
+    base <- c(base, "SL.glm.pca5", "SL.glm.pca10",
+              list(c("SL.bayesglm", "screen.corP")))
+    if (requireNamespace("earth", quietly = TRUE))
+      base <- c(base, list(c("SL.earth", "screen.corP")))
+    return(list(library = base,
+                cv_V = recommend_cv_V(n_eff),
+                stratify_cv = role %in% c("g", "Delta")))
+  }
 
   if (isTRUE(include_screeners)) {
     base <- lapply(base, function(L) c(L, "screen.corP"))

@@ -65,6 +65,12 @@ SL.glmnet.bounded <- function(Y, X, newX, family,
 .cleantmle_sl_env <- function() {
   e <- new.env(parent = asNamespace("SuperLearner"))
   assign("SL.glmnet.bounded", SL.glmnet.bounded, envir = e)
+  assign("SL.glmnet.ridge",   SL.glmnet.ridge,   envir = e)
+  assign("SL.glmnet.enet",    SL.glmnet.enet,    envir = e)
+  assign("SL.glm.pca",        SL.glm.pca,        envir = e)
+  assign("SL.glm.pca5",       SL.glm.pca5,       envir = e)
+  assign("SL.glm.pca10",      SL.glm.pca10,      envir = e)
+  assign("predict.SL.glm.pca", predict.SL.glm.pca, envir = e)
   e
 }
 

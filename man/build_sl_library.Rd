@@ -8,7 +8,7 @@ build_sl_library(
   role = c("Q", "g", "Delta"),
   n_eff,
   p = NULL,
-  preset = c("auto", "small_n", "default", "rich", "very_rich"),
+  preset = c("auto", "small_n", "default", "rich", "very_rich", "rwe_wide"),
   include_screeners = FALSE
 )
 }
@@ -54,6 +54,12 @@ Presets (selected by \code{preset}; \code{"auto"} picks by \code{n_eff}):
 \item \code{"rich"}: GLM + glmnet + GAM + ranger + xgboost.
 \item \code{"very_rich"}: above + BART (via \code{tmle.SL.dbarts2}) + HAL
 (if installed).
+\item \code{"rwe_wide"}: smooth learners for wide registry designs with sparse
+indicator blocks: mean, three glmnet penalties (lasso, ridge, elastic
+net), Bayesian GLM, MARS and GAM when installed, the PCA-GLM learners
+\code{\link[=SL.glm.pca5]{SL.glm.pca5()}} and \code{\link[=SL.glm.pca10]{SL.glm.pca10()}}, plus correlation-screened
+variants of the flexible learners. No tree learners: on such designs a
+tree ensemble in the treatment model can separate the arms.
 }
 }
 \examples{
