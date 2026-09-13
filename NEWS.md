@@ -40,6 +40,82 @@ example throughout.
   bootstrap as a final check on the locked estimator, labelled optimistic
   because the fitted models generate the truth.
 
+## Support assessment and the estimand ladder
+
+* **`assess_support()`** is the design team's graded overlap verdict, with
+  no outcome access: percent of the sample outside a prespecified propensity
+  band, maximum and 99th percentile IPTW weight, ESS by arm, the propensity
+  c-statistic, a PASS/FLAG/SEVERE/FAIL verdict with a caveat string that
+  travels with every downstream estimate, the near-deterministic-stratum
+  table, and a shallow-tree search for multivariate violation regions in the
+  spirit of the PoRT algorithm. Conditional non-overlap escalates PASS or
+  FLAG to SEVERE, never to FAIL. Thresholds come from
+  `support_thresholds()`; defaults are the Rescue.Co main pipeline's,
+  calibrated against a sound and a broken reference fit. `plot()` draws the
+  mirrored propensity histogram with the band shaded. Diagnostics use the
+  untruncated scores, which `fit_ps_superlearner()` now retains as
+  `ps_raw`. The vocabulary follows Muntner et al. (2024); the
+  blinded-diagnostics gate follows Conover et al. (2025, JAMIA), where
+  failed analyses are labelled inestimable.
+
+* **`fit_ps()`** is the one front door for propensity fitting
+  (SuperLearner, GLM, or externally supplied scores).
+
+* **`estimand_feasibility()`** reports, per estimand (ATE, trimmed ATE at
+  each level, ATT, ATC, ATO, matched ATT), the implied weights' maximum and
+  99th percentile, ESS by arm, who is removed, the target population, and
+  the graded verdict, so a design team can see that a cohort supports the
+  ATT and the ATO where it cannot support the ATE.
+  **`who_is_unsupported()`** profiles the patients outside the band
+  (standardised differences of removed versus kept, overall and by arm).
+
+* **`declare_estimand_ladder()`** pre-registers the primary estimand, the
+  ordered fallbacks, the trigger verdict, and optional sensitivity floors
+  on the lock, as a design-log entry. **`run_estimand_ladder()`** estimates
+  the primary when feasible plus every feasible fallback, labels every row
+  with its estimand, verdict, caveat and implausibility flags, refuses an
+  infeasible primary unless an `override_reason` is recorded, and logs
+  every switch.
+
+## Estimators for the ladder
+
+* **`run_att_tmle()`**: the complete-case ATT, named
+  `E[Y(1)-Y(0) | A=1, outcome observed]`, never estimated through the
+  censoring mechanism (under `Delta` the package ATT loses double
+  robustness). The ATE from the same fit is returned beside it. All
+  tmle::tmle delegation now flows through one internal argument builder
+  with `prescreenW.g = FALSE` by default, and a regression test asserts the
+  ATT's treatment-model specification is identical to the ATE's.
+
+* **`estimate_ato()`**: the augmented overlap-weighted estimator (Mao, Li
+  and Greene 2019) with an influence-function variance, the Hajek point
+  estimate beside it, and the exact-balance check (max overlap-weighted
+  SMD) reported.
+
+* **`run_trimmed_tmle()`**: trimming with a propensity refit on the trimmed
+  subset, verdict-gated fallback across levels, dropped counts by arm, and
+  the Crump et al. (2009) data-adaptive threshold as `rule = "crump"`.
+
+* **`implausibility_check()`**: the guard attached to every estimate (sign
+  against crude, five times crude, beyond the largest arm rate or the
+  observed outcome range, with noise floors). It flags, never suppresses.
+
+## Design-stage tools
+
+* **`create_contrast_locks()`** builds one lock per contrast from a
+  multi-level treatment with shared covariates, shared negative controls
+  (registered before any variance filtering, never dropped silently), and
+  per-contrast design logs.
+
+* **`run_negative_control_ladder()`** fits every registered control on
+  every nested cohort and names the controls that fail on the full cohort
+  and turn null after a restriction: evidence that restriction, not
+  adjustment, removed the confounding.
+
+* **`check_process_indicators()`**: the care-process collider check
+  (association of treatment with each indicator conditional on severity and
+  site), classified and thresholded in SD units, with no outcome access.
+
 
 ## Clean-room governance
 
