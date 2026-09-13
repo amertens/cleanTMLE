@@ -100,6 +100,13 @@ example throughout.
   against crude, five times crude, beyond the largest arm rate or the
   observed outcome range, with noise floors). It flags, never suppresses.
 
+## Reporting
+
+* **`emulation_table()`** renders the protocol-versus-emulation two-column
+  table of the TARGET reporting guideline (Cashin, Hansford, Hernan et al.,
+  JAMA 2025) from what the lock records: the contrast, the eligibility
+  trail, the outcome, the declared ladder, and the analysis specification.
+
 ## Design-stage tools
 
 * **`create_contrast_locks()`** builds one lock per contrast from a

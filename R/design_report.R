@@ -104,6 +104,66 @@ design_report <- function(lock, support, feasibility,
   out
 }
 
+#' Protocol-Versus-Emulation Table from a Lock
+#'
+#' Renders the two-column protocol/emulation table of the TARGET reporting
+#' guideline for target trial emulations (Cashin, Hansford, Hernan et al.,
+#' JAMA 2025) from what the lock already records: the contrast, the
+#' eligibility trail in the design log, the outcome, the declared estimand
+#' ladder, and the analysis specification. Fields the lock does not carry
+#' (the target trial's own protocol column) are left for the analyst to
+#' fill, which is the point: the table shows exactly what was specified in
+#' software and what was not.
+#'
+#' @param lock A `cleanroom_lock`, ideally after
+#'   [declare_estimand_ladder()].
+#' @param protocol Optional named character vector giving the target
+#'   trial's protocol entries for the components (names among
+#'   `eligibility`, `treatment_strategies`, `assignment`, `follow_up`,
+#'   `outcome`, `estimand`, `analysis`).
+#' @return A data.frame with columns `component`, `target_trial`,
+#'   `emulation`.
+#' @references Cashin AG, Hansford HJ, Hernan MA, et al. (2025). Guidance
+#'   for reporting target trial emulation studies (TARGET). JAMA
+#'   334(12):1084-1093.
+#' @export
+emulation_table <- function(lock, protocol = NULL) {
+  if (!inherits(lock, "cleanroom_lock"))
+    stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
+  p <- function(k) if (!is.null(protocol) && k %in% names(protocol))
+    unname(protocol[[k]]) else "(protocol entry to be supplied)"
+  ct <- lock$contrast
+  elig <- if (!is.null(lock$design_log)) {
+    rows <- lock$design_log[lock$design_log$type %in%
+                              c("contrast", "cohort", "outcome"), ]
+    if (nrow(rows)) paste(rows$note, collapse = " ") else NA_character_
+  } else NA_character_
+  lad <- lock$estimand_ladder
+  data.frame(
+    component = c("Eligibility criteria", "Treatment strategies",
+                  "Assignment procedures", "Follow-up period", "Outcome",
+                  "Causal contrast (estimand)", "Analysis plan"),
+    target_trial = c(p("eligibility"), p("treatment_strategies"),
+                     p("assignment"), p("follow_up"), p("outcome"),
+                     p("estimand"), p("analysis")),
+    emulation = c(
+      elig %||% "(see cohort construction)",
+      if (!is.null(ct)) sprintf("%s (treated: %s; control: %s)",
+                                ct$label, paste(ct$treated, collapse = " + "),
+                                paste(ct$control, collapse = " + "))
+      else sprintf("binary %s", lock$treatment),
+      "Observed assignment; propensity score on the locked covariates, support assessed before outcome access",
+      "(as recorded in the outcome definition)",
+      lock$outcome,
+      if (!is.null(lad)) sprintf(
+        "primary %s; fallbacks %s; trigger %s (pre-registered)",
+        lad$primary, paste(lad$fallbacks, collapse = " -> "), lad$trigger)
+      else "(no ladder declared)",
+      sprintf("TMLE with SuperLearner (%d locked covariates); support verdict and implausibility flags travel with every estimate",
+              length(lock$covariates))),
+    stringsAsFactors = FALSE)
+}
+
 #' @export
 print.design_report <- function(x, ...) {
   cat("Design report (pre-outcome)\n")

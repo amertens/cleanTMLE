@@ -67,3 +67,20 @@ test_that("design_report reads the ladder against support and feasibility", {
   expect_true(rep2$primary_supported)
   expect_match(rep2$recommendation, "Proceed to estimation")
 })
+
+test_that("emulation_table renders the TARGET two-column table from the lock", {
+  dat <- data.frame(x1 = rnorm(200), treatment = rbinom(200, 1, 0.5),
+                    outcome = rbinom(200, 1, 0.2))
+  lock <- create_simple_lock(dat, "treatment", "outcome", "x1")
+  lock <- declare_estimand_ladder(lock, primary = "ATE",
+                                  fallbacks = c("ATT", "ATO"))
+  tab <- emulation_table(lock,
+                         protocol = c(eligibility = "adults with trauma"))
+  expect_s3_class(tab, "data.frame")
+  expect_identical(names(tab), c("component", "target_trial", "emulation"))
+  expect_equal(nrow(tab), 7L)
+  expect_identical(tab$target_trial[1], "adults with trauma")
+  expect_match(tab$emulation[tab$component == "Causal contrast (estimand)"],
+               "primary ATE")
+  expect_match(tab$emulation[tab$component == "Outcome"], "outcome")
+})
