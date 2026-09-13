@@ -364,10 +364,14 @@ estimate_ato <- function(lock, ps_fit,
   phi  <- (num - h * psi) / hbar
   se   <- sqrt(stats::var(phi) / n)
 
-  # Unaugmented Hajek point estimate for reference.
+  # Unaugmented Hajek point estimate and the overlap-weighted arm means
+  # (the adjusted arm risks sensitivity analyses should read).
   w1 <- (1 - gc_)[Ac == 1]; w0 <- gc_[Ac == 0]
-  hajek <- stats::weighted.mean(Yc[Ac == 1], w1) -
-    stats::weighted.mean(Yc[Ac == 0], w0)
+  arm1 <- stats::weighted.mean(Yc[Ac == 1], w1)
+  arm0 <- stats::weighted.mean(Yc[Ac == 0], w0)
+  hajek <- arm1 - arm0
+  risk1_aug <- sum(h * q$Q1 + Ac * (1 - gc_) * (Yc - q$Q1)) / sum(h)
+  risk0_aug <- sum(h * q$Q0 + (1 - Ac) * gc_ * (Yc - q$Q0)) / sum(h)
 
   # Exact-balance check: overlap-weighted SMDs across the lock covariates
   # (exact under a logistic propensity model; approximate under an ensemble).
@@ -388,6 +392,7 @@ estimate_ato <- function(lock, ps_fit,
     p_value = 2 * stats::pnorm(-abs(psi / se)),
     estimand = "ATO (overlap-weighted average treatment effect), outcome-observed rows",
     hajek_estimate = hajek,
+    risk_treated = risk1_aug, risk_control = risk0_aug,
     max_abs_weighted_smd = max(abs(wsmd)),
     weighted_smds = wsmd,
     n = n,
