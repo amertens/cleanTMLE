@@ -89,6 +89,21 @@ workflow: Stage 1 (specification lock), Stage 2a (propensity-score
 diagnostics and gating), Stage 2b (negative-control or plasmode
 simulation), and Stage 3 (primary TMLE estimation).
 }
+\section{Enforcement (important)}{
+
+\code{run_clean_tmle()} is the \strong{unguarded convenience wrapper}. It
+builds its lock internally and reads the outcome unconditionally once its
+internal Stage-2a/2b checks pass, so it does \emph{not} enforce a
+pre-outcome authorisation gate (the lock hash is not known to the caller
+until after the call, so no token can be required). The internal lock is
+therefore created with \code{cleanroom_enabled = FALSE} to label this
+honestly. For the software-enforced clean-room path, where the outcome is
+not read until a hash- and audit-bound authorisation is recorded, use the
+two-pass split: \code{\link{run_clean_tmle_preoutcome}()} ->
+\code{\link{authorize_outcome_analysis}()} ->
+\code{\link{run_clean_tmle_primary}()}.
+}
+
 \examples{
 \dontrun{
 dat <- sim_func1(n = 500, seed = 1)

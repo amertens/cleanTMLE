@@ -1,0 +1,73 @@
+cleanroom: ..................SLoading required package: nnls
+.................Selected TMLE candidate: 'cand_b' (rule = 'min_rmse')
+Selected TMLE candidate: 'cand_b' (rule = 'min_bias')
+Selected TMLE candidate: 'cand_b' (rule = 'max_coverage')
+.......Selected TMLE candidate: 'cand_b' (rule = 'min_max_rmse')
+......................................................
+decision-thresholds-and-gates: .........Analysis lock validated successfully.
+..................S...
+estimate_ipwhr: WWW............
+estimate_ipwrisk: W.........W..........W....
+event-process-helpers: .....W.............W..................
+gcomp_aipw: W.....W......
+ground-truth: .........
+na-outcome-and-presets: ........................
+plasmode_dq: ......................
+sim_data: ...........
+sl-glmnet-bounded: ...........
+specify_models: ..............W.W.........
+stages: ...........................................................................................................
+tables: ...................
+tmle: S.....survtmle failed, falling back to manual approach: non-numeric argument to mathematical function
+..survtmle failed, falling back to manual approach: non-numeric argument to mathematical function
+.S....
+update: ......
+validation: ...............
+variance-methods: .................
+
+══ Skipped ═════════════════════════════════════════════════════════════════════
+1. fit_ps_superlearner errors without SuperLearner package ('test-cleanroom.R:94:3') - Reason: SuperLearner installed, skipping absence test
+
+2. run_plasmode_dq_stress includes the MAR covariate-missingness scenario ('test-decision-thresholds-and-gates.R:170:3') - Reason: On CRAN
+
+3. estimate_tmle_risk_point errors without tmle package ('test-tmle.R:5:3') - Reason: tmle package is installed, skipping error test
+
+4. estimate_lmtp errors without lmtp ('test-tmle.R:89:3') - Reason: lmtp is installed, skipping error test
+
+══ Warnings ════════════════════════════════════════════════════════════════════
+1. estimate_ipwhr produces hr object ('test-estimate_ipwhr.R:3:3') - identify_treatment() is experimental and outside the tested v0.1 scope.
+This warning is displayed once per session.
+
+2. estimate_ipwhr produces hr object ('test-estimate_ipwhr.R:3:3') - identify_outcome() is experimental and outside the tested v0.1 scope.
+This warning is displayed once per session.
+
+3. estimate_ipwhr produces hr object ('test-estimate_ipwhr.R:7:3') - estimate_ipwhr() is experimental and outside the tested v0.1 scope of cleanTMLE (binary point exposure / binary outcome only).
+This warning is displayed once per session.
+
+4. estimate_ipwrisk works with basic spec (no treatment) ('test-estimate_ipwrisk.R:6:3') - estimate_ipwrisk() is experimental and outside the tested v0.1 scope of cleanTMLE (binary point exposure / binary outcome only).
+This warning is displayed once per session.
+
+5. estimate_ipwrisk with IPCW ('test-estimate_ipwrisk.R:43:3') - identify_censoring() is experimental and outside the tested v0.1 scope.
+This warning is displayed once per session.
+
+6. estimate_ipwrisk with competing risks ('test-estimate_ipwrisk.R:104:3') - identify_competing_risk() is experimental and outside the tested v0.1 scope.
+This warning is displayed once per session.
+
+7. competing-event also marked as censoring without justification warns ('test-event-process-helpers.R:45:3') - clean_event_process_table: at least one event is marked both as a competing event and as censoring without an explicit estimand justification. Add `justification`.
+
+8. treated population without reference group warns ('test-event-process-helpers.R:126:3') - clean_target_population: `reference_group` is absent. Risk differences and risk ratios require a reference.
+
+9. estimate_gcomprisk works ('test-gcomp_aipw.R:8:3') - estimate_gcomprisk() is experimental and outside the tested v0.1 scope of cleanTMLE (binary point exposure / binary outcome only).
+This warning is displayed once per session.
+
+10. estimate_aipwrisk works ('test-gcomp_aipw.R:36:3') - estimate_aipwrisk() is experimental and outside the tested v0.1 scope of cleanTMLE (binary point exposure / binary outcome only).
+This warning is displayed once per session.
+
+11. identify_subject stores subject ID ('test-specify_models.R:54:3') - identify_subject() is experimental and outside the tested v0.1 scope.
+This warning is displayed once per session.
+
+12. identify_interval stores start and stop ('test-specify_models.R:62:3') - identify_interval() is experimental and outside the tested v0.1 scope.
+This warning is displayed once per session.
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+EXIT 0

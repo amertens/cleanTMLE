@@ -11,6 +11,7 @@ run_plasmode_dq_stress(
   reps = 50L,
   data_quality_scenarios = list(),
   q0_library = NULL,
+  design = c("generate_treatment", "sample_treatment"),
   fit_timeout = Inf,
   verbose = TRUE
 )
@@ -33,6 +34,19 @@ the plasmode outcome generator Q0. Default \code{NULL} uses a
 covariate-only logistic GLM. Supplying a richer library reduces the
 linear-in-logit bias the GLM Q0 imposes on candidate selection when
 the true outcome surface is nonlinear.}
+
+\item{design}{Character; how each synthetic replicate is generated.
+\code{"generate_treatment"} (default) resamples covariate rows with
+replacement and draws treatment from a propensity model fitted on the
+real data. \code{"sample_treatment"} keeps the observed treatment and
+simulates only the outcome, which Shaw et al. (2025, arXiv:2504.11740)
+show induces a positivity violation by construction; retained only for
+legacy runs and warns when used. The unmeasured-confounding and
+near-positivity scenarios redraw treatment from their modified
+propensities under either design.}
+
+\item{fit_timeout}{Numeric seconds; see the out-of-process fit guard
+section below. Default \code{Inf} runs fits in-process.}
 
 \item{verbose}{Logical; print progress messages.}
 }

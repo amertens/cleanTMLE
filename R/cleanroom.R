@@ -667,8 +667,12 @@ fit_ps_superlearner <- function(lock, truncate = 0.01,
   })
 
   ps <- as.numeric(sl_fit$SL.predict)
+  ps_raw <- ps
 
   # Truncate to [truncate, 1 - truncate] to bound subsequent IPW weights.
+  # The untruncated scores are kept as `ps_raw`: support assessment must see
+  # the propensity the model actually produced, because truncation caps the
+  # very weights whose size is the diagnostic.
   if (!is.null(truncate)) {
     if (!is.numeric(truncate) || length(truncate) != 1L ||
         truncate <= 0 || truncate >= 0.5)
@@ -678,6 +682,7 @@ fit_ps_superlearner <- function(lock, truncate = 0.01,
 
   result <- list(
     ps         = ps,
+    ps_raw     = ps_raw,
     sl_fit     = sl_fit,
     treatment  = lock$treatment,
     covariates = lock$covariates,
@@ -1226,9 +1231,24 @@ expand_tmle_candidate_grid <- function(
 #'   well. Set this to a SuperLearner library (e.g.
 #'   `c("SL.glm", "SL.glmnet", "SL.gam", "SL.mean")`) to generate
 #'   synthetic outcomes from a richer Q0 surface.
+#' @param design Character; how each synthetic replicate is generated.
+#'   `"generate_treatment"` (default) resamples the covariate rows with
+#'   replacement and draws treatment from a propensity model fitted on the
+#'   real data, so the synthetic data satisfy positivity to the same extent
+#'   the cohort does. `"sample_treatment"` keeps every subject's observed
+#'   treatment and simulates only the outcome, which Shaw et al. (2025,
+#'   arXiv:2504.11740) show induces a positivity violation by construction
+#'   (propensity-based estimators appear biased and undercover even when the
+#'   source population has no violation); it is retained only for
+#'   reproducing legacy runs and warns when used.
 #' @param verbose Logical; if `TRUE`, print progress messages and emit
 #'   warnings when any candidate converges on < 50% of inner reps.
 #'   Default: `FALSE`.
+#'
+#' @references Shaw PA, Gruber S, Williamson BD, Desai R, Shortreed SM,
+#'   Krakauer C, Nelson JC, van der Laan MJ (2025). A cautionary note for
+#'   plasmode simulation studies in the setting of causal inference.
+#'   arXiv:2504.11740.
 #'
 #' @return An object of class `plasmode_results` containing:
 #'   * `metrics` - data.frame with one row per candidate per effect size
@@ -1251,9 +1271,22 @@ run_plasmode_feasibility <- function(lock,
                                       effect_sizes    = c(0.05, 0.10),
                                       reps            = lock$plasmode_reps,
                                       q0_library      = NULL,
+                                      design          = c("generate_treatment",
+                                                          "sample_treatment"),
                                       verbose         = FALSE) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
+  design <- match.arg(design)
+  if (design == "sample_treatment") {
+    rlang::warn(paste(
+      "design = 'sample_treatment' keeps each subject's observed treatment and",
+      "simulates only the outcome. Shaw et al. (2025, arXiv:2504.11740) show",
+      "this induces a positivity violation by construction, so",
+      "propensity-based estimators look biased and undercover even when the",
+      "source population has no violation. Use the default",
+      "design = 'generate_treatment' unless you are reproducing legacy runs."),
+      .frequency = "once", .frequency_id = "plasmode_sample_treatment")
+  }
 
   # Default candidate grid if not supplied
 
@@ -1326,6 +1359,18 @@ run_plasmode_feasibility <- function(lock,
   # Clamp to valid probability range
   p_base <- pmin(pmax(p_base, 0.001), 0.999)
 
+  # Generating propensity for the generate-treatment design: fitted once on
+  # the real data, then treatment is redrawn from it on every replicate so the
+  # synthetic data satisfy positivity exactly to the extent the cohort does.
+  # Keeping the observed treatment instead (design = "sample_treatment") makes
+  # P(A = a | W) degenerate at the observed a, the artifact Shaw et al. (2025)
+  # warn about.
+  ps_fml_gen <- stats::reformulate(covariates, response = treatment)
+  ps_mod_gen <- stats::glm(ps_fml_gen, data = data,
+                           family = stats::binomial())
+  ps_base <- pmin(pmax(as.numeric(
+    stats::predict(ps_mod_gen, type = "response")), 0.001), 0.999)
+
   cand_ids <- vapply(tmle_candidates, function(x) x$candidate_id, character(1))
 
   all_results <- vector("list", length(effect_sizes))
@@ -1340,13 +1385,27 @@ run_plasmode_feasibility <- function(lock,
     for (rep_i in seq_len(reps)) {
       set.seed(lock$seed + rep_i)
 
+      # Generate-treatment design (default): resample the covariate rows with
+      # replacement and draw treatment from the fitted generating propensity.
+      # Sample-treatment design (deprecated): keep the observed rows and the
+      # observed treatment, simulating only the outcome.
+      if (design == "generate_treatment") {
+        idx   <- sample.int(n, n, replace = TRUE)
+        A_rep <- stats::rbinom(n, 1L, ps_base[idx])
+      } else {
+        idx   <- seq_len(n)
+        A_rep <- A
+      }
+      data_rep <- data[idx, , drop = FALSE]
+      data_rep[[treatment]] <- A_rep
+
       # Synthetic outcomes: additive risk difference es for treated.
       # Clamp BOTH bounds: with negative es and small p_base, an
       # unclamped p_base + es can go negative and stats::rbinom()
       # returns NA, causing every candidate fit to fail downstream.
-      p1_sim <- pmin(pmax(p_base + es, 0.001), 0.999)
-      p0_sim <- p_base
-      p_obs  <- ifelse(A == 1, p1_sim, p0_sim)
+      p1_sim <- pmin(pmax(p_base[idx] + es, 0.001), 0.999)
+      p0_sim <- p_base[idx]
+      p_obs  <- ifelse(A_rep == 1, p1_sim, p0_sim)
       Y_sim  <- stats::rbinom(n, 1L, p_obs)
       truth  <- mean(p1_sim) - mean(p0_sim)
 
@@ -1362,22 +1421,23 @@ run_plasmode_feasibility <- function(lock,
             !identical(g_lib, "SL.glm")
 
           if (use_sl) {
-            W_mat <- data[, covariates, drop = FALSE]
+            W_mat <- data_rep[, covariates, drop = FALSE]
             g_sl  <- SuperLearner::SuperLearner(
-              Y = A, X = W_mat, family = binomial(),
+              Y = A_rep, X = W_mat, family = binomial(),
               SL.library = g_lib,
               env = .cleantmle_sl_env()
             )
             ps_hat <- as.numeric(g_sl$SL.predict)
           } else {
             ps_fml <- stats::reformulate(covariates, response = treatment)
-            ps_mod <- stats::glm(ps_fml, data = data, family = stats::binomial())
+            ps_mod <- stats::glm(ps_fml, data = data_rep,
+                                 family = stats::binomial())
             ps_hat <- as.numeric(stats::predict(ps_mod, type = "response"))
           }
           ps_hat <- pmax(pmin(ps_hat, 1 - cand$truncation), cand$truncation)
 
           # Fit Q-model using the candidate's q-library
-          ds <- data
+          ds <- data_rep
           ds[[".Y_sim."]] <- Y_sim
           AW <- ds[, c(treatment, covariates), drop = FALSE]
 
@@ -1411,7 +1471,7 @@ run_plasmode_feasibility <- function(lock,
           # TMLE targeting step
           H_a1 <- 1 / ps_hat
           H_a0 <- -1 / (1 - ps_hat)
-          H_aw <- ifelse(A == 1, H_a1, H_a0)
+          H_aw <- ifelse(A_rep == 1, H_a1, H_a0)
 
           epsilon <- tryCatch({
             Q_logit <- stats::qlogis(pmax(pmin(Q_aw, 0.999), 0.001))
@@ -1511,6 +1571,7 @@ run_plasmode_feasibility <- function(lock,
     lock            = lock,
     effect_sizes    = effect_sizes,
     reps            = reps,
+    design          = design,
     call            = match.call()
   )
   class(result) <- "plasmode_results"

@@ -546,6 +546,17 @@ print_locked_spec <- function(lock) {
 #'   covariate-only logistic GLM. Supplying a richer library reduces the
 #'   linear-in-logit bias the GLM Q0 imposes on candidate selection when
 #'   the true outcome surface is nonlinear.
+#' @param design Character; how each synthetic replicate is generated.
+#'   \code{"generate_treatment"} (default) resamples covariate rows with
+#'   replacement and draws treatment from a propensity model fitted on the
+#'   real data. \code{"sample_treatment"} keeps the observed treatment and
+#'   simulates only the outcome, which Shaw et al. (2025, arXiv:2504.11740)
+#'   show induces a positivity violation by construction; retained only for
+#'   legacy runs and warns when used. The unmeasured-confounding and
+#'   near-positivity scenarios redraw treatment from their modified
+#'   propensities under either design.
+#' @param fit_timeout Numeric seconds; see the out-of-process fit guard
+#'   section below. Default \code{Inf} runs fits in-process.
 #' @param verbose Logical; print progress messages.
 #'
 #' @details
@@ -616,10 +627,21 @@ run_plasmode_dq_stress <- function(lock,
                                     reps            = 50L,
                                     data_quality_scenarios = list(),
                                     q0_library      = NULL,
+                                    design          = c("generate_treatment",
+                                                        "sample_treatment"),
                                     fit_timeout     = Inf,
                                     verbose         = TRUE) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
+  design <- match.arg(design)
+  if (design == "sample_treatment") {
+    rlang::warn(paste(
+      "design = 'sample_treatment' keeps each subject's observed treatment and",
+      "simulates only the outcome. Shaw et al. (2025, arXiv:2504.11740) show",
+      "this induces a positivity violation by construction. Use the default",
+      "design = 'generate_treatment' unless you are reproducing legacy runs."),
+      .frequency = "once", .frequency_id = "plasmode_sample_treatment_dq")
+  }
 
   if (is.null(tmle_candidates))
     tmle_candidates <- expand_tmle_candidate_grid()
@@ -887,12 +909,24 @@ run_plasmode_dq_stress <- function(lock,
       for (rep_i in seq_len(reps)) {
         set.seed(lock$seed + rep_i + sg_i * 10000L)
 
+        # Generate-treatment design (default): resample the covariate rows
+        # with replacement and draw treatment from the fitted generating
+        # propensity. Sample-treatment (deprecated): keep the observed rows
+        # and treatment (Shaw et al. 2025 artifact).
+        if (design == "generate_treatment") {
+          idx   <- sample.int(n, n, replace = TRUE)
+          A_rep <- stats::rbinom(n, 1L, ps_base[idx])
+        } else {
+          idx   <- seq_len(n)
+          A_rep <- A
+        }
+        ps_rep <- ps_base[idx]
+
         # Generate synthetic outcome and possibly modify A under U.
         # Clamp BOTH bounds so negative `es` with small p_base does
         # not produce negative probabilities (rbinom -> NA).
-        A_rep <- A
-        p1_sim <- pmin(pmax(p_base + es, 0.001), 0.999)
-        p0_sim <- p_base
+        p1_sim <- pmin(pmax(p_base[idx] + es, 0.001), 0.999)
+        p0_sim <- p_base[idx]
 
         if (sc_name == "unmeasured_U") {
           u_prev <- dqs$unmeasured_confounding$U_prevalence
@@ -900,7 +934,7 @@ run_plasmode_dq_stress <- function(lock,
 
           # Use the *real* propensity model fitted on lock data as the
           # baseline; shift its log-odds by log(OR_A) * U.
-          lp_ps   <- stats::qlogis(ps_base)
+          lp_ps   <- stats::qlogis(ps_rep)
           lp_ps_u <- lp_ps + log(u_trt_or_lvl) * U
           ps_u    <- stats::plogis(lp_ps_u)
           A_rep   <- stats::rbinom(n, 1L, ps_u)
@@ -919,7 +953,7 @@ run_plasmode_dq_stress <- function(lock,
           # subgroup approaches deterministic treatment (PS -> 0/1). The outcome
           # model is left unchanged; this threat stresses positivity, not the
           # outcome surface.
-          lp_ps  <- stats::qlogis(ps_base)
+          lp_ps  <- stats::qlogis(ps_rep)
           lp_bar <- mean(lp_ps)
           ps_pos <- stats::plogis(lp_bar + pos_slope_lvl * (lp_ps - lp_bar))
           A_rep  <- stats::rbinom(n, 1L, ps_pos)
@@ -958,12 +992,13 @@ run_plasmode_dq_stress <- function(lock,
         }
 
         # Covariate missingness (MCAR).
-        W_fit <- data
+        data_rep <- data[idx, , drop = FALSE]
+        W_fit <- data_rep
         if (sc_name == "cov_miss") {
           frac <- as.numeric(sc_level)
           miss_vars <- dqs$covariate_missingness$variables
           if (is.null(miss_vars)) miss_vars <- covariates
-          W_fit <- .degrade_missingness(data, miss_vars, frac)
+          W_fit <- .degrade_missingness(data_rep, miss_vars, frac)
         }
         # Covariate missingness (MAR; treatment-dependent + median impute).
         if (sc_name == "cov_miss_mar") {
@@ -972,7 +1007,7 @@ run_plasmode_dq_stress <- function(lock,
           miss_vars <- spec$variables
           if (is.null(miss_vars)) miss_vars <- covariates
           or_a <- spec$treatment_OR %||% 3
-          W_fit <- .degrade_missingness_mar(data, miss_vars, frac,
+          W_fit <- .degrade_missingness_mar(data_rep, miss_vars, frac,
                                             A = A_rep, treatment_OR = or_a)
         }
         # Covariate missingness (MNAR; value-dependent + median impute).
@@ -982,7 +1017,7 @@ run_plasmode_dq_stress <- function(lock,
           miss_vars <- spec$variables
           if (is.null(miss_vars)) miss_vars <- covariates
           strength <- spec$strength %||% 1.5
-          W_fit <- .degrade_missingness_mnar(data, miss_vars, frac,
+          W_fit <- .degrade_missingness_mnar(data_rep, miss_vars, frac,
                                              strength = strength)
         }
 
@@ -1049,6 +1084,7 @@ run_plasmode_dq_stress <- function(lock,
     baseline  = metrics[metrics$scenario == "none", ],
     lock      = lock,
     reps      = reps,
+    design    = design,
     call      = match.call()
   )
   class(result) <- "plasmode_dq_results"

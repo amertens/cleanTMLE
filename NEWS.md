@@ -1,4 +1,45 @@
-# cleanTMLE 0.1.5 (development)
+# cleanTMLE 0.2.0 (development)
+
+This release refocuses the package on deciding, before outcome access,
+whether a comparison is estimable and with which estimand. The Rescue.Co
+case study's protocol contrast, on which the ATE is not estimable while the
+ATT, the overlap-weighted ATO and the trimmed ATE are, is the motivating
+example throughout.
+
+## The plasmode design is fixed (breaking for simulation results)
+
+* **`run_plasmode_feasibility()` and `run_plasmode_dq_stress()` now default
+  to the generate-treatment design**: covariate rows are resampled with
+  replacement and treatment is drawn from a propensity model fitted on the
+  real data. The previous behaviour, keeping every subject's observed
+  treatment and simulating only the outcome, induces a positivity violation
+  by construction (Shaw et al. 2025, arXiv:2504.11740), making
+  propensity-based estimators look biased and undercover even when the
+  source population has no violation. It survives as
+  `design = "sample_treatment"`, which warns and records itself in the
+  result. Simulation numbers change under the new default; that is the fix,
+  not a regression.
+
+* **`simulate_support()`** is the new outcome-blind support simulation. It
+  draws synthetic data under the generate-treatment design from a
+  prespecified outcome family (`support_surfaces()`) that spans a
+  confounding axis (outcome dependence on the covariate direction that most
+  predicts treatment), an effect-modification axis (so the ATE, ATT and ATO
+  genuinely differ), and a complexity axis (curvature a main-terms outcome
+  model misses). The truth for every estimand is computed from the
+  generating model on each replicate, and the matched, trimmed, ATT and ATO
+  estimators run on the same replicates as the full-cohort ATE, so
+  matched-versus-full and trimmed-versus-full gaps decompose into estimand
+  difference, efficiency loss and extrapolation error. The output includes
+  the support map (bias and coverage per estimand per grid point, with a
+  prespecified pass rule) that the design gate reads; runs below 50
+  replicates are tagged demonstration-only. Q0 sources are recorded and
+  fitting Q0 on the primary outcome requires `allow_outcome_q0 = TRUE`.
+
+* **`check_locked_estimator()`** ships Petersen et al.'s (2012) parametric
+  bootstrap as a final check on the locked estimator, labelled optimistic
+  because the fitted models generate the truth.
+
 
 ## Clean-room governance
 

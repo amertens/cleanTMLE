@@ -10,6 +10,7 @@ run_plasmode_feasibility(
   effect_sizes = c(0.05, 0.1),
   reps = lock$plasmode_reps,
   q0_library = NULL,
+  design = c("generate_treatment", "sample_treatment"),
   verbose = FALSE
 )
 }
@@ -34,6 +35,17 @@ selection toward learners that handle linear-in-logit structure
 well. Set this to a SuperLearner library (e.g.
 \code{c("SL.glm", "SL.glmnet", "SL.gam", "SL.mean")}) to generate
 synthetic outcomes from a richer Q0 surface.}
+
+\item{design}{Character; how each synthetic replicate is generated.
+\code{"generate_treatment"} (default) resamples the covariate rows with
+replacement and draws treatment from a propensity model fitted on the
+real data, so the synthetic data satisfy positivity to the same extent
+the cohort does. \code{"sample_treatment"} keeps every subject's observed
+treatment and simulates only the outcome, which Shaw et al. (2025,
+arXiv:2504.11740) show induces a positivity violation by construction
+(propensity-based estimators appear biased and undercover even when the
+source population has no violation); it is retained only for
+reproducing legacy runs and warns when used.}
 
 \item{verbose}{Logical; if \code{TRUE}, print progress messages and emit
 warnings when any candidate converges on < 50\% of inner reps.
@@ -71,4 +83,10 @@ plas <- run_plasmode_feasibility(lock, reps = 20L)
 print(plas)
 }
 
+}
+\references{
+Shaw PA, Gruber S, Williamson BD, Desai R, Shortreed SM,
+Krakauer C, Nelson JC, van der Laan MJ (2025). A cautionary note for
+plasmode simulation studies in the setting of causal inference.
+arXiv:2504.11740.
 }
