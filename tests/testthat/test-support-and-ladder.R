@@ -309,6 +309,15 @@ test_that("estimate_effect is the one front door and matches its workers", {
                  "complete case")
   # Missing ps_fit is refused where it is needed.
   expect_error(estimate_effect(lock, estimand = "ATO"), "needs a ps_fit")
+  # A steps-carrying fit supports both diagnostic plots (the clever plot
+  # resolves the targeting step from $steps; regression for the vignette).
+  fit_steps <- estimate_effect(lock, psf, estimand = "ATE",
+                               estimator = "tmle", sl_library = "SL.glm",
+                               return_steps = TRUE)
+  expect_s3_class(plot(fit_steps, type = "clever"), "ggplot")
+  expect_s3_class(plot(fit_steps, type = "ic"), "ggplot")
+  bare <- structure(list(type = "tmle"), class = "tmle_fit")
+  expect_error(plot(bare, type = "clever"), "targeting step")
 })
 
 test_that("merged arguments work: thresholds list, surface list, profile_vars", {

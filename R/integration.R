@@ -761,6 +761,12 @@ clever_covariate_plot <- function(tmle_update = NULL, ps_fit = NULL,
   if (!is.null(tmle_update) && !is.null(tmle_update$clever_covariate)) {
     H_aw <- tmle_update$clever_covariate
     A    <- tmle_update$data[[tmle_update$treatment]]
+  } else if (!is.null(tmle_update) && !is.null(tmle_update$g_fit$ps)) {
+    # The modern tmle_update carries the mechanisms, not a stored clever
+    # covariate; rebuild H(A, W) from the treatment mechanism it used.
+    gf   <- tmle_update$g_fit
+    A    <- gf$data[[tmle_update$treatment %||% gf$treatment]]
+    H_aw <- ifelse(A == 1, 1 / gf$ps, -1 / (1 - gf$ps))
   } else if (!is.null(ps_fit) && !is.null(lock)) {
     ps <- ps_fit$ps
     A  <- lock$data[[lock$treatment]]

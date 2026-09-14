@@ -60,9 +60,8 @@
 #' * [estimate_lmtp()] - Longitudinal TMLE for static/dynamic interventions
 #'
 #' @section Workflow-level summaries:
-#' * [fit_final_workflows()] - run final estimation after outcome unblinding
-#' * [summarize_cleanroom_results()] - side-by-side summary across workflows
-#' * [compare_fits()] - compare estimates, CIs, and diagnostic flags
+#' * [run_estimand_ladder()] - the declared primary plus feasible fallbacks
+#' * [forest_plot()] - side-by-side comparison across estimators
 #'
 #' @section Diagnostics and tables:
 #' * [make_table1()] - Baseline covariate table (weighted/unweighted)

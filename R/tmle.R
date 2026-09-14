@@ -855,7 +855,17 @@ plot.tmle_fit <- function(x, type = c("summary", "ic", "clever"), ...) {
   # type = "ic" and type = "clever" absorb the former ic_histogram() and
   # clever_covariate_plot() exports.
   if (type == "ic") return(ic_histogram(x, ...))
-  if (type == "clever") return(clever_covariate_plot(x, ...))
+  if (type == "clever") {
+    # An extracted fit (estimate_effect(return_steps = TRUE)) carries the
+    # targeting-step object, which holds the clever covariate; a targeting
+    # update passed directly carries it itself.
+    upd <- if (!is.null(x$clever_covariate)) x else x$steps$targeting
+    if (is.null(upd))
+      stop("type = 'clever' needs the targeting step: refit with ",
+           "estimate_effect(return_steps = TRUE), or pass ps_fit = and ",
+           "lock = .", call. = FALSE)
+    return(clever_covariate_plot(upd, ...))
+  }
   if (x$type == "surv_tmle" || x$type == "surv_tmle_fallback") {
     # Plot risk differences over time
     est_df <- data.frame(

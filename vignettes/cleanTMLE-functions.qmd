@@ -256,10 +256,13 @@ kept for continuity.
 
 ## Utilities
 
+`expit()` and `logit()` went internal in the 0.2.0 consolidation
+(`stats::plogis()` and `stats::qlogis()` are the base equivalents):
+
 ```{r utils}
-expit(0)            # 0.5
-logit(0.5)          # 0
-expit(logit(0.73))  # 0.73
+cleanTMLE:::expit(0)                       # 0.5
+cleanTMLE:::logit(0.5)                     # 0
+cleanTMLE:::expit(cleanTMLE:::logit(0.73)) # 0.73
 ```
 
 ---
@@ -626,7 +629,14 @@ print(hr_fit)
 ```
 
 ```{r compare-tte}
-compare_fits(IPW = fit_ipw, GComp = fit_gc, AIPW = fit_aipw, risk_time = 24)
+# Every estimate_*risk() fit carries a $risk table with the same core
+# columns, so the estimators compare with plain data-frame work.
+tte <- list(IPW = fit_ipw, GComp = fit_gc, AIPW = fit_aipw)
+do.call(rbind, lapply(names(tte), function(nm) {
+  r <- tte[[nm]]$risk
+  cbind(estimator = nm,
+        r[r$time == 24, c("time", "group", "risk", "surv")])
+}))
 ```
 
 ---
