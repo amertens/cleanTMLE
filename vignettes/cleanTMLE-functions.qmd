@@ -62,8 +62,8 @@ uses internally from the outcome side of the data:
 - **Primary Y**: estimates the observed
   treatment-primary-outcome association. Since 0.2.0 the software
   guard on these functions enforces outcome masking always, and a
-  recorded authorisation only on locks from the enforced two-pass
-  entry point (`run_clean_tmle_preoutcome()`).
+  recorded authorisation only on locks that opted into enforcement
+  (`create_analysis_lock(enforce = TRUE)`).
 
 These labels describe what exported package functions use
 internally, not what a user with raw data access could inspect
@@ -85,16 +85,18 @@ x1 <- rnorm(n); x2 <- rbinom(n, 1, 0.4)
 g  <- plogis(-2.2 + 3.2 * x1 + 0.5 * x2)   # a covariate nearly separates arms
 A  <- rbinom(n, 1, g)
 y  <- rbinom(n, 1, plogis(-2 + 0.5 * x1 + 0.4 * A))
-dat <- data.frame(x1 = x1, x2 = x2, treatment = A, outcome = y)
+sev_dat <- data.frame(x1 = x1, x2 = x2, treatment = A, outcome = y)
 
-lock <- create_analysis_lock(dat, "treatment", "outcome", c("x1", "x2"),
-                           sl_library = "SL.glm", seed = 7L)
-lock <- declare_estimand_ladder(lock, primary = "ATE",
-                                fallbacks = c("trimmed_ATE", "ATT", "ATO"))
+sev_lock <- create_analysis_lock(sev_dat, "treatment", "outcome",
+                                 c("x1", "x2"),
+                                 sl_library = "SL.glm", seed = 7L)
+sev_lock <- declare_estimand_ladder(sev_lock, primary = "ATE",
+                                    fallbacks = c("trimmed_ATE", "ATT",
+                                                  "ATO"))
 
-ps  <- fit_ps(lock, method = "glm")
-sup <- assess_support(ps)
-sup
+sev_ps  <- fit_ps(sev_lock, method = "glm")
+sev_sup <- assess_support(sev_ps)
+sev_sup
 ```
 
 The verdict travels with every downstream estimate. `plot(sup)` draws the
@@ -104,9 +106,9 @@ ATE's weights explode where the ATT's control weights stay bounded by
 `max g / (1 - g)` and the ATO's weights are bounded by one by construction.
 
 ```{r feasibility-020}
-fea <- estimand_feasibility(ps, profile_vars = c("x1", "x2"))
-fea
-head(fea$unsupported)
+sev_fea <- estimand_feasibility(sev_ps, profile_vars = c("x1", "x2"))
+sev_fea
+head(sev_fea$unsupported)
 ```
 
 The outcome-blind support simulation asks the same question dynamically:
@@ -119,8 +121,8 @@ positivity violation by construction (Shaw et al. 2025) and survives only
 as a deprecated option.
 
 ```{r simulate-020, eval=FALSE}
-sim <- simulate_support(lock, ps, reps = 200)
-plot(sim)          # the support map the gate reads
+sev_sim <- simulate_support(sev_lock, sev_ps, reps = 200)
+plot(sev_sim)      # the support map the review reads
 ```
 
 Estimation runs the declared ladder: the primary when feasible, otherwise
@@ -128,11 +130,12 @@ every feasible fallback, each row labelled with its estimand, verdict,
 caveat and implausibility flags, and every switch logged.
 
 ```{r ladder-020, message=FALSE, warning=FALSE}
-res <- run_estimand_ladder(lock, ps, sl_library = "SL.glm", verbose = FALSE)
+res <- run_estimand_ladder(sev_lock, sev_ps, sl_library = "SL.glm",
+                           verbose = FALSE)
 res
 ```
 
-`design_report(lock, sup, fea)` assembles what a review team reads before
+`design_report(sev_lock, sev_sup, sev_fea)` assembles what a review team reads before
 outcomes are unlocked, with a one-line recommendation; its framing follows
 the blinded validity-diagnostics gate of Conover et al. (2025), where a
 failed comparison is labelled inestimable rather than estimated anyway.
@@ -270,9 +273,15 @@ lock <- create_analysis_lock(
   outcome    = "event_24",
   covariates = c("age", "sex", "biomarker", "comorbidity"),
   sl_library = c("SL.glm", "SL.mean"),
+  negative_controls = "nc_outcome",
   plasmode_reps = 40L,
   seed       = 42L
 )
+lock <- declare_estimand_ladder(lock,
+  primary   = "ATE",
+  fallbacks = c("trimmed_ATE", "ATT", "ATO"),
+  trigger   = "SEVERE")
+print(lock)
 ```
 
 `attach_estimand()` and `declare_sensitivity_plan()` moved to the
@@ -292,66 +301,64 @@ lock <- declare_sensitivity_plan(lock, "truncation",
   settings    = list(thresholds = c(0.01, 0.05, 0.10)))
 ```
 
-```{r negative-control}
-lock <- define_negative_control(lock, "nc_outcome")
-
-validate_analysis_lock(lock)
-print(lock)
-```
-
 ### Outcome Masking
 
 ```{r masking}
 masked <- mask_outcome(lock)
 all(is.na(masked$data[["event_24"]]))
-# Unmasking a cleanroom lock normally requires an audit trail that
-# records passing the pre-outcome gate. Here we only demonstrate the
-# mask/unmask API before that gate exists, so we force it with
-# allow_unauthorized = TRUE.
-unmasked <- unmask_outcome(masked, lock, allow_unauthorized = TRUE)
+unmasked <- unmask_outcome(masked, lock)
+```
+
+### Lock persistence
+
+```{r persistence}
+p <- tempfile(fileext = ".rds")
+save_lock(lock, p)
+lock <- load_lock(p)   # re-validates the fingerprint
+unlink(p)
 ```
 
 ---
 
-## Stage 1b: Cohort Adequacy (Check Point 1)
-
-```{r cp1}
-cp1 <- checkpoint_cohort_adequacy(lock)
-print(cp1)
-```
-
----
-
-## Design-Stage Diagnostics
+## Stage 1b: Design precision and event support
 
 ```{r design-precision}
 dp <- estimate_design_precision(lock, target_mdd = 0.05)
 print(dp)
-summarize_event_support(lock)
+dp$event_support
 ```
 
 ---
 
-## Stage 2a: Design diagnostics (Check Point 2)
+## Stage 2a: Propensity, support verdict, feasibility, balance
 
 ```{r ps}
-ps_fit <- fit_ps_glm(lock, truncate = 0.01)
-diag   <- compute_ps_diagnostics(ps_fit)
-print(diag)
+ps_fit <- fit_ps(lock, method = "glm", truncate = 0.01)
+sup    <- assess_support(ps_fit)
+print(sup)
 ```
 
-```{r overlap, fig.cap = "PS overlap."}
-plot(diag)
+```{r overlap, fig.cap = "Mirrored propensity histograms with the band shaded."}
+plot(sup)
 ```
 
-```{r cp2}
-cp2 <- checkpoint_balance(diag, lock_hash = lock$lock_hash)
-print(cp2)
+```{r love-fns, fig.cap = "Standardised mean differences."}
+love_plot(sup)
+```
+
+```{r feasibility-fns}
+fea <- estimand_feasibility(ps_fit)
+print(fea)
 ```
 
 ---
 
-## Stage 2b: Baseline plasmode candidate selection
+## Stage 2b: Support map and plasmode candidate selection
+
+```{r support-sim-fns, cache = TRUE}
+sim <- simulate_support(lock, ps_fit, reps = 10, verbose = FALSE)
+print(sim)
+```
 
 ```{r candidates}
 # Define TMLE candidate specifications
@@ -361,8 +368,6 @@ candidates <- list(
   tmle_candidate("glm_t05", "GLM trunc=0.05",
                  g_library = c("SL.glm"), truncation = 0.05)
 )
-# Or use the default grid:
-# candidates <- expand_tmle_candidate_grid()
 ```
 
 ```{r plasmode, cache = TRUE}
@@ -374,7 +379,11 @@ print(plas)
 
 ```{r select}
 selected <- select_tmle_candidate(plas, rule = "min_rmse")
-lock <- lock_primary_tmle_spec(lock, selected)
+lock <- declare_estimand_ladder(lock,
+  primary   = "ATE",
+  fallbacks = c("trimmed_ATE", "ATT", "ATO"),
+  trigger   = "SEVERE",
+  candidate = selected)
 print(selected)
 ```
 
@@ -396,19 +405,19 @@ simulation spectrum [@nance2026fiord]. The DGP mode is recorded
 in the analysis lock alongside the candidates and severity ranges,
 and the audit log surfaces which mode was used:
 
-- **`dgp_mode = "investigator_specified"`** — fully external DGP,
+- **`dgp_mode = "investigator_specified"`**: fully external DGP,
   for example a structural-equation specification using
   `simcausal`. Strictly outcome-blind because no part of the
   generator is fit to the study data. Highest risk of
   mis-specification; lowest risk of unblinding.
-- **`dgp_mode = "hybrid"`** (current cleanTMLE default) — uses
+- **`dgp_mode = "hybrid"`** (current cleanTMLE default): uses
   the empirical covariate distribution and the fitted
   treatment / censoring mechanism, with an investigator-specified
   or covariate-only marginal outcome model $E[Y \mid W]$. The
   joint $(A, Y) \mid W$ relationship is *not* used. This is the
   middle of the FIORD spectrum and the recommended default for
   most RWE studies.
-- **`dgp_mode = "full_empirical"`** — uses a parametric bootstrap
+- **`dgp_mode = "full_empirical"`**: uses a parametric bootstrap
   from the fitted joint $(W, A, Y)$. **Not strictly outcome-blind
   unless run on held-out or external data**, because the outcome
   mechanism is fit to the study data the analyst can still see.
@@ -460,16 +469,8 @@ dq_results <- run_plasmode_dq_stress(
 )
 
 # Summarise degradation relative to the baseline plasmode
-deg <- summarize_dq_degradation(dq_results)
+deg <- summary(dq_results)
 head(deg)
-
-# Score all checkpoints together (GO / FLAG / STOP)
-composite <- gate_all(cp1, cp2, cp3, allow_flag = TRUE)
-print(composite)
-
-# Or check the audit-trail-based pre-outcome gate
-gate <- authorize_outcome_analysis(audit)
-print(gate)
 ```
 
 The stress test is robust to non-converging cells. If a degraded scenario
@@ -486,76 +487,60 @@ SE-calibration summary) rather than aborting the run; `bias`, `rmse`, and
 - Do not interpret low-replicate examples inferentially.
 - Do not treat truncation as purely numerical when it changes
   the effective target population.
-- Do not use the package audit log as a substitute for
-  institutional audit trails.
-- Do not interpret a GO decision as proof that assumptions hold.
+- Do not use the design log as a substitute for institutional
+  audit trails.
+- Do not interpret a proceed recommendation as proof that
+  assumptions hold.
 :::
 
 ---
 
-## Stage 3: Negative-control checks (Check Point 3)
+## Stage 3: Negative controls and the collider check
 
 ```{r nc}
-nc  <- run_negative_control(lock, "nc_outcome", ps_fit)
-cp3 <- checkpoint_residual_bias(nc, lock_hash = lock$lock_hash)
+nc <- run_negative_control_ladder(lock,
+  restrictions = list("comorbidity-free" = lock$data$comorbidity == 0),
+  method = "tmle", ps_method = "glm", verbose = FALSE)
 print(nc)
-print(cp3)
+```
+
+```{r process}
+proc <- check_process_indicators(lock, indicators = "biomarker")
+print(proc)
+```
+
+(The `biomarker` column stands in for a care-process indicator here;
+in a real study the indicators are post-treatment care-process
+variables kept out of the adjustment set.)
+
+## Pre-outcome decision: the design report
+
+```{r report}
+design_report(lock, sup, fea, simulation = sim, nc_ladder = nc)
 ```
 
 ---
 
-## Audit Trail (initialise early for gate)
+## Stage 4: Estimation
 
-```{r audit}
-audit <- create_audit_log(lock)
-audit <- record_stage(audit, "Stage 1a", "Lock created")
-audit <- record_checkpoint(audit, cp1)
-audit <- record_checkpoint(audit, cp2)
-audit <- record_checkpoint(audit, cp3)
+```{r ladder-est}
+fit <- run_estimand_ladder(lock, ps_fit)
+print(fit)
 ```
 
-## Gate and authorisation
-
-```{r gate}
-gate <- authorize_outcome_analysis(audit)
-print(gate)
-
-# Stamp the lock with the passed gate so the Stage 4 workflows below
-# are allowed to touch the outcome. (For a masked lock,
-# unmask_outcome(lock, original_lock, audit = audit) does the same.)
-lock <- assert_outcome_authorized(audit, lock = lock)
-```
-
----
-
-## Stage 4: Authorised primary analysis
-
-```{r crude}
-run_crude_workflow(lock)
-```
-
-```{r matching}
-match_fit <- run_match_workflow(lock, ps_fit)
-print(match_fit)
-```
-
-```{r iptw}
-iptw_fit <- run_iptw_workflow(lock, ps_fit)
-print(iptw_fit)
-```
-
-```{r tmle}
-g_fit    <- fit_tmle_treatment_mechanism(lock, ps_fit)
-Q_fit    <- fit_tmle_outcome_mechanism(lock, g_fit)
-tmle_upd <- run_tmle_targeting_step(g_fit, Q_fit)
-tmle_fit <- extract_tmle_estimate(tmle_upd)
+```{r effect}
+tmle_fit  <- estimate_effect(lock, ps_fit, estimand = "ATE",
+                             estimator = "tmle", return_steps = TRUE)
+crude_fit <- estimate_effect(lock, estimand = "ATE", estimator = "crude")
+iptw_fit  <- estimate_effect(lock, ps_fit, estimand = "ATE",
+                             estimator = "iptw")
+match_fit <- estimate_effect(lock, ps_fit, estimand = "matched_ATT")
 print(tmle_fit)
 ```
 
-```{r compare}
-summarize_cleanroom_results(
-  list(Matching = match_fit, IPTW = iptw_fit, TMLE = tmle_fit)
-)
+```{r compare, fig.cap = "Cross-estimator forest plot; TMLE is the locked primary."}
+forest_plot(list(Crude = crude_fit, IPTW = iptw_fit,
+                 `Matched ATT` = match_fit, TMLE = tmle_fit))
 ```
 
 ---
@@ -563,10 +548,12 @@ summarize_cleanroom_results(
 ## Sensitivity and Diagnostics
 
 ```{r trunc-sens}
-sensitivity_truncation(lock, thresholds = c(0.01, 0.05, 0.10))
+resolve_truncation_rule("sqrt_n_ln_n", n = nrow(dat))  # adaptive default
 ```
 
-```{r evalue}
+```{r delta-evalue}
+ate <- tmle_fit$estimates$ATE
+head(run_delta_sensitivity(ate$estimate, ate$se))
 compute_evalue(1.3, ci_bound = 1.05)
 ```
 
@@ -655,42 +642,34 @@ make_table1(dat, vars = c("age", "sex", "biomarker", "comorbidity"),
 make_table2(fit_ipw, risk_time = 24)
 ```
 
-```{r wt-summary}
-make_wt_summary_table(fit_ipw)
-```
-
-```{r extreme}
-extreme_weights(fit_ipw, k = 5)
+```{r wt-diag}
+A <- lock$data[[lock$treatment]]
+w <- ifelse(A == 1, 1 / ps_fit$ps, 1 / (1 - ps_fit$ps))
+clean_weight_diagnostics(weights = w, treatment = A,
+                         covariates = lock$data[, lock$covariates])
 ```
 
 ---
 
-## Audit Trail (continued)
+## The design log
 
-```{r audit-final}
-audit <- record_stage(audit, "Stage 4", "Final estimation complete")
-export_audit_trail(audit)
-```
+The design log lives on the lock: one timestamped row per recorded
+decision (ladder declarations, candidate attachment, estimand
+switches, overrides). `save_lock()` archives it with the
+specification, and ladder results carry the entries their run added.
 
-### Decision Log
-
-```{r decision-log}
-audit <- record_decision_log_entry(audit, "Stage 2", "model_specification",
-                                   "Selected GLM PS model")
-export_decision_log(audit)
+```{r design-log}
+knitr::kable(lock$design_log)
 ```
 
 `summarize_stage_path()` and `build_stage_manifest()` moved to the
 companion **cleanroomGov** package (see the Function Index). When it
 is installed they render a compact stage narrative and a stage-path
-manifest from the audit trail:
+manifest from that package's audit-trail objects:
 
-```{r stage-path, eval = has_gov}
-summarize_stage_path(audit)
-```
-
-```{r manifest, eval = has_gov}
-build_stage_manifest(audit)
+```{r stage-path, eval = FALSE}
+summarize_stage_path(audit)   # cleanroomGov
+build_stage_manifest(audit)   # cleanroomGov
 ```
 
 ---
@@ -719,15 +698,16 @@ cat("Covariates after cleaning:", paste(clean$covariates, collapse = ", "), "\n"
 ### Bring your own propensity scores
 
 If PS were estimated outside cleanTMLE (parallel SuperLearner,
-Bayesian model, external software), `wrap_ps_fit()` wraps them into
-a `ps_fit` so all downstream functions work identically:
+Bayesian model, external software), `fit_ps(method = "external")`
+wraps them into a `ps_fit` so all downstream functions work
+identically:
 
 ```{r wrap-ps}
 my_ps <- predict(glm(treatment ~ age + sex + biomarker + comorbidity,
                       data = dat, family = binomial()), type = "response")
-ext_ps_fit <- wrap_ps_fit(lock, ps_scores = my_ps, method = "custom_glm")
-ext_diag   <- compute_ps_diagnostics(ext_ps_fit)
-print(ext_diag$ess)
+ext_ps_fit <- fit_ps(lock, method = "external", scores = my_ps)
+ext_sup    <- assess_support(ext_ps_fit)
+ext_sup$verdict
 ```
 
 ### Serialise lock and audit between stages
@@ -745,56 +725,33 @@ cat("Hash intact:", identical(lock$lock_hash, lock_rt$lock_hash), "\n")
 unlink(tmp)
 ```
 
-### TMLE-based negative controls
+### Negative controls, doubly robust
 
-The default `run_negative_control()` uses IPTW.
-`run_negative_control_tmle()` is doubly robust:more consistent
-with a TMLE-centred pipeline:
-
-```{r nc-tmle}
-nc_tmle <- run_negative_control_tmle(lock, "nc_outcome", ps_fit)
-print(nc_tmle)
-cat("Method:", nc_tmle$method, "\n")
-```
+The negative-control ladder's `method = "tmle"` (the default) fits
+each control doubly robustly, with the propensity refitted per rung;
+`method = "unadjusted"` gives the two-proportion balance-check
+reading. Both were shown in Stage 3 above.
 
 ### Matched-cohort TMLE
 
-`run_matched_tmle()` runs the full TMLE update on a matched subset
-without creating a separate lock:
-
-```{r matched-tmle}
-matched_idx <- c(which(dat$treatment == 1)[1:50],
-                 which(dat$treatment == 0)[1:50])
-matched_fit <- run_matched_tmle(lock, ps_fit, subset_idx = matched_idx,
-                                override_clean_room = TRUE)
-print(matched_fit)
-```
+`estimate_effect(estimand = "matched_ATT")` matches on the fitted
+propensity (greedy 1:1 within a caliper) and runs the full TMLE
+update on the matched subset, without creating a separate lock. The
+matched analysis was shown in Stage 4 above.
 
 ### Diagnostic plots
 
 ```{r clever-plot, fig.cap = "Clever covariate H(A,W) by treatment group."}
-clever_covariate_plot(ps_fit = ps_fit, lock = lock)
+plot(tmle_fit, type = "clever")
 ```
 
-`compute_matched_smds()` + `love_plot_threeway()` compare balance
-across all three adjustment strategies:
-
-```{r threeway-love, fig.cap = "Unweighted vs IPTW vs matched SMDs."}
-m_smds <- compute_matched_smds(dat, "treatment",
-  c("age", "sex", "biomarker", "comorbidity"),
-  subset_idx = matched_idx)
-love_plot_threeway(diag, matched_smds = m_smds)
+```{r ic-plot, fig.cap = "Efficient influence curve distribution."}
+plot(tmle_fit, type = "ic")
 ```
 
-### Composite gating
-
-`gate_all()` evaluates all checkpoints at once ---
-convenient when the pipeline has many stages:
-
-```{r gate-all}
-composite <- gate_all(cp1, cp2, cp3, allow_flag = TRUE)
-print(composite)
-```
+`love_plot(sup, matched = <data.frame>)` adds a matched-cohort SMD
+series (columns `variable`, `smd`) to the unweighted-versus-weighted
+display shown at Stage 2a.
 
 ### Plasmode candidate-grid expansion (workshop-driven, 0.2)
 
@@ -811,7 +768,12 @@ The 0.2 release adds eight axes to the plasmode candidate grid plus four new hel
 - `match_spec`:list `list(method, ratio, caliper)` for matched-cohort candidates.
 - `truncation` now accepts either numeric or one of the named rules `"sqrt_n_ln_n"`, `"fixed_001"`, `"fixed_025"`, `"fixed_05"`. The named rule is resolved at fit time when `n` is known.
 
-**New `expand_tmle_candidate_grid()` arguments**: `estimators`, `cv_schemes`, `variance_methods`, `discrete_sl`, `screeners`, `max_candidates`. The function Cartesian-products the requested axes and caps the grid at `max_candidates`.
+**Grid expansion**: `expand_tmle_candidate_grid()` (internal since the
+0.2.0 consolidation; reach it with `cleanTMLE:::` if needed)
+Cartesian-products the requested axes (`estimators`, `cv_schemes`,
+`variance_methods`, `discrete_sl`, `screeners`) and caps the grid at
+`max_candidates`; most analyses declare a handful of candidates
+directly with `tmle_candidate()`.
 
 **New `select_tmle_candidate()` rules**:
 
@@ -820,26 +782,23 @@ The 0.2 release adds eight axes to the plasmode candidate grid plus four new hel
 - `rule = "composite"`:weighted composite of standardised RMSE, coverage penalty, and SE-vs-SD penalty.
 - `rule = "fiord_two_stage"`:the FIORD two-stage selector: Stage 1 screens candidates whose oracle coverage is within `fiord_coverage_tol` (default 0.02) of the target; Stage 2 picks the smallest mean SE among survivors. *Variance-method selection on the locked point estimator (FIORD Stage 2 proper)* is still pending; this rule currently selects the point-estimator candidate.
 
-**New helpers**:
+**Helpers** (exported):
 
-- `compute_n_eff(y, family)`:effective sample size `min(n, 5·n_rare)` for binary outcomes (Phillips p. 1281).
-- `recommend_cv_V(n_eff)`:the Phillips V rule (V = 20 for n_eff < 500, V = 10 for n_eff < 5,000, ...).
-- `build_sl_library(role, n_eff, p, preset)`:four role-aware library presets (`small_n`, `default`, `rich`, `very_rich`), keyed by effective sample size.
-- `resolve_truncation_rule(rule, n)`:numeric pass-through or one of the named rules.
+- `build_sl_library(role, n_eff, p, preset)`:role-aware library presets (`small_n`, `default`, `rich`, `very_rich`, `rwe_wide`), keyed by effective sample size; computes `n_eff` from `y` when not supplied (Phillips p. 1281) and returns the recommended V.
+- `resolve_truncation_rule(rule, n)`:numeric pass-through or one of the named rules, including the adaptive `"sqrt_n_ln_n"`.
 
-**New post-processors**:
+**Post-processors**:
 
-- `run_positivity_diagnostics(ps_fit)`:single tidy object with PS C-statistic, per-arm distribution summary, % truncated, bounded-g quantiles, and a near-positivity-violation flag.
-- `compute_G_value(estimate, se)`:the additive bias that would push the CI across the null (Gruber 2023 RWE).
-- `run_delta_sensitivity(estimate, se, delta_grid)`:causal-gap sensitivity sweep on top of an existing fit (SAP §8.3.4).
-- `compute_aipw(g_fit, Q_fit)`:AIPW estimate from the same nuisances the modular TMLE uses, useful as a candidate-grid comparator.
+- `assess_support(ps_fit)`:the graded overlap assessment (replaces the earlier `run_positivity_diagnostics()` tidy object, which now wraps it).
+- `run_delta_sensitivity(estimate, se, delta_grid)`:additive-bias sensitivity sweep on top of an existing fit, with the g-value (the bias that pushes the CI across the null; Gruber 2023 RWE) attached.
+- `compute_aipw(g_fit, Q_fit)` (internal):AIPW estimate from the same nuisances the modular TMLE uses.
 
 **Example**:
 
 ```{r expanded-candidate-example, eval = FALSE}
 # Expanded grid: 2 truncations x 1 library x 2 CV schemes x
 # 2 variance methods = 8 candidates.
-g <- expand_tmle_candidate_grid(
+g <- cleanTMLE:::expand_tmle_candidate_grid(
   truncations      = c(0.01, 0.05),
   libraries        = list(default = c("SL.glm", "SL.glmnet", "SL.gam")),
   cv_schemes       = c("none", "cv_tmle"),
@@ -859,8 +818,7 @@ selected <- select_tmle_candidate(
 
 These helpers are recommended outputs and are planned for later cleanTMLE releases; current users should build them from the documented primitives.
 
-- `clean_target_trial_table()`:render a target-trial timing table from an analysis lock and `attach_estimand()` metadata. Build manually from the lock fields and the estimand object for now.
-- `checkpoint_dashboard()`:aggregate per-checkpoint records into a single GO / FLAG / STOP dashboard. Build by binding the rows returned by individual `checkpoint_*()` calls and `gate_all()`.
+- `clean_target_trial_table()`:render a target-trial timing table from an analysis lock and `attach_estimand()` metadata. `design_report(protocol = ...)` renders the TARGET-style emulation table today; build richer versions from the lock fields for now.
 - `run_plasmode_dq_stress(..., scenarios = with_u_gradient(...))`:extend the unmeasured-confounding scenario from a single fixed latent-U strength to a prespecified grid of strengths, so the DQ stress test produces an E-value-style sensitivity curve as a by-product. Current users can approximate this by calling `run_plasmode_dq_stress()` repeatedly with different `unmeasured_U_strength` parameter values and concatenating the metrics.
 - `run_preprotocol_plasmode()`:a pre-protocol variant of the plasmode + DQ stress test that takes user-specified covariate distributions and a hypothesised treatment-mechanism strength instead of a real lock. Use case: deciding which dataset to use before a data-use agreement is signed.
 - `run_ctmle_candidate()`, `run_bootstrap_variance()`:C-TMLE (collaborative TMLE; Gruber 2009 §3.2) and nonparametric bootstrap variance paths. Both require wrapping a separate upstream package (`ctmle`, `boot`/`HAL`) and are on the 0.3 roadmap.

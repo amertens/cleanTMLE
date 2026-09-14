@@ -29,9 +29,9 @@ library(cleanTMLE)
 
 ## Read this first
 
-This vignette has two halves. The **first half** teaches the core estimator and shows what a plain end-to-end analysis looks like using `cleanTMLE` as a regular RWE estimation package. The **second half** adds the staged-analysis governance layer (analysis lock, audit log, GO / FLAG / STOP gate) for studies that need a reproducible pre-outcome dossier.
+This vignette has two halves. The **first half** teaches the core estimator and shows what a plain end-to-end analysis looks like using `cleanTMLE` as a regular RWE estimation package. The **second half** adds the staged-analysis layer (the analysis lock, the support and feasibility stage, the estimand ladder, the design report and its log) for studies that need a reproducible pre-outcome dossier.
 
-If you are new to targeted-learning methods, read the first half straight through. The vocabulary you need is in the **Concept primer** below. The governance vocabulary (clean room, gate, dossier) does not appear until §"The staged workflow" — by then you will have already seen Table 1, the propensity-score overlap, and a risk-curve plot, so the governance ideas have something concrete to attach to.
+If you are new to targeted-learning methods, read the first half straight through. The vocabulary you need is in the **Concept primer** below. The governance vocabulary (clean room, dossier, design log) does not appear until the staged-workflow half; by then you will have already seen Table 1, the propensity-score overlap, and a risk-curve plot, so the governance ideas have something concrete to attach to.
 
 ## A clinical anchor
 
@@ -161,7 +161,7 @@ knitr::kable(plain_results, digits = 4,
              caption = "Four estimators on the plain-mode lock.")
 ```
 
-(`run_ipcw_tmle()` adds an IPCW sensitivity path for studies with missing outcomes; `estimate_gcomprisk()` and `estimate_aipwrisk()` are also available, but they consume a `specify_models()` object rather than the `cleanroom_lock` shown here. See the function-reference vignette for both.)
+(`estimate_effect(missing = "ipcw")` adds an IPCW sensitivity path for studies with missing outcomes; `estimate_gcomprisk()` and `estimate_aipwrisk()` are also available, but they consume a `specify_models()` object rather than the `cleanroom_lock` shown here. See the function-reference vignette for both.)
 
 ```{r plain-forest, fig.cap = "Forest plot of the four estimators. The dashed line marks no effect; the adjusted estimators agree closely and shift the crude estimate.", fig.height = 3.5}
 library(ggplot2)
@@ -267,7 +267,7 @@ Continue reading if any of the following apply:
 - You are running an analysis where the comparative answer will be reviewed by a third party, and you need a reproducible record of every analytic decision made before the comparative answer was seen.
 - You want to use the **plasmode candidate-selector** to pick between competing TMLE specifications before unblinding.
 - You want to use the **data-quality stress test** to check how the chosen estimator behaves under prespecified threats (measurement error, missingness, unmeasured confounding) before unblinding.
-- You are working inside an institutional clean-room arrangement and want the software-enforced two-pass entry point (`run_clean_tmle_preoutcome()`), whose locks require a recorded authorisation before Stage 4.
+- You are working inside an institutional clean-room arrangement and want the software-enforced two-pass contract (`create_analysis_lock(enforce = TRUE)`), whose locks require a recorded design review before estimation runs.
 
 If none of these apply, you can stop here and use the workflows above. cleanTMLE was designed to be useful at both levels of formality.
 
@@ -366,23 +366,26 @@ study dossier. It is assembled across the stages demonstrated below,
 and the review team reads it before authorising the primary analysis.
 Its components are:
 
-- Protocol and target-trial timing (prespecified estimand record); see *Define the causal question and estimand*.
+- Protocol and target-trial timing (the lock record, plus
+  `design_report(protocol = ...)` for a TARGET-style emulation table);
+  see *Define the causal question and estimand*.
 - Cohort flow and attrition (`attrition_table()`); see *Stage 1b*.
 - Event-process classification (structured event-process table and coherence check); see *From target trial specification to event-process classification*.
-- Covariate and missingness summary (`make_table1()` and missingness checks); see *Stage 1a* covariate sanitisation.
-- PS overlap and balance (`compute_ps_diagnostics()`, `love_plot()`, `love_plot_threeway()`); see *Stage 2a*.
-- Treatment- and IPCW-weight diagnostics (`clean_weight_diagnostics()`, `extreme_weights()`); see *Outcome-blind diagnostics before fitting the final estimator*.
-- Event-count and precision adequacy (`checkpoint_cohort_adequacy()`); see *Stage 1b*.
+- Covariate and missingness summary (`make_table1()` and `sanitize_covariates()`); see *Stage 1a* covariate sanitisation.
+- PS overlap, support verdict, and balance (`fit_ps()`, `assess_support()`, `love_plot()`); see *Stage 2a*.
+- Estimand feasibility and the declared ladder (`estimand_feasibility()`, `declare_estimand_ladder()`); see *Deciding the estimand before outcomes* above.
+- Treatment- and IPCW-weight diagnostics (`clean_weight_diagnostics()`); see *Outcome-blind diagnostics before fitting the final estimator*.
+- Event-count and precision adequacy (`estimate_design_precision()`); see *Stage 1b*.
+- Outcome-blind support map (`simulate_support()`); see *Deciding the estimand before outcomes*.
 - Baseline plasmode candidate selection (`run_plasmode_feasibility()`, `select_tmle_candidate()`); see *Stage 2b*.
-- DQ stress-test results (`run_plasmode_dq_stress()`, `summarize_dq_degradation()`); see *Stage 2c*.
-- Negative-control eligibility and attrition (`run_residual_confounding_stage()`); see *Stage 3*.
-- GO / FLAG / STOP checkpoint dashboard (`gate_all()`; aggregate `checkpoint_dashboard()` planned); see *Pre-outcome decision*.
-- Decision log and audit log export (`export_decision_log()`); see *Audit trail and reproducibility*.
-- Authorisation record for primary analysis (`authorize_outcome_analysis()`); see *Pre-outcome decision*.
+- DQ stress-test results (`run_plasmode_dq_stress()` and its `summary()`); see *Stage 2c*.
+- Negative controls across cohort restrictions (`run_negative_control_ladder()`); see *Stage 3*.
+- Care-process collider check (`check_process_indicators()`); see *Stage 3*.
+- The assembled dossier and recommendation (`design_report()`); see *Pre-outcome decision*.
 
 The dossier is the artefact the reviewer reads. Comparative
 treatment-outcome estimates are not part of the dossier and are
-produced only after authorisation.
+produced only after the review.
 
 ### Why TMLE fits this workflow
 
@@ -519,66 +522,45 @@ lock <- create_analysis_lock(
   outcome       = "event_24",
   covariates    = covs,
   sl_library    = c("SL.glm", "SL.mean"),
+  negative_controls = "nc_outcome",
   plasmode_reps = 40L,
   seed          = 42L
 )
+print(lock)
 ```
 
 ::: {.callout-tip}
 ## Optional: outcome masking
 
-For analyses that require stricter blinding, `mask_outcome()` can
-replace the real outcome column with `NA` values inside the lock,
-preventing any code from accessing the outcome before Stage 4.
-Call `unmask_outcome(lock, original_lock)` when the pre-outcome
-gates have been passed and the outcome is needed.
-In this vignette we proceed without masking for clarity, but the
-functions are available for production workflows.
+For analyses that require stricter blinding, `create_analysis_lock(mask
+= TRUE)` (or `mask_outcome()` on an existing lock) replaces the real
+outcome column with `NA` values inside the lock, so no code can read
+the outcome before estimation; `unmask_outcome(lock, original_lock)`
+restores it when the design review is complete. Stronger still is
+keeping the outcome columns in a separate store and joining them only
+at estimation, which is what the package's case study does. In this
+vignette we proceed without masking for clarity.
 :::
 
-We prespecify the estimand (a marginal risk difference for the
-primary event by 24 months) and a truncation sensitivity plan
-alongside the lock, and declare a negative-control outcome. This
-metadata does not alter the reproducibility hash (which depends only
-on the core analytic specification) but provides the structured
-record that an outcome-blind staged review requires.
+The estimand plan is declared next, and it is the key
+pre-registration: the primary estimand, the ordered fallbacks the
+analysis will accept, and the support verdict that triggers a move
+down the ladder. Switching estimands after seeing results is a garden
+of forking paths; switching by this rule, declared before outcome
+access, is a design decision the log records.
 
-```{r neg-control-decl}
-lock <- define_negative_control(lock, "nc_outcome",
-  description = "Binary outcome driven by covariates only; treatment has no causal effect"
+```{r ladder-decl}
+lock <- declare_estimand_ladder(lock,
+  primary   = "ATE",
+  fallbacks = c("trimmed_ATE", "ATT", "ATO"),
+  trigger   = "SEVERE"
 )
 ```
 
-We also prespecify the entire GO / FLAG / STOP decision rule in one
-object and attach it to the lock. `attach_decision_thresholds()`
-records a separate `thresholds_hash`, so the decision rule — not just
-the cohort and estimator definitions — is fingerprinted before any
-checkpoint is scored. Each checkpoint below can read its thresholds
-from this object via the `dt_*()` helpers.
-
-```{r decision-thresholds}
-dt <- decision_thresholds(
-  balance_max_smd   = 0.10,
-  dq_max_abs_bias   = 0.02,
-  nco_rule          = "significance",
-  nco_alpha         = 0.05
-)
-lock <- attach_decision_thresholds(lock, dt)
-```
-
-```{r print-lock}
-validate_analysis_lock(lock)
-print(lock)
-```
-
-We initialise the audit log at this point so that every subsequent
-stage is recorded.
-
-```{r audit-init}
-audit <- create_audit_log(lock)
-audit <- record_stage(audit, "Stage 1a",
-                      "Analysis lock created and estimand attached")
-```
+Decision thresholds for the stress test (the maximum acceptable bias,
+the coverage floor) are arguments of the functions that use them, and
+every declaration lands in the lock's design log, so the rule is on
+the record before any diagnostic is scored.
 
 ### File-based pipeline support
 
@@ -588,71 +570,33 @@ hash re-validation, eliminating the boilerplate of manual RDS
 save/load and integrity checks.
 
 ```{r save-lock}
-# Round-trip demonstration: save, load, verify integrity
-tmp_lock_path  <- tempfile("lock_",  fileext = ".rds")
-tmp_audit_path <- tempfile("audit_", fileext = ".rds")
-
+tmp_lock_path <- tempfile("lock_", fileext = ".rds")
 save_lock(lock, tmp_lock_path)
-save_audit(audit, tmp_audit_path)
-
-# Reload --- load_lock() automatically re-validates the hash
-lock_reloaded  <- load_lock(tmp_lock_path)
-audit_reloaded <- load_audit(tmp_audit_path)
-cat("Lock hash match:", identical(lock$lock_hash, lock_reloaded$lock_hash), "\n")
-cat("Audit entries match:", length(audit$entries) == length(audit_reloaded$entries), "\n")
-
-# Clean up temp files
-unlink(c(tmp_lock_path, tmp_audit_path))
+lock_reloaded <- load_lock(tmp_lock_path)  # re-validates the hash
+cat("Lock hash match:",
+    identical(lock$lock_hash, lock_reloaded$lock_hash), "\n")
+unlink(tmp_lock_path)
 ```
 
 In a real multi-stage pipeline each stage script would save to a
 shared results directory (e.g., `save_lock(lock, "results/stage1_lock.rds")`)
 and the next stage script would `load_lock("results/stage1_lock.rds")`
-at its top.
-
-We also begin populating the decision log, which records the
-rationale behind key analytic choices.
-
-```{r dlog-lock}
-audit <- record_decision_log_entry(audit,
-  stage         = "Stage 1a",
-  decision_type = "specification",
-  description   = "Analysis lock created with GLM + Mean SL library and 40 plasmode reps",
-  rationale     = "Minimal library chosen for vignette reproducibility"
-)
-```
+at its top. The design log rides inside the lock, so saving the lock
+archives the decision record with it.
 
 ---
 
-## Stage 1b: Cohort adequacy and marginal event support (Check Point 1)
+## Stage 1b: Cohort adequacy and marginal event support
 
 Before any modelling, we confirm that the cohort has adequate size,
-event counts, and positivity to support the planned analysis.
-If this checkpoint fails, the analysis stops before any comparative
-outcome modelling begins.
-
-```{r cp1}
-cp1 <- checkpoint_cohort_adequacy(lock,
-  min_n_per_arm  = 50,
-  min_events     = 30,
-  min_prevalence = 0.01
-)
-print(cp1)
-audit <- record_checkpoint(audit, cp1)
-```
-
-The decision is **`r cp1$decision`**.
-With `r nrow(dat)` subjects and adequate events in both arms, we proceed.
-
-### Design-stage diagnostics
-
-Before moving to propensity-score modelling we run two additional
-design-stage diagnostics.
-`estimate_design_precision()` reports the detectable effect size
-given the locked sample and event counts, optionally compared against
-a target minimum detectable difference (MDD).
-`summarize_event_support()` tabulates event counts by treatment arm
-and covariate strata, flagging any cells with sparse support.
+event counts, and precision to support the planned analysis. If it
+does not, the analysis stops here, before any comparative outcome
+modelling begins. `estimate_design_precision()` reads only marginal
+event counts (never the treatment-outcome association): it reports the
+minimum detectable difference (MDD) given the locked sample and event
+counts, compares it against a target when one is supplied, and its
+`$event_support` element tabulates events by arm so sparse cells are
+visible.
 
 ```{r design-precision}
 dp <- estimate_design_precision(lock, target_mdd = 0.05)
@@ -666,80 +610,83 @@ This is expected, because the vignette uses a deliberately small dataset
 for fast rendering.
 In practice you would either increase sample size or relax the
 target MDD.
-The MDD check is **informational** and does not trigger STOP; the
-pipeline continues.
+The MDD check is **informational** and does not stop the pipeline;
+it informs the review.
 :::
-
-```{r event-support}
-es <- summarize_event_support(lock)
-print(es)
-```
 
 ---
 
-## Stage 2a: PS, balance, overlap, ESS, design diagnostics (Check Point 2)
+## Stage 2a: Propensity fit, support verdict, feasibility, balance
 
-Stage 2a estimates the propensity score and evaluates overlap, balance,
-and effective sample size.
-The outcome is never accessed at this stage: only covariates (W) and
-treatment (A) are used.
+Stage 2a fits the propensity score and grades the design: overlap,
+implied weights, effective sample size, balance, and which estimands
+the fit can support. The outcome is never accessed at this stage; only
+covariates (W) and treatment (A) are used.
 
 ### Propensity score estimation
 
+`fit_ps()` is the one front door: `method = "superlearner"` (the
+default), `"glm"` for a logistic fit, or `"external"` with scores
+estimated outside the package.
+
 ```{r ps}
-ps_fit <- fit_ps_glm(lock, truncate = 0.01)
+ps_fit <- fit_ps(lock, method = "glm", truncate = 0.01)
 print(ps_fit)
 ```
 
 ::: {.callout-tip}
-## Using external or parallel PS
+## Bring-your-own propensity scores
 
-If you have PS estimated outside cleanTMLE (e.g., via a parallel
-SuperLearner cluster), wrap them with `wrap_ps_fit()`:
+Scores fitted outside cleanTMLE (a parallel SuperLearner cluster,
+a Bayesian model, another language) enter through the same front
+door and work identically downstream:
 
 ```r
-cl <- parallel::makeCluster(2, type = "PSOCK")
-ps_fit <- fit_ps_parallel(lock, cluster = cl, truncate = 0.01)
-parallel::stopCluster(cl)
-
-# Or bring-your-own PS:
-ps_fit <- wrap_ps_fit(lock, ps_scores = my_ps, method = "external_sl")
+ps_fit <- fit_ps(lock, method = "external", scores = my_ps)
 ```
-
-All downstream functions (`compute_ps_diagnostics`, `checkpoint_balance`,
-`run_iptw_workflow`, etc.) work identically with wrapped PS objects.
 :::
 
-### Diagnostics
+### The support assessment
 
-```{r ps-diag}
-diag <- compute_ps_diagnostics(ps_fit)
-print(diag)
+`assess_support()` grades the overlap: the share of the sample with
+untruncated propensity outside the band, the largest implied weight,
+ESS per arm, the c-statistic (discrimination is bad news here), a
+stratum scan and a shallow-tree search for pockets where treatment is
+nearly deterministic, and a balance table. The verdict (PASS, FLAG,
+SEVERE, FAIL) carries a caveat sentence that travels with every
+downstream estimate.
+
+```{r support}
+sup <- assess_support(ps_fit)
+print(sup)
 ```
 
-```{r ps-overlap, fig.cap = "Propensity score overlap by treatment arm."}
-plot(diag)
+```{r ps-overlap, fig.cap = "Mirrored propensity histograms: treated above the axis, controls below, band shaded."}
+plot(sup)
 ```
 
-### Structured checkpoint
-
-The `checkpoint_balance()` function converts diagnostics into a
-GO / FLAG / STOP decision based on prespecified thresholds for
-the maximum weighted SMD and minimum ESS percentage.
-
-```{r cp2}
-cp2 <- checkpoint_balance(diag,
-  max_smd     = 0.10,
-  min_ess_pct = 50,
-  lock_hash   = lock$lock_hash
-)
-print(cp2)
-audit <- record_checkpoint(audit, cp2)
+```{r love, fig.cap = "Standardised mean differences before and after weighting."}
+love_plot(sup)
 ```
 
-The decision is **`r cp2$decision`**.
-All covariates are well balanced after weighting, and the effective
-sample size is adequate.
+### Per-estimand feasibility
+
+The same fitted propensity is then read per estimand:
+the weights each estimand implies, their maximum, ESS by arm, who is
+effectively removed, and a verdict on the same scale. This is the
+table that tells you whether the declared primary is answerable and
+which fallbacks are.
+
+```{r feasibility}
+fea <- estimand_feasibility(ps_fit,
+  profile_vars = c("age", "biomarker"))
+print(fea)
+```
+
+On this well-overlapped simulated design every estimand passes. The
+*Deciding the estimand before outcomes* section at the top of this
+vignette shows the same table on a severe-overlap design, where it
+does the work it was built for.
 
 ---
 
@@ -818,15 +765,21 @@ print(plas)
 
 ```{r select}
 selected <- select_tmle_candidate(plas, rule = "min_rmse")
-lock <- lock_primary_tmle_spec(lock, selected)
+lock <- declare_estimand_ladder(lock,
+  primary   = "ATE",
+  fallbacks = c("trimmed_ATE", "ATT", "ATO"),
+  trigger   = "SEVERE",
+  candidate = selected
+)
 print(selected)
 ```
 
-The selected TMLE specification for Stage 4 is
+The selected TMLE specification for estimation is
 **`r selected$label`** (truncation = `r selected$truncation`).
-This specification is now locked into the analysis lock and will be
-used automatically by `fit_tmle_treatment_mechanism()` and
-`fit_tmle_outcome_mechanism()`.
+Re-declaring the ladder with `candidate = selected` attaches the
+specification to the ladder, so downstream estimation honours its
+truncation and libraries automatically, and the re-declaration is a
+new design-log entry rather than a silent overwrite.
 
 ## Stage 2c: Plasmode data-quality stress test
 
@@ -900,7 +853,7 @@ dq_results <- run_plasmode_dq_stress(
   verbose = FALSE
 )
 
-deg <- summarize_dq_degradation(dq_results)
+deg <- summary(dq_results)
 head(deg)
 ```
 
@@ -911,233 +864,119 @@ shallow gradient suggests a candidate is stable across plausible
 severities. A cliff suggests that small increases in degradation
 move performance outside the locked criteria.
 
-`summarize_dq_degradation()` returns a long table comparing each
-degraded run with the baseline (no degradation): bias change, RMSE
-ratio, coverage drop. A robust candidate produces a flat curve; a
-fragile candidate shows a cliff. The table can be filtered to the
+`summary()` on the stress-test result returns a long table comparing
+each degraded run with the baseline (no degradation): bias change,
+RMSE ratio, coverage drop. A robust candidate produces a flat curve;
+a fragile candidate shows a cliff. The table can be filtered to the
 candidate locked in by `select_tmle_candidate()` and reviewed
-alongside the SPIFD2 fit-for-purpose narrative before the gate is
-scored.
+alongside the SPIFD2 fit-for-purpose narrative in the design report.
+When a candidate breaches the declared bias or coverage envelope
+under a plausible severity, the reading is the Muntner "conduct
+additional analyses" or "terminate" recommendation for that
+specification, and the review is recorded in the design log. When
+every candidate breaches, the honest conclusion is usually about the
+data source or the estimand, not the nuisance fit.
 
-The DQ stress test is the package's distinguishing contribution
-relative to prior outcome-blind plasmode work: standard plasmode
-selects the candidate with the best baseline RMSE, while
-`run_plasmode_dq_stress()` allows the analyst to select the
-candidate that stays inside the gate thresholds across the
-plausible range of every realistic data threat.
-
-### Turning the DQ stress test into a gate (Check Point 2c)
-
-`gate_dq()` converts the degradation table into a
-`cleantmle_checkpoint` so the DQ result enters the GO / FLAG / STOP
-decision on the same footing as the cohort, balance, and
-residual-bias checkpoints. It returns STOP if any degraded scenario
-for the locked candidate breaches the prespecified bias, coverage,
-or RMSE-ratio envelope. Drawing the thresholds from the lock's
-`decision_thresholds()` object keeps the whole decision rule in one
-fingerprinted place.
-
-```{r gate-dq}
-cp_dq <- gate_dq(dq_results,
-                 candidate  = selected$candidate_id,
-                 thresholds = lock$decision_thresholds)  # NULL is fine too
-audit <- record_checkpoint(audit, cp_dq)
-cat(sprintf("Check Point 2c (DQ stress): %s\n", cp_dq$decision))
-```
-
-```{r audit-stage2b}
-audit <- record_stage(audit, "Stage 2b",
-  paste("Plasmode evaluation complete; selected TMLE spec:",
-        selected$candidate_id))
-```
-
-```{r dlog-tmle-select}
-audit <- record_decision_log_entry(audit,
-  stage         = "Stage 2b",
-  decision_type = "estimator_selection",
-  description   = paste("Selected TMLE candidate:", selected$candidate_id),
-  rationale     = "Minimum RMSE rule applied to plasmode simulation results"
-)
-```
+The DQ stress test is one of the package's two distinguishing
+contributions relative to prior outcome-blind plasmode work (the
+other is the support map): standard plasmode selects the candidate
+with the best baseline RMSE, while `run_plasmode_dq_stress()` lets
+the analyst select the candidate that stays inside the declared
+envelope across the plausible range of every prespecified threat,
+via `select_tmle_candidate(rule = "min_max_rmse")`.
 
 ---
 
-## Stage 3 (optional): Negative-control outcome checks
+## Stage 3 (optional): Negative controls across cohort restrictions
 
 A negative-control outcome (NCO) screen is an optional pre-outcome
-checkpoint that sits between the Stage 2c DQ stress test and the
-pre-outcome decision. The NCO screen assesses residual
-confounding using a negative-control outcome, a variable that is
-known (or strongly believed) to be unaffected by treatment.
-If the same analytic pipeline detects an association with the negative
-control, this suggests that confounders remain unbalanced after
-adjustment.
+check that sits between the Stage 2c DQ stress test and the
+pre-outcome decision. It assesses residual confounding using a
+negative-control outcome, a variable that is known (or strongly
+believed) to be unaffected by treatment. If the same analytic
+pipeline detects an association with the negative control, this
+suggests that confounders remain unbalanced after adjustment.
 
-The negative control outcome `nc_outcome` was generated from
-covariates only, with no treatment effect, so any estimated association
-is attributable to residual confounding.
+The negative control `nc_outcome` (registered on the lock at Stage
+1a) was generated from covariates only, with no treatment effect, so
+any estimated association is attributable to residual confounding.
 
-The `run_residual_confounding_stage()` wrapper runs the negative control
-analysis and generates the checkpoint in a single call, reducing
-boilerplate and ensuring the two steps stay paired.
+`run_negative_control_ladder()` fits every registered control on
+every nested cohort restriction, so the review sees not only whether
+a control fails but which restriction makes it pass. A control that
+fails on the full cohort and turns null after a pre-registered
+exclusion localises the confounding to the excluded stratum, which a
+single-cohort check cannot show. Controls too rare to fit are
+labelled inestimable rather than dropped silently.
 
 ```{r stage3}
-stage3 <- run_residual_confounding_stage(lock, ps_fit)
-print(stage3)
-cp3 <- stage3$checkpoint
-audit <- record_checkpoint(audit, cp3)
+nc <- run_negative_control_ladder(lock,
+  restrictions = list(
+    "comorbidity-free" = lock$data$comorbidity == 0
+  ),
+  method = "tmle", ps_method = "glm", verbose = FALSE)
+print(nc)
 ```
 
-### TMLE-based negative controls (doubly robust)
-
-The default `run_negative_control()` uses IPTW.
-`run_negative_control_tmle()` uses the four-step TMLE pipeline,
-which is doubly robust and more appropriate for a package built
-around TMLE.
-
-```{r nc-tmle}
-nc_tmle <- run_negative_control_tmle(lock, "nc_outcome", ps_fit)
-cat(sprintf("TMLE NC estimate: %.5f  (p = %.4f, method: %s)\n",
-            nc_tmle$estimate, nc_tmle$p_value, nc_tmle$method))
-```
-
-The decision is **`r cp3$decision`**.
-No significant association with the negative control was detected, so
-we proceed to the pre-outcome authorization gate.
+On this simulated design the control is null on both rungs, as it
+should be: the covariates that drive `nc_outcome` are in the
+adjustment set. A companion check for care-process variables,
+`check_process_indicators()`, regresses each named indicator on
+treatment given the remaining covariates and flags indicators the
+treatment predicts; such variables belong outside the adjustment set,
+where conditioning on them would open collider paths.
 
 ---
 
 ## Pre-outcome decision
 
-### Interpreting GO / FLAG / STOP
-
-The three labels record the result of a prespecified checkpoint,
-not a judgement about the underlying assumptions:
-
-- **GO**: every prespecified threshold for this checkpoint was
-  met. The workflow may proceed to the next stage.
-- **FLAG**: at least one threshold was not met but the result
-  does not block progression. The workflow may proceed under
-  documented review.
-- **STOP**: at least one threshold was not met and the checkpoint
-  blocks progression under the locked rule.
-
-An override does not erase the checkpoint result. It records a
-documented decision to proceed despite the checkpoint result.
-
 The pre-outcome decision summarises whether the prespecified
 diagnostics support proceeding to outcome analysis, require
 additional review, or indicate that the study should stop or be
-redesigned. `authorize_outcome_analysis()` inspects the audit
-trail and verifies that every required checkpoint has been
-recorded with a *proceed* (GO) or, when `allow_flag = TRUE`,
-*pause for review* (FLAG) classification. If any checkpoint is
-missing or returned *stop* (STOP), the prespecified workflow is
-not complete and outcome-analysis functions will not run.
+redesigned; these are the three review-team recommendations of
+Muntner et al. (2024), and the design report states which one the
+evidence supports. `design_report()` assembles the dossier the review
+team reads: the lock record, the support verdict, the feasibility
+table, the declared ladder, the support map when one was run, and the
+negative-control ladder, closed by a one-line recommendation.
 
-`gate_all()` evaluates all checkpoint objects at once and returns
-the composite classification. Pass the DQ checkpoint alongside the
-others so a DQ STOP blocks the gate:
+The support map is the outcome-blind simulation described in
+*Deciding the estimand before outcomes* at the top of this vignette:
+`simulate_support()` resamples the covariates, redraws treatment from
+the fitted propensity (the generate-treatment plasmode design), and
+generates synthetic outcomes over a prespecified surface family, so
+each estimand's estimator is scored where the truth is known. A small
+run makes the report complete here; use far more replicates in
+practice.
 
-```{r gate-all}
-composite <- gate_all(cp1, cp2, cp_dq, cp3, allow_flag = TRUE)
-print(composite)
+```{r support-sim, cache = TRUE}
+sim <- simulate_support(lock, ps_fit, reps = 10, verbose = FALSE)
 ```
 
-`authorize_outcome_analysis()` then inspects the audit trail. With
-`block_on_any_stop = TRUE` (the default), a STOP recorded by *any*
-checkpoint — including the optional DQ-stress gate — blocks
-authorisation, even though `"Check Point 2c"` is not in the default
-`required_stages`. Required stages are matched on the stage key (the
-text before the first colon), so `"Check Point 2"` matches the
-balance checkpoint but never the DQ checkpoint.
-
-```{r gate}
-gate <- authorize_outcome_analysis(audit)
-print(gate)
-audit <- record_checkpoint(audit, gate)
-
-# Record the passing gate on the lock. This stamps `.outcome_authorized`, so the
-# Stage 4 estimators below run; without it they refuse the outcome. (For a
-# masked lock, `unmask_outcome(lock, original_lock, audit = audit)` does the same
-# check as it reveals the outcome.)
-lock <- assert_outcome_authorized(audit, lock = lock)
+```{r design-report}
+design_report(lock, sup, fea, simulation = sim, nc_ladder = nc)
 ```
 
-```{r dlog-gate}
-audit <- record_decision_log_entry(audit,
-  stage         = "Pre-outcome decision",
-  decision_type = "authorization",
-  description   = paste("Outcome analysis classification:", gate$decision),
-  rationale     = "All preceding checkpoints passed."
-)
-```
+On this simulated design the recommendation is to proceed: the
+support verdict is PASS, the declared primary is feasible, and the
+negative control is null on every rung. The report reads differently
+on the severe-overlap design shown at the top of this vignette,
+where it recommends the ladder switch and names the fallback
+estimands.
 
-The pre-outcome classification is **`r gate$decision`**. Every required
-stage (cohort adequacy, treatment comparability, and the negative
-control) returned GO and no checkpoint returned STOP, so
-`authorize_outcome_analysis()` authorises the outcome analysis. The
-optional data-quality stress checkpoint returned FLAG — its worst RMSE
-ratio under the covariate-missingness and outcome-misclassification
-threats sits just past the FLAG envelope — which is why the `gate_all()`
-composite above reads FLAG. A FLAG on a non-required checkpoint does not
-block authorisation, so outcome-analysis functions may now run on the
-unmasked data.
+### What if the design fails the review?
 
-### What if a checkpoint fails?
-
-In the example above the required checkpoints returned GO and the
-optional DQ-stress checkpoint returned FLAG, which still authorises
-under review.
-In practice, poor overlap or residual confounding can trigger STOP
-decisions that block progression.
-The block below constructs a synthetic failure to show how the pipeline
-responds:
-
-```{r failure-demo}
-# Simulate a STOP scenario: a checkpoint with very high SMD
-fake_diag <- diag
-fake_diag$smds$smd_weighted <- c(0.25, 0.30, 0.15, 0.08)  # badly imbalanced
-fake_cp2 <- checkpoint_balance(fake_diag, max_smd = 0.10,
-                                lock_hash = lock$lock_hash)
-cat(sprintf("Fake CP2 decision: %s\n", fake_cp2$decision))
-cat(sprintf("Rationale: %s\n", fake_cp2$rationale))
-
-# gate_all() blocks when a STOP is present:
-fake_composite <- gate_all(cp1, fake_cp2, cp3, allow_flag = FALSE)
-cat(sprintf("\nComposite gate: %s\n", fake_composite$decision))
-cat(sprintf("Rationale: %s\n", fake_composite$rationale))
-```
-
-When the gate returns STOP, no outcome code should execute.
-`run_clean_tmle_primary()` enforces this automatically (it refuses to read
-the outcome unless the token authorises); in this modular workflow the
-guard is `assert_outcome_authorized(audit, lock = lock)`, which stamps the
-lock only on a passing gate, and the Stage 4 estimators then refuse an
-unauthorised lock. The `run_clean_tmle()` convenience wrapper is unguarded
-and does not perform this check.
-
-The most consequential STOP in this workflow usually comes from the
-DQ stress test rather than from balance. The block below shows a
-DQ-driven STOP: a candidate that passes the baseline plasmode but
-whose bias under a prespecified threat exceeds the locked envelope.
-Because `authorize_outcome_analysis(block_on_any_stop = TRUE)` honours
-any recorded STOP, this blocks the gate even though the DQ checkpoint
-is not a *required* stage.
-
-```{r dq-stop-demo}
-# A DQ checkpoint that breaches the locked bias envelope returns STOP.
-fake_cp_dq <- gate_dq(dq_results,
-                      candidate    = selected$candidate_id,
-                      max_abs_bias = 0.0001)  # deliberately strict
-cat(sprintf("Strict DQ gate: %s -- %s\n",
-            fake_cp_dq$decision, fake_cp_dq$rationale))
-
-audit_demo <- record_checkpoint(audit, fake_cp_dq)
-gate_demo  <- authorize_outcome_analysis(audit_demo)
-cat(sprintf("Authorization with DQ STOP recorded: %s\n",
-            gate_demo$decision))
-```
+Two refusals are built into estimation, and both are logged rather
+than silent. First, an estimand whose feasibility verdict meets the
+declared trigger is refused by `run_estimand_ladder()` unless an
+`override_reason` is supplied, and a supplied override becomes a
+design-log entry. Second, every estimate passes an implausibility
+guard against bounds the raw data impose (sign against a much larger
+crude difference, magnitude several times the crude contrast, implied
+arm risks outside the observed range), and a flagged row prints its
+reason. The refusal path is shown on the severe-overlap design at the
+top of this vignette; the guard column appears in every ladder result
+below.
 
 ---
 
@@ -1175,158 +1014,88 @@ can be called separately on each weight vector.
 
 ## Stage 4: Final comparative analysis
 
-Only after all preceding checkpoints pass do we access the real
-outcome and run the locked analysis.
+Only after the design review is complete do we access the real
+outcome and run the locked analysis. The declared route is the
+ladder itself: `run_estimand_ladder()` estimates the primary when it
+is feasible plus every feasible fallback, labels each row with its
+estimand and support verdict, and logs any switch or override.
 
-### Unadjusted benchmark
-
-```{r crude}
-crude <- run_crude_workflow(lock)
-cat(sprintf("Crude RD: %.4f (95%% CI: %.4f, %.4f)\n",
-            crude$estimate, crude$ci_lower, crude$ci_upper))
+```{r ladder-run}
+fit <- run_estimand_ladder(lock, ps_fit)
+print(fit)
 ```
 
-### PS matching
+On this well-supported design the ladder reduces to the declared
+primary plus labelled alternatives; the interesting behaviour, the
+refused ATE and the logged switch, appears on the severe-overlap
+design at the top of this vignette.
 
-```{r matching}
-match_fit <- run_match_workflow(lock, ps_fit)
-print(match_fit)
-```
+### One estimand through the front door
 
-### IPTW
+`estimate_effect()` estimates a single declared estimand, with the
+estimator family and the missing-outcome handling as arguments.
+`return_steps = TRUE` exposes the modular TMLE quartet for
+inspection: the treatment mechanism (fitted at Stage 2a without
+outcome access, with the locked truncation applied), the outcome
+mechanism (the first access to the real outcome), the targeting step
+that fluctuates the initial fit along the clever covariate
+$H(A,W) = A/g(W) - (1-A)/(1-g(W))$, and the extracted estimate with
+its influence-function SE.
 
-```{r iptw}
-iptw_fit <- run_iptw_workflow(lock, ps_fit)
-print(iptw_fit)
-```
-
-### TMLE in four steps (primary estimator)
-
-TMLE is the prespecified primary estimator, using the specification
-selected at Stage 2b and locked into the analysis lock.  The locked
-truncation threshold and learner libraries are applied automatically
-by the four TMLE functions; no manual specification is needed at
-this stage.
-
-The package separates the TMLE procedure into four explicit steps
-aligned with the outcome-blind stages:
-
-1. **Treatment mechanism** ($g$-model): estimated at Stage 2 without
-   outcome access.  The locked truncation is applied automatically.
-2. **Outcome mechanism** ($Q$-model): requires the real outcome and
-   therefore belongs to Stage 4.  The locked Q-library is used.
-3. **Targeting step**: fluctuates the initial outcome estimates using
-   the clever covariate $H(A,W) = A/g(W) - (1-A)/(1-g(W))$.
-4. **Estimate extraction**: computes the plug-in ATE, EIC-based SE,
-   and confidence interval.
-
-```{r tmle-g}
-# Step 1: treatment mechanism (re-uses Stage 2 PS)
-g_fit <- fit_tmle_treatment_mechanism(lock, ps_fit)
-```
-
-```{r tmle-Q}
-# Step 2: outcome mechanism (FIRST access to the real outcome)
-Q_fit <- fit_tmle_outcome_mechanism(lock, g_fit)
-```
-
-```{r tmle-target}
-# Step 3: targeting step
-tmle_upd <- run_tmle_targeting_step(g_fit, Q_fit)
-```
-
-```{r tmle-extract}
-# Step 4: extract final estimate
-tmle_fit <- extract_tmle_estimate(tmle_upd)
+```{r estimate-effect}
+tmle_fit <- estimate_effect(lock, ps_fit,
+  estimand = "ATE", estimator = "tmle", return_steps = TRUE)
 print(tmle_fit)
+names(tmle_fit$steps)
 ```
 
-```{r audit-stage4}
-audit <- record_stage(audit, "Stage 4",
-  sprintf("Primary TMLE estimate: %.4f", tmle_fit$estimates$ATE$estimate))
+### Comparators and sensitivity estimators through the same door
+
+The estimator families that a conventional analysis reports as
+context are arguments, not separate pipelines. Matching runs the ATT
+on the matched cohort; IPCW targets the full-cohort estimand under a
+missingness-at-random model rather than the complete-case subset.
+
+```{r comparators}
+crude_fit <- estimate_effect(lock, estimand = "ATE",
+                             estimator = "crude")
+iptw_fit  <- estimate_effect(lock, ps_fit, estimand = "ATE",
+                             estimator = "iptw")
+match_fit <- estimate_effect(lock, ps_fit, estimand = "matched_ATT")
+ipcw_fit  <- estimate_effect(lock, ps_fit, estimand = "ATE",
+                             estimator = "tmle", missing = "ipcw")
 ```
 
-### Matched-cohort TMLE
-
-`run_matched_tmle()` runs the full TMLE pipeline on a matched subset
-without creating a separate lock, addressing a common need in
-pharmacoepidemiology.
-
-```{r matched-tmle}
-# Extract matched row indices from the matching workflow.
-# run_match_workflow() preserves original rownames in matched_data.
-matched_idx <- as.integer(rownames(match_fit$matched_data))
-cat(sprintf("Matched observations: %d (of %d total)\n",
-            length(matched_idx), nrow(dat)))
-
-# Run TMLE on just the matched subset
-matched_tmle_fit <- run_matched_tmle(lock, ps_fit,
-  subset_idx = matched_idx)
-print(matched_tmle_fit)
-```
-
-### IPCW-weighted TMLE (missing-outcome sensitivity)
-
-When the outcome is missing for a non-trivial fraction of the
-analytic cohort and the analyst suspects the missingness mechanism
-is at-random rather than completely-at-random, `run_ipcw_tmle()`
-fits a SuperLearner response model
-$P(R = 1 \mid A, W)$, builds stabilised inverse-probability-of-
-censoring weights, and runs TMLE with the censoring weights so the
-ATE targets the full-cohort marginal estimand rather than the
-complete-case subset.
-
-```{r ipcw-tmle}
-ipcw_fit <- run_ipcw_tmle(lock, ps_fit)
-print(ipcw_fit)
-```
-
-The returned object is a `tmle_fit` and can be combined with the
-other estimators in [`summarize_cleanroom_results()`] or
-[`forest_plot()`] for a side-by-side comparison.
-
-### TMLE diagnostics
-
-```{r clever-covariate, fig.cap = "Clever covariate H(A,W) by treatment group."}
-clever_covariate_plot(ps_fit = ps_fit, lock = lock)
-```
-
-```{r ic-hist, fig.cap = "Efficient influence curve distribution."}
-ic_histogram(tmle_fit)
-```
-
-### Three-way balance comparison
-
-`compute_matched_smds()` and `love_plot_threeway()` show covariate
-balance under three adjustment strategies side by side:
-
-```{r threeway-love, fig.cap = "Unweighted, IPTW-weighted, and matched SMDs."}
-m_smds <- compute_matched_smds(dat, "treatment", lock$covariates,
-                                subset_idx = matched_idx)
-love_plot_threeway(diag, matched_smds = m_smds)
-```
-
-### Cross-estimator comparison
-
-```{r compare}
-all_fits <- list(
-  Crude    = list(estimate = crude$estimate, se = crude$se,
-                  ci_lower = crude$ci_lower, ci_upper = crude$ci_upper,
-                  p_value  = crude$p_value),
-  Matching = match_fit,
-  IPTW     = iptw_fit,
-  `TMLE (primary)` = tmle_fit
-)
-summary_tbl <- summarize_cleanroom_results(
-  list(Matching = match_fit, IPTW = iptw_fit, `TMLE (primary)` = tmle_fit)
-)
-summary_tbl
+```{r compare, fig.cap = "Cross-estimator comparison. TMLE is the locked primary; the others are labelled comparators, not interchangeable estimates of one parameter."}
+forest_plot(list(
+  `Crude`           = crude_fit,
+  `IPTW`            = iptw_fit,
+  `Matched ATT`     = match_fit,
+  `TMLE (primary)`  = tmle_fit,
+  `TMLE + IPCW`     = ipcw_fit
+))
 ```
 
 TMLE is the locked primary analysis; matching and IPTW serve as
-contextual comparators.
-Agreement across estimators increases confidence that the result is
-not an artefact of a single modelling strategy.
+contextual comparators. Agreement across estimators increases
+confidence that the result is not an artefact of a single modelling
+strategy, and disagreement between the matched and full-cohort rows
+is itself information about where the effect lives.
+
+### TMLE diagnostics
+
+`plot()` on a TMLE fit exposes the estimator's own diagnostics: the
+influence-curve distribution (whose heavy tails warn about unstable
+inference) and the clever covariate (whose extremes are the
+positivity strain made visible).
+
+```{r ic-hist, fig.cap = "Efficient influence curve distribution."}
+plot(tmle_fit, type = "ic")
+```
+
+```{r clever, fig.cap = "Clever covariate by treatment group."}
+plot(tmle_fit, type = "clever")
+```
 
 ---
 
@@ -1377,12 +1146,37 @@ time.
 ### Truncation sensitivity
 
 The prespecified sensitivity plan varies the PS truncation threshold
-to assess how much the IPTW estimate depends on extreme weights.
+to assess how much the weighted estimates depend on extreme weights.
+Truncation is an estimand-relevant choice, not only a numerical one,
+so each level is reported as its own labelled row rather than folded
+into a single number. `resolve_truncation_rule()` documents the
+default rule (the adaptive $5/(\sqrt{n}\,\log n)$ bound) and the
+fixed alternatives; a compact grid comes from calling
+`estimate_effect()` at each level.
 
 ```{r sensitivity-trunc}
-sens <- sensitivity_truncation(lock,
-  thresholds = c(0.01, 0.025, 0.05, 0.10))
+trunc_grid <- c(0.01, 0.025, 0.05)
+sens <- do.call(rbind, lapply(trunc_grid, function(tt) {
+  ps_t <- fit_ps(lock, method = "glm", truncate = tt)
+  f <- estimate_effect(lock, ps_t, estimand = "ATE",
+                       estimator = "iptw")
+  data.frame(truncation = tt, estimate = f$estimate,
+             ci_lower = f$ci_lower, ci_upper = f$ci_upper)
+}))
 print(sens, row.names = FALSE)
+```
+
+### Additive-bias delta sensitivity
+
+`run_delta_sensitivity()` shifts a point estimate by a prespecified
+grid of additive biases and reports where the confidence interval
+crosses the null, including the g-value, the smallest additive bias
+that would move the interval across zero.
+
+```{r delta-sens}
+ate <- tmle_fit$estimates$ATE
+delta <- run_delta_sensitivity(ate$estimate, ate$se)
+head(delta)
 ```
 
 ### E-value
@@ -1407,49 +1201,27 @@ cat(sprintf("E-value: %.2f (CI bound: %.2f)\n", ev["e_value"], ev["e_value_ci"])
 
 ---
 
-## Audit trail and reproducibility
+## The design log and reproducibility
 
-The audit log documents every stage decision, its timestamp, and
-the lock hash, providing a traceable record of the analytic path.
+The design log lives on the lock and accumulates one timestamped row
+per recorded decision: the ladder declarations, any re-declaration
+with a selected candidate, estimand switches with their triggering
+verdict, and overrides with their reasons. Because it rides inside
+the lock, `save_lock()` archives the decision record with the
+specification it governed, and the estimation results carry their own
+copy of the entries the run generated.
 
-```{r audit-trail}
-print(audit)
+```{r design-log}
+knitr::kable(lock$design_log,
+             caption = "Design log for the staged analysis.")
 ```
 
-```{r audit-df}
-trail_df <- export_audit_trail(audit)
-knitr::kable(trail_df, caption = "Audit trail for the staged analysis.")
-```
-
-### Decision log
-
-The decision log collects the rationale behind key analytic choices
-made throughout the staged workflow.
-`export_decision_log()` returns these entries as a data frame suitable
-for archival or tabular display.
-
-```{r decision-log}
-dlog_df <- export_decision_log(audit)
-knitr::kable(dlog_df, caption = "Decision log for the staged analysis.")
-```
-
-A structured decision-log entry recording the Stage 2c outcome and an
-on-disk export looks like this:
-
-```{r decision-log-example, eval = FALSE}
-audit <- init_decision_log(lock)
-audit <- log_decision_entry(audit,
-  stage     = "Stage 2c",
-  diagnostic = "DQ stress test minimax",
-  criterion  = "All candidates within bias/coverage thresholds across severities",
-  decision   = "GO",
-  rationale  = "Minimax candidate glm_t01 selected; full-cohort plasmode confirms.",
-  reviewer   = "lead_analyst",
-  y_visible  = FALSE,
-  action     = "Lock glm_t01 as primary; record DQ summary in dossier."
-)
-export_decision_log(audit, "decision_log.csv")
-```
+An external reviewer reconciles three artefacts: the lock (whose hash
+fingerprints the data shape, variable roles, and seed), the design
+log (what was declared and decided, and when), and the labelled
+estimation output (what ran, under which verdicts, with which flags).
+The reviewer never needs the analyst's recollection of which choice
+was made when.
 
 ---
 
@@ -1459,50 +1231,50 @@ The worked example illustrates the canonical stages:
 
 1. **Stage 0**: feasibility, target-trial specification, and
    protocol / SAP drafting (precondition, external to the package).
-2. **Stage 1a**: lock the estimand, covariates, learners,
-   candidate grid, and decision thresholds.
-3. **Stage 1b**: cohort adequacy and marginal event support
-   (Check Point 1, with design-precision diagnostics).
-4. **Stage 2a**: propensity score, balance, overlap, ESS, and
-   design diagnostics (Check Point 2).
-5. **Stage 2b**: baseline plasmode candidate selection using the
-   prespecified rule.
-6. **Stage 2c**: plasmode DQ stress testing on the locked
-   severity ranges from the fit-for-purpose review.
-7. **Stage 3 (optional)**: negative-control outcome checks.
-8. **Pre-outcome decision**: GO (proceed),
-   FLAG (proceed-with-qualification), or STOP (do-not-run), based
-   on the recorded checkpoint results.
-9. **Stage 4**: authorized primary outcome analysis on the
-   unmasked data.
-10. **Post-outcome**: sensitivity analyses, interpretation, and
-    archived analysis record (analysis specification, audit trail,
-    and decision log).
-
-The package includes additional functions used along the way:
-`sanitize_covariates()` for covariate preparation,
-`run_negative_control_tmle()` for residual-bias screening, the
-composite `gate_all()` for evaluating checkpoint objects together,
-`run_matched_tmle()` and the four-step TMLE pipeline for the final
-analysis, `compute_evalue()` and `sensitivity_truncation()` for
-sensitivity analyses, and `run_plasmode_dq_stress()` with
-`summarize_dq_degradation()` for studies that want to combine
-candidate selection with a quantitative pre-outcome stress test.
+2. **Stage 1a**: lock the specification (`create_analysis_lock()`)
+   and declare the estimand ladder
+   (`declare_estimand_ladder()`).
+3. **Stage 1b**: cohort adequacy, design precision, and marginal
+   event support (`estimate_design_precision()`).
+4. **Stage 2a**: propensity fit (`fit_ps()`), the graded support
+   assessment (`assess_support()`), per-estimand feasibility
+   (`estimand_feasibility()`), and balance (`love_plot()`).
+5. **Stage 2b**: the outcome-blind support map
+   (`simulate_support()`) and plasmode candidate selection
+   (`run_plasmode_feasibility()`, `select_tmle_candidate()`).
+6. **Stage 2c**: plasmode DQ stress testing
+   (`run_plasmode_dq_stress()`) on the locked severity ranges from
+   the fit-for-purpose review.
+7. **Stage 3 (optional)**: negative controls across cohort
+   restrictions (`run_negative_control_ladder()`) and the
+   care-process collider check (`check_process_indicators()`).
+8. **Pre-outcome decision**: the assembled dossier and
+   recommendation (`design_report()`), in the vocabulary of Muntner
+   et al. (2024): proceed, proceed with qualification, or stop.
+9. **Stage 4**: estimation of the declared primary and feasible
+   fallbacks (`run_estimand_ladder()`, `estimate_effect()`).
+10. **Post-outcome**: sensitivity analyses (`compute_evalue()`,
+    `run_delta_sensitivity()`), interpretation, and the archived
+    record (the lock with its design log, and the labelled
+    estimates).
 
 ### Integration with real-world pipelines
 
-The package now supports common production patterns:
+The package supports common production patterns:
 
-- **External PS**: `wrap_ps_fit()` wraps PS from parallel SuperLearner,
-  Bayesian models, or external software into a compatible `ps_fit`.
-- **Parallel SuperLearner**: `fit_ps_parallel()` accepts a PSOCK cluster.
-- **File-based pipelines**: `save_lock()` / `load_lock()` and
-  `save_audit()` / `load_audit()` handle RDS serialisation with
-  automatic hash re-validation.
-- **YAML config**: `create_analysis_lock_from_yaml()` reads analytic
-  specifications from a YAML configuration file.
-- **Matched-cohort TMLE**: `run_matched_tmle()` runs TMLE on a subset
-  without creating a separate lock.
+- **External PS**: `fit_ps(method = "external", scores = ...)` wraps
+  scores from parallel SuperLearner, Bayesian models, or external
+  software into a compatible `ps_fit`.
+- **File-based pipelines**: `save_lock()` / `load_lock()` handle RDS
+  serialisation with automatic hash re-validation, and the design log
+  travels inside the lock.
+- **Multi-arm studies**: `create_contrast_locks()` builds one lock
+  per prespecified pairwise contrast on a shared cohort, each with
+  its own support assessment, ladder, and design report.
+- **Institutional enforcement**: locks created with `enforce = TRUE`
+  withhold estimation until a recorded design review, for settings
+  that want the two-pass discipline enforced in software; outcome
+  masking is available to every lock.
 
 The package does not enforce institutional governance (role separation,
 independent review boards, blinded data managers); those are
