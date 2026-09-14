@@ -17,3 +17,4 @@ or \code{NULL}.
 Extracts the primary TMLE candidate specification from the lock.
 Returns \code{NULL} if no specification has been locked.
 }
+\keyword{internal}

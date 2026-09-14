@@ -20,3 +20,4 @@ A numeric vector of weights.
 Extract the IPW weights from a fitted result object for manual
 inspection or downstream analysis.
 }
+\keyword{internal}

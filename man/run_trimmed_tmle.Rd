@@ -69,3 +69,4 @@ produced either arm, and every row is labelled with that population.
 Crump RK, Hotz VJ, Imbens GW, Mitnik OA (2009) Biometrika
 96:187-199.
 }
+\keyword{internal}

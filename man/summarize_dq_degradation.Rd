@@ -4,15 +4,23 @@
 \alias{summarize_dq_degradation}
 \title{Summarise DQ Stress Test as a Degradation Table}
 \usage{
-summarize_dq_degradation(dq_results)
+summarize_dq_degradation(dq_results, selected = NULL)
 }
 \arguments{
 \item{dq_results}{A \code{plasmode_dq_results} object.}
+
+\item{selected}{Optional candidate id to flag in a \code{selected} column.}
 }
 \value{
-A data.frame with relative degradation metrics.
+A data.frame with relative degradation metrics for every
+candidate.
 }
 \description{
 Computes the relative change in bias, RMSE, and coverage versus the
 baseline (no degradation) for each DQ scenario, level, and candidate.
+Reached as \code{summary()} on a \code{plasmode_dq_results} object. Every
+candidate is always reported; when \code{selected} names a candidate, a
+logical \code{selected} column flags its rows so tables can mark the
+locked candidate without dropping the others.
 }
+\keyword{internal}

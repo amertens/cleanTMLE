@@ -10,6 +10,8 @@ design_report(
   feasibility,
   simulation = NULL,
   nc_ladder = NULL,
+  dq = NULL,
+  protocol = NULL,
   extra = NULL
 )
 }
@@ -17,13 +19,23 @@ design_report(
 \item{lock}{A \code{cleanroom_lock}, ideally after
 \code{\link[=declare_estimand_ladder]{declare_estimand_ladder()}}.}
 
-\item{support}{An \code{\link[=assess_support]{assess_support()}} result.}
+\item{support}{An \code{\link[=assess_support]{assess_support()}} result. Its per-patient
+propensity and treatment vectors are removed before storage: the
+review team receives summary statistics only, and the report
+carries no individual-level rows or vectors.}
 
 \item{feasibility}{An \code{\link[=estimand_feasibility]{estimand_feasibility()}} result.}
 
 \item{simulation}{Optional \code{\link[=simulate_support]{simulate_support()}} result.}
 
-\item{nc_ladder}{Optional \code{\link[=run_negative_control_ladder]{run_negative_control_ladder()}} result.}
+\item{nc_ladder}{Optional \code{\link[=run_negative_control_ladder]{run_negative_control_ladder()}} result;
+when it carries the locked-criteria verdict, that verdict enters
+the recommendation.}
+
+\item{dq}{Optional \code{\link[=run_plasmode_dq_stress]{run_plasmode_dq_stress()}} result; when it carries
+the locked-threshold verdict, that verdict enters the
+recommendation (for the locked candidate when one is on the lock,
+else the worst candidate).}
 
 \item{extra}{Optional named list of additional design-stage objects to
 carry (for example a \code{\link[=check_process_indicators]{check_process_indicators()}} table).}

@@ -72,3 +72,4 @@ audit <- record_checkpoint(audit, cp_dq)
 gate  <- gate_all(cp1, cp2, cp_dq, cp3, allow_flag = TRUE)
 }
 }
+\keyword{internal}

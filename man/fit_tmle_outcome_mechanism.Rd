@@ -44,3 +44,4 @@ used by default.
  Stage 4 (accesses the real outcome).
 }
 
+\keyword{internal}

@@ -10,7 +10,8 @@ declare_estimand_ladder(
   fallbacks = c("trimmed_ATE", "ATT", "ATO"),
   trigger = c("SEVERE", "FAIL", "FLAG"),
   evalue_floor = NULL,
-  bias_to_null_floor = NULL
+  bias_to_null_floor = NULL,
+  candidate = NULL
 )
 }
 \arguments{

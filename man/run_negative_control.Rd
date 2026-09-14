@@ -39,3 +39,4 @@ nc_result <- run_negative_control(lock, "nc_outcome", ps)
 print(nc_result)
 
 }
+\keyword{internal}

@@ -24,3 +24,4 @@ Modified \code{cleantmle_audit}.
 \description{
 Appends a timestamped entry to the audit log.
 }
+\keyword{internal}

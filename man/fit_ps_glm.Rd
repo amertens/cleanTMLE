@@ -32,3 +32,4 @@ ps_fit <- fit_ps_glm(lock)
 print(ps_fit)
 
 }
+\keyword{internal}

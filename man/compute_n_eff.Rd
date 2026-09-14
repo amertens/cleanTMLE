@@ -34,3 +34,4 @@ compute_n_eff(y, family = "binomial")
 Phillips RV, et al. (2023) Practical considerations
 for specifying a super learner. \emph{Statistics in Medicine}.
 }
+\keyword{internal}

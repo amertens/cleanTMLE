@@ -31,3 +31,4 @@ checkpoint / gate expects, so a single prespecified
 \code{cleantmle_thresholds} object drives every step:
 \code{do.call(checkpoint_balance, c(list(ps_diag), dt_balance(dt)))}.
 }
+\keyword{internal}

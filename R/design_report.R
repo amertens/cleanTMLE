@@ -16,10 +16,19 @@
 #'
 #' @param lock A `cleanroom_lock`, ideally after
 #'   [declare_estimand_ladder()].
-#' @param support An [assess_support()] result.
+#' @param support An [assess_support()] result. Its per-patient
+#'   propensity and treatment vectors are removed before storage: the
+#'   review team receives summary statistics only, and the report
+#'   carries no individual-level rows or vectors.
 #' @param feasibility An [estimand_feasibility()] result.
 #' @param simulation Optional [simulate_support()] result.
-#' @param nc_ladder Optional [run_negative_control_ladder()] result.
+#' @param nc_ladder Optional [run_negative_control_ladder()] result;
+#'   when it carries the locked-criteria verdict, that verdict enters
+#'   the recommendation.
+#' @param dq Optional [run_plasmode_dq_stress()] result; when it carries
+#'   the locked-threshold verdict, that verdict enters the
+#'   recommendation (for the locked candidate when one is on the lock,
+#'   else the worst candidate).
 #' @param extra Optional named list of additional design-stage objects to
 #'   carry (for example a [check_process_indicators()] table).
 #' @return An object of class `design_report` with a `recommendation`
@@ -31,6 +40,7 @@
 #' @export
 design_report <- function(lock, support, feasibility,
                           simulation = NULL, nc_ladder = NULL,
+                          dq = NULL,
                           protocol = NULL,
                           extra = NULL) {
   if (!inherits(lock, "cleanroom_lock"))
@@ -40,6 +50,12 @@ design_report <- function(lock, support, feasibility,
   if (!inherits(feasibility, "estimand_feasibility"))
     stop("`feasibility` must come from estimand_feasibility().",
          call. = FALSE)
+  if (!is.null(dq) && !inherits(dq, "plasmode_dq_results"))
+    stop("`dq` must come from run_plasmode_dq_stress().", call. = FALSE)
+  # The review team receives summaries only: drop the per-patient
+  # propensity and treatment vectors that assess_support() keeps for its
+  # own plot method (plot the original support object instead).
+  support <- .strip_individual_vectors(support)
   ladder <- lock$estimand_ladder
 
   feas <- feasibility$table
@@ -55,17 +71,50 @@ design_report <- function(lock, support, feasibility,
   } else NA
 
   nc_msg <- if (!is.null(nc_ladder)) {
-    flagged_full <- with(nc_ladder$table,
-      sum(flagged & cohort == "full cohort", na.rm = TRUE))
-    if (length(nc_ladder$turned_null)) {
+    if (!is.null(nc_ladder$verdict)) {
+      br <- nc_ladder$verdict$by_rung
+      final <- br$verdict[nrow(br)]
+      sprintf("Check Point 3 under the locked criteria: %s on the most restricted rung (%s).",
+              final, paste(sprintf("%s: %s", br$cohort, br$verdict),
+                           collapse = "; "))
+    } else if (length(nc_ladder$turned_null)) {
       paste0(length(nc_ladder$turned_null),
              " control(s) fail on the full cohort and turn null after ",
-             "restriction; the restriction is doing the work.")
-    } else if (flagged_full > 0) {
-      paste0(flagged_full, " control(s) flagged and not resolved by any ",
-             "declared restriction; investigate before unblinding.")
-    } else "All controls null on every rung."
+             "restriction; the restriction is doing the work. ",
+             "(No nc_criteria locked; no verdict.)")
+    } else {
+      flagged_full <- with(nc_ladder$table,
+        sum(flagged & cohort == "full cohort", na.rm = TRUE))
+      if (flagged_full > 0)
+        paste0(flagged_full, " control(s) flagged and not resolved by any ",
+               "declared restriction; investigate before unblinding. ",
+               "(No nc_criteria locked; no verdict.)")
+      else "All controls null on every rung. (No nc_criteria locked; no verdict.)"
+    }
   } else NULL
+
+  # Locked DQ reading, when supplied: the locked candidate's verdict if
+  # one is on the lock, else the worst verdict across candidates.
+  dq_reading <- NULL
+  dq_verdict <- NA_character_
+  if (!is.null(dq) && !is.null(dq$verdict)) {
+    v <- dq$verdict
+    cand <- lock$primary_tmle_spec$candidate_id
+    row <- if (!is.null(cand) && cand %in% v$candidate)
+      v[v$candidate == cand, , drop = FALSE]
+    else v[order(match(v$verdict, c("STOP", "FLAG", "GO")))[1], ,
+           drop = FALSE]
+    dq_verdict <- row$verdict[1]
+    tip <- dq$tipping[dq$tipping$candidate == row$candidate[1] &
+                        dq$tipping$scenario == "unmeasured_U", , drop = FALSE]
+    tip_txt <- if (nrow(tip) && !is.na(tip$tipping_or[1]))
+      sprintf(" Unmeasured-confounding tipping point: OR %.1f.",
+              tip$tipping_or[1]) else ""
+    dq_reading <- sprintf(
+      "DQ stress under the locked thresholds: %s for candidate %s (worst |bias| %.4f, worst coverage %.2f).%s",
+      dq_verdict, row$candidate[1], row$worst_abs_bias[1],
+      row$worst_coverage[1], tip_txt)
+  }
 
   recommendation <- if (is.na(primary)) {
     "No estimand ladder declared; declare one before outcome access."
@@ -84,16 +133,28 @@ design_report <- function(lock, support, feasibility,
             if (length(fb)) paste(fb, collapse = ", then ") else
               "no feasible fallback; the comparison is inestimable")
   }
+  if (!is.null(dq_reading)) {
+    recommendation <- paste(recommendation, dq_reading)
+    if (identical(dq_verdict, "STOP"))
+      recommendation <- paste(recommendation,
+        "The locked DQ thresholds are breached inside the declared threat grid; do not proceed to the primary analysis as planned without a documented review.")
+  }
+  if (!is.null(nc_msg) && grepl("^Check Point 3", nc_msg))
+    recommendation <- paste(recommendation, nc_msg)
 
   out <- list(
     lock_hash = lock$lock_hash,
     contrast = lock$contrast,
+    roles = lock$roles,
     ladder = ladder,
     support = support,
     feasibility = feasibility,
     simulation = simulation,
     nc_ladder = nc_ladder,
     nc_reading = nc_msg,
+    dq_verdict = if (!is.null(dq)) dq$verdict else NULL,
+    dq_tipping = if (!is.null(dq)) dq$tipping else NULL,
+    dq_reading = dq_reading,
     design_log = lock$design_log,
     feasible_estimands = feasible_estimands,
     primary_supported = primary_ok,
@@ -104,6 +165,17 @@ design_report <- function(lock, support, feasibility,
   )
   class(out) <- "design_report"
   out
+}
+
+
+# The review team receives summary statistics only: remove the
+# per-patient vectors a support_assessment carries for its plot method.
+#' @keywords internal
+.strip_individual_vectors <- function(support) {
+  support$g <- NULL
+  support$A <- NULL
+  support$individual_vectors_removed <- TRUE
+  support
 }
 
 #' Protocol-Versus-Emulation Table from a Lock
@@ -169,6 +241,11 @@ emulation_table <- function(lock, protocol = NULL) {
 #' @export
 print.design_report <- function(x, ...) {
   cat("Design report (pre-outcome)\n")
+  if (!is.null(x$roles)) {
+    cat("  Roles:    ",
+        paste(sprintf("%s: %s", names(x$roles), unlist(x$roles)),
+              collapse = "; "), "\n", sep = "")
+  }
   if (!is.null(x$contrast))
     cat("  Contrast: ", x$contrast$label, "\n", sep = "")
   s <- x$support$summary
@@ -194,6 +271,8 @@ print.design_report <- function(x, ...) {
   }
   if (!is.null(x$nc_reading)) cat("  Negative controls: ", x$nc_reading,
                                   "\n", sep = "")
+  if (!is.null(x$dq_reading)) cat("  DQ stress: ", x$dq_reading, "\n",
+                                  sep = "")
   cat("\n  ", x$recommendation, "\n", sep = "")
   invisible(x)
 }

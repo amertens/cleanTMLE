@@ -6,7 +6,8 @@
 \usage{
 build_sl_library(
   role = c("Q", "g", "Delta"),
-  n_eff,
+  n_eff = NULL,
+  y = NULL,
   p = NULL,
   preset = c("auto", "small_n", "default", "rich", "very_rich", "rwe_wide"),
   include_screeners = FALSE

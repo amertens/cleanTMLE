@@ -19,3 +19,4 @@ A \code{ggplot2} object.
 Plots a histogram of the efficient influence curve (EIC) values from
 a fitted TMLE object.
 }
+\keyword{internal}

@@ -78,7 +78,13 @@
 # Deterministic given the RNG state (treated units are visited in a random
 # order); returns index vectors into the original rows.
 #' @keywords internal
-.greedy_caliper_match <- function(g, A, caliper_sd = 0.2) {
+.greedy_caliper_match <- function(g, A, caliper_sd = 0.2,
+                                  order = c("random", "sorted")) {
+  # `order` controls the greedy pass over treated units: "random" (the
+  # estimator paths, under a caller-controlled seed) or "sorted"
+  # (deterministic, hardest-to-match first by descending logit; used by
+  # the design diagnostics so they need no RNG state at all).
+  order <- match.arg(order)
   lp <- stats::qlogis(pmin(pmax(g, 1e-6), 1 - 1e-6))
   cal <- caliper_sd * stats::sd(lp)
   tr <- which(A == 1); ct <- which(A == 0)
@@ -86,7 +92,8 @@
     return(list(treated = integer(0), control = integer(0)))
   used <- rep(FALSE, length(ct))
   m_t <- integer(0); m_c <- integer(0)
-  for (i in sample(tr)) {
+  tr_seq <- if (order == "sorted") tr[base::order(-lp[tr])] else sample(tr)
+  for (i in tr_seq) {
     d <- abs(lp[ct] - lp[i]); d[used] <- Inf
     j <- which.min(d)
     if (is.finite(d[j]) && d[j] <= cal) {

@@ -28,3 +28,4 @@ user-supplied list of interpretable variables, overall and by arm, so the
 study team can see who a trimmed analysis is no longer about. Trimming
 changes the estimand; this profile is what makes the change concrete.
 }
+\keyword{internal}

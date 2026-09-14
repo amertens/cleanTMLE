@@ -2,7 +2,7 @@
 % Please edit documentation in R/stages.R
 \name{summarize_event_support}
 \alias{summarize_event_support}
-\title{Summarise Event Support by Treatment Arm}
+\title{Summarise Marginal Event Support}
 \usage{
 summarize_event_support(lock)
 }
@@ -10,15 +10,19 @@ summarize_event_support(lock)
 \item{lock}{A \code{cleanroom_lock}.}
 }
 \value{
-A data.frame with columns \code{arm}, \code{n},
-\code{events}, and \code{event_rate}.
+A one-row data.frame with columns \code{n}, \code{events},
+and \code{event_rate} (all marginal).
 }
 \description{
-Returns a data frame with event counts and rates per arm, and prints
-a warning if any arm has fewer than 10 events (sparse-event flag).
+Returns a one-row data frame with the total sample size, the marginal
+event count, and the marginal event rate. Nothing here conditions the
+outcome on the treatment arm: arm-specific counts are the crude
+treatment-outcome association and are available only through
+\code{\link[=event_support_by_arm]{event_support_by_arm()}}, which requires a recorded reason.
 }
 \section{Clean-room stage}{
- Stage 1b (design diagnostics).
+ Stage 1b (design diagnostics; marginal
+outcome only).
 }
 
 \examples{
@@ -28,3 +32,4 @@ lock <- create_analysis_lock(dat, "treatment", "event_24",
 summarize_event_support(lock)
 
 }
+\keyword{internal}

@@ -68,7 +68,7 @@ Eight terms that appear repeatedly in this vignette and in the targeted-learning
 - **Clever covariate.** The specific function of the propensity score that TMLE uses in step 3. You do not have to compute it by hand; `run_clean_tmle()` does it.
 - **EIC (efficient influence curve) variance.** The standard-error formula TMLE uses. Interpretable as a regular Wald-type SE under standard regularity conditions.
 
-Two more terms come up in the second half of the vignette: **plasmode simulation** (a simulation that keeps the real covariate and treatment structure but generates a synthetic outcome with a known truth) and **IPCW** (inverse-probability-of-censoring weighting, used to handle missing outcomes).
+Two more terms come up in the second half of the vignette: **plasmode simulation** (a simulation that keeps the real covariate and treatment structure but generates a simulated outcome with a known truth) and **IPCW** (inverse-probability-of-censoring weighting, used to handle missing outcomes).
 
 ## The plain workflow: four estimators on one figure
 
@@ -243,7 +243,7 @@ estimand_feasibility(ps_s)
 outside the band (its `$unsupported` table), which is what trimming would
 remove; trimming changes the estimand and the profile is what makes the
 change concrete. `simulate_support()` asks the
-dynamic version of the question, generating synthetic outcomes over a
+dynamic version of the question, generating simulated outcomes over a
 prespecified family of surfaces and reporting, per estimand, where its
 estimator stays within a bias tolerance at near-nominal coverage. Estimation
 then runs the declared ladder, labels every row with its estimand and
@@ -286,7 +286,7 @@ In this manuscript and vignette, *outcome-blind* means that
 decisions about cohort construction, candidate estimators,
 simulation scenarios, decision thresholds, and primary-estimator
 selection are made without inspecting the observed
-treatment-outcome association. Synthetic outcomes generated for
+treatment-outcome association. Simulated outcomes generated for
 plasmode simulations may be used; the marginal mean of the
 observed outcome on covariates is also used internally to fit the
 plasmode generator. The *pre-outcome decision point* is the
@@ -405,7 +405,7 @@ small number of inter-related reasons:
   outcome association.
 - The candidate grid is enumerable: different libraries and
   truncation rules define distinct candidates that can be
-  screened on synthetic outcomes before authorisation.
+  screened on simulated outcomes before authorisation.
 - Inference is based on the efficient influence function, which
   provides a transparent variance estimate compatible with the
   diagnostics computed at earlier stages.
@@ -415,7 +415,7 @@ small number of inter-related reasons:
 | Diagnostic | Question answered | What it does not answer |
 |---|---|---|
 | PS / overlap / balance / ESS | Empirical design feasibility | Operating characteristics of any specific TMLE candidate |
-| Baseline plasmode | Estimator behaviour under a locked synthetic outcome model | Behaviour under the realised outcome process |
+| Baseline plasmode | Estimator behaviour under a locked simulated outcome model | Behaviour under the realised outcome process |
 | DQ stress testing | Stability under prespecified fit-for-purpose threats | True bias magnitude under unobserved threats |
 | Negative-control outcomes | Residual bias through a different channel | Primary-estimator behaviour under stress |
 | Post-outcome sensitivity | Robustness to deviations after unblinding | Pre-outcome decisions |
@@ -592,11 +592,14 @@ Before any modelling, we confirm that the cohort has adequate size,
 event counts, and precision to support the planned analysis. If it
 does not, the analysis stops here, before any comparative outcome
 modelling begins. `estimate_design_precision()` reads only marginal
-event counts (never the treatment-outcome association): it reports the
-minimum detectable difference (MDD) given the locked sample and event
-counts, compares it against a target when one is supplied, and its
-`$event_support` element tabulates events by arm so sparse cells are
-visible.
+outcome summaries (the total event count and the marginal rate, never
+the treatment-outcome association): it reports the minimum detectable
+difference (MDD) given the locked sample and marginal event count and
+compares it against a target when one is supplied. Arm-specific event
+counts are the crude association; when a data manager needs them (for
+example to check sparse cells), `event_support_by_arm(lock, reason =
+...)` provides them behind a mandatory reason, a warning, and a
+design-log entry recording the access.
 
 ```{r design-precision}
 dp <- estimate_design_precision(lock, target_mdd = 0.05)
@@ -697,7 +700,7 @@ specifications* on plasmode-simulated data.
 Each candidate varies the propensity-score truncation threshold and/or
 the SuperLearner library used for nuisance estimation.
 Plasmode simulation preserves the real covariate distribution and
-treatment mechanism but generates synthetic outcomes with a known true
+treatment mechanism but generates simulated outcomes with a known true
 effect, allowing us to evaluate bias, RMSE, and coverage for each
 candidate specification.
 
@@ -791,7 +794,7 @@ post-outcome QBA. The intended sequence is:
 1. Fit-for-purpose review identifies plausible threats.
 2. Threats are translated into quantitative severity ranges.
 3. Severity ranges are locked before primary outcome access.
-4. Synthetic outcomes are generated and perturbed.
+4. Simulated outcomes are generated and perturbed.
 5. Candidates are evaluated using the same metrics as baseline
    plasmode selection.
 6. The same GO / FLAG / STOP rule is applied.
@@ -944,7 +947,7 @@ The support map is the outcome-blind simulation described in
 *Deciding the estimand before outcomes* at the top of this vignette:
 `simulate_support()` resamples the covariates, redraws treatment from
 the fitted propensity (the generate-treatment plasmode design), and
-generates synthetic outcomes over a prespecified surface family, so
+generates simulated outcomes over a prespecified surface family, so
 each estimand's estimator is scored where the truth is known. A small
 run makes the report complete here; use far more replicates in
 practice.

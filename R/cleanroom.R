@@ -82,12 +82,15 @@ NULL
 #' @section What is fingerprinted in the lock hash:
 #' The \code{lock_hash} is a sha256 digest (via \pkg{digest}; with a
 #' clearly-labelled non-cryptographic checksum fallback) computed over the
-#' treatment name, outcome name, sorted covariate vector, SuperLearner library,
-#' integer seed, and the row count, column count, and sorted column names of
-#' \code{data}. Changing any of these fields (estimand variables, covariate
-#' set, candidate-grid library, severity ranges that re-enter as part of the
-#' lock metadata, decision thresholds bound into the candidate selection
-#' rule) invalidates the hash.
+#' treatment name, outcome name, sorted covariate vector, SuperLearner
+#' library, integer seed, the row count, column count, and sorted column
+#' names of \code{data}, a content digest of every column of \code{data}
+#' except the outcome column (so swapping design-data values is
+#' detectable, while masking or unmasking the outcome leaves the
+#' fingerprint unchanged and the fingerprint commits to nothing about
+#' the outcome), the plasmode generator mode (\code{dgp_mode}), and the
+#' declared \code{nc_criteria} and \code{dq_thresholds}. Changing any of
+#' these invalidates the hash.
 #'
 #' @section What does NOT invalidate the lock:
 #' Audit-log entries, decision-log entries, recorded checkpoint objects, and
@@ -97,7 +100,7 @@ NULL
 #'
 #' @section Outcome-access taxonomy:
 #' The workflow distinguishes pre-outcome access (no Y, marginal Y summaries
-#' used only for design-stage precision, synthetic Y from plasmode simulation,
+#' used only for design-stage precision, simulated Y from plasmode simulation,
 #' and negative-control Y) from post-outcome access (primary Y). Stage 4
 #' functions check \code{lock$.outcome_masked} via the internal outcome guard
 #' and refuse to run on the primary Y until the gate authorises it or the
@@ -142,6 +145,33 @@ NULL
 #' @param enforce Logical; if `TRUE`, the lock additionally requires a
 #'   recorded pre-outcome authorisation before Stage 4 estimators run (the
 #'   software-enforced two-pass contract). Default `FALSE`.
+#' @param dgp_mode Character; the plasmode outcome-generator mode, a
+#'   locked field read by [run_plasmode_feasibility()] and
+#'   [run_plasmode_dq_stress()]. `"hybrid"` (default) fits the
+#'   generator's baseline outcome model Q0(W) on the lock's real outcome
+#'   (covariate-only; the treatment-outcome association is never used);
+#'   `"external_pilot"` requires the caller to supply Q0 predictions
+#'   fitted on external pilot data, so the plasmode stage reads no real
+#'   outcome at all and runs on a masked lock.
+#' @param nc_criteria Optional prespecified negative-control decision
+#'   criteria, declared before outcome access and fingerprinted: a list
+#'   with `null_band` (positive half-width on the `scale`), and
+#'   optionally `scale` (`"rd"`, the default, or `"ratio"`), `rule`
+#'   (`"point_in_band"`, the default, or `"ci_in_band"`),
+#'   `min_per_domain` (default 1), and `consistency`
+#'   (`"all_within_band"`, the default, or `"majority_within_band"`).
+#'   Read by [run_negative_control_ladder()], which refuses to grade
+#'   controls without them.
+#' @param dq_thresholds Optional prespecified data-quality decision
+#'   thresholds, declared before outcome access and fingerprinted: a
+#'   list with `max_abs_bias`, `min_coverage`, `max_rmse_ratio`, and
+#'   optionally `flag_coverage` and `flag_rmse_ratio`. Read by
+#'   [run_plasmode_dq_stress()], whose verdict and tipping points are a
+#'   pure function of these thresholds and the declared threat grid.
+#' @param roles Optional named list or character vector recording the
+#'   personnel structure (for example `programmer`, `analyst`,
+#'   `analytic_advisor`, `review_team`). Recorded and printed in the
+#'   design report header; nothing is enforced.
 #'
 #' @return An object of class `cleanroom_lock` containing all specified
 #'   analysis parameters plus a reproducibility fingerprint (`lock_hash`).
@@ -165,7 +195,12 @@ create_analysis_lock <- function(data, treatment, outcome, covariates,
                                   cleanroom_enabled = TRUE,
                                   negative_controls = NULL,
                                   mask              = FALSE,
-                                  enforce           = FALSE) {
+                                  enforce           = FALSE,
+                                  dgp_mode          = c("hybrid",
+                                                        "external_pilot"),
+                                  nc_criteria       = NULL,
+                                  dq_thresholds     = NULL,
+                                  roles             = NULL) {
   if (!is.data.frame(data))
     stop("`data` must be a data.frame.", call. = FALSE)
   if (!is.character(treatment) || length(treatment) != 1L)
@@ -182,16 +217,25 @@ create_analysis_lock <- function(data, treatment, outcome, covariates,
   if (length(missing_cov) > 0L)
     stop("covariates not found in data: ",
          paste(missing_cov, collapse = ", "), call. = FALSE)
+  dgp_mode      <- match.arg(dgp_mode)
+  nc_criteria   <- .normalize_nc_criteria(nc_criteria)
+  dq_thresholds <- .normalize_dq_thresholds(dq_thresholds)
+  if (!is.null(roles) && is.null(names(roles)))
+    stop("`roles` must be a named list or character vector.", call. = FALSE)
 
   lock_hash <- .compute_lock_hash(list(
-    treatment  = treatment,
-    outcome    = outcome,
-    covariates = covariates,
-    sl_library = sl_library,
-    seed       = as.integer(seed),
-    data_nrow  = nrow(data),
-    data_ncol  = ncol(data),
-    data_names = paste(sort(names(data)), collapse = "|")
+    treatment     = treatment,
+    outcome       = outcome,
+    covariates    = covariates,
+    sl_library    = sl_library,
+    seed          = as.integer(seed),
+    data_nrow     = nrow(data),
+    data_ncol     = ncol(data),
+    data_names    = paste(sort(names(data)), collapse = "|"),
+    data_content  = .design_data_digest(data, outcome),
+    dgp_mode      = dgp_mode,
+    nc_criteria   = nc_criteria,
+    dq_thresholds = dq_thresholds
   ))
 
   lock <- list(
@@ -203,6 +247,10 @@ create_analysis_lock <- function(data, treatment, outcome, covariates,
     plasmode_reps     = as.integer(plasmode_reps),
     seed              = as.integer(seed),
     cleanroom_enabled = isTRUE(cleanroom_enabled),
+    dgp_mode          = dgp_mode,
+    nc_criteria       = nc_criteria,
+    dq_thresholds     = dq_thresholds,
+    roles             = roles,
     locked_at         = Sys.time(),
     lock_hash         = lock_hash
   )
@@ -212,6 +260,77 @@ create_analysis_lock <- function(data, treatment, outcome, covariates,
     for (nc in negative_controls) lock <- define_negative_control(lock, nc)
   if (isTRUE(mask)) lock <- mask_outcome(lock)
   lock
+}
+
+
+# Content digest of the design data: every column of `data` except the
+# outcome column, in sorted column order. The outcome is excluded so the
+# fingerprint commits to nothing about outcome values: masking, unmasking,
+# or permuting the outcome leaves it unchanged, while any edit to
+# covariates, treatment, missingness indicators, or negative-control
+# columns invalidates it.
+#' @keywords internal
+.design_data_digest <- function(data, outcome) {
+  design_cols <- sort(setdiff(names(data), outcome))
+  .compute_lock_hash(data[design_cols])
+}
+
+# Normalise (and validate) the prespecified negative-control criteria.
+#' @keywords internal
+.normalize_nc_criteria <- function(x) {
+  if (is.null(x)) return(NULL)
+  if (!is.list(x) || is.null(x$null_band) || !is.numeric(x$null_band) ||
+      length(x$null_band) != 1L || x$null_band <= 0)
+    stop("`nc_criteria` must be a list with a positive `null_band` ",
+         "half-width (plus optional scale, rule, min_per_domain, ",
+         "consistency).", call. = FALSE)
+  if (!is.null(x$scale) && !identical(x$scale, "rd"))
+    stop("`nc_criteria$scale` supports only \"rd\" for now: the ",
+         "negative-control ladder reports risk differences. Declare the ",
+         "band on the risk-difference scale.", call. = FALSE)
+  out <- list(
+    null_band      = as.numeric(x$null_band),
+    scale          = "rd",
+    rule           = match.arg(x$rule %||% "point_in_band",
+                               c("point_in_band", "ci_in_band")),
+    min_per_domain = as.integer(x$min_per_domain %||% 1L),
+    consistency    = match.arg(x$consistency %||% "all_within_band",
+                               c("all_within_band", "majority_within_band"))
+  )
+  if (out$min_per_domain < 1L)
+    stop("`nc_criteria$min_per_domain` must be at least 1.", call. = FALSE)
+  extra <- setdiff(names(x), names(out))
+  if (length(extra))
+    stop("Unknown nc_criteria field(s): ", paste(extra, collapse = ", "),
+         call. = FALSE)
+  out
+}
+
+# Normalise (and validate) the prespecified data-quality thresholds.
+#' @keywords internal
+.normalize_dq_thresholds <- function(x) {
+  if (is.null(x)) return(NULL)
+  need <- c("max_abs_bias", "min_coverage", "max_rmse_ratio")
+  if (!is.list(x) || !all(need %in% names(x)))
+    stop("`dq_thresholds` must be a list with max_abs_bias, min_coverage, ",
+         "and max_rmse_ratio (plus optional flag_coverage, ",
+         "flag_rmse_ratio).", call. = FALSE)
+  out <- list(
+    max_abs_bias    = as.numeric(x$max_abs_bias),
+    min_coverage    = as.numeric(x$min_coverage),
+    max_rmse_ratio  = as.numeric(x$max_rmse_ratio),
+    flag_coverage   = as.numeric(x$flag_coverage %||% NA_real_),
+    flag_rmse_ratio = as.numeric(x$flag_rmse_ratio %||% NA_real_)
+  )
+  if (out$max_abs_bias <= 0 || out$min_coverage <= 0 ||
+      out$min_coverage >= 1 || out$max_rmse_ratio <= 1)
+    stop("dq_thresholds out of range: need max_abs_bias > 0, ",
+         "0 < min_coverage < 1, max_rmse_ratio > 1.", call. = FALSE)
+  extra <- setdiff(names(x), names(out))
+  if (length(extra))
+    stop("Unknown dq_thresholds field(s): ", paste(extra, collapse = ", "),
+         call. = FALSE)
+  out
 }
 
 #' Create a Simple (Non-Clean-Room) Analysis Lock
@@ -278,8 +397,8 @@ create_simple_lock <- function(data, treatment, outcome, covariates,
 #' and [dt_nco()] extract the argument lists for each step.
 #'
 #' Centralising the thresholds addresses a gap in earlier versions: the
-#' decision rule — arguably the most outcome-relevant set of analyst
-#' choices — was passed ad hoc to each checkpoint and was not part of the
+#' decision rule, arguably the most outcome-relevant set of analyst
+#' choices, was passed ad hoc to each checkpoint and was not part of the
 #' lock fingerprint. With [attach_decision_thresholds()] the thresholds
 #' receive their own SHA-256 `thresholds_hash` recorded on the lock, so a
 #' reviewer can verify the decision rule was fixed before unblinding.
@@ -489,17 +608,40 @@ validate_analysis_lock <- function(lock) {
     stop("Lock is missing required fields: ",
          paste(missing_fields, collapse = ", "), call. = FALSE)
 
-  # Recompute and compare hash
-  computed_hash <- .compute_lock_hash(list(
-    treatment  = lock$treatment,
-    outcome    = lock$outcome,
-    covariates = lock$covariates,
-    sl_library = lock$sl_library,
-    seed       = as.integer(lock$seed),
-    data_nrow  = nrow(lock$data),
-    data_ncol  = ncol(lock$data),
-    data_names = paste(sort(names(lock$data)), collapse = "|")
-  ))
+  # Recompute and compare hash. The content digest covers every column
+  # except the outcome, so a masked lock validates against the hash
+  # computed at creation. Locks created before the content digest
+  # existed (no dgp_mode field) are checked against the legacy
+  # fingerprint so archived locks stay loadable.
+  if (is.null(lock$dgp_mode)) {
+    computed_hash <- .compute_lock_hash(list(
+      treatment  = lock$treatment,
+      outcome    = lock$outcome,
+      covariates = lock$covariates,
+      sl_library = lock$sl_library,
+      seed       = as.integer(lock$seed),
+      data_nrow  = nrow(lock$data),
+      data_ncol  = ncol(lock$data),
+      data_names = paste(sort(names(lock$data)), collapse = "|")
+    ))
+    message("validate_analysis_lock: pre-content-digest lock; the legacy ",
+            "fingerprint (names and dimensions only) was checked.")
+  } else {
+    computed_hash <- .compute_lock_hash(list(
+      treatment     = lock$treatment,
+      outcome       = lock$outcome,
+      covariates    = lock$covariates,
+      sl_library    = lock$sl_library,
+      seed          = as.integer(lock$seed),
+      data_nrow     = nrow(lock$data),
+      data_ncol     = ncol(lock$data),
+      data_names    = paste(sort(names(lock$data)), collapse = "|"),
+      data_content  = .design_data_digest(lock$data, lock$outcome),
+      dgp_mode      = lock$dgp_mode,
+      nc_criteria   = lock$nc_criteria,
+      dq_thresholds = lock$dq_thresholds
+    ))
+  }
   if (!identical(lock$lock_hash, computed_hash))
     stop("Lock hash mismatch: the lock object may have been modified.",
          call. = FALSE)
@@ -1221,10 +1363,74 @@ expand_tmle_candidate_grid <- function(
 
 # ── Stage 2b: Plasmode Feasibility ────────────────────────────────────────
 
+# Shared contract checks for the plasmode generator mode. `pilot_q0` is
+# required in external-pilot mode and refused in hybrid mode (the mode is
+# a locked field; mixing signals a specification error, not a preference).
+#' @keywords internal
+.check_pilot_q0_contract <- function(dgp_mode, pilot_q0, q0_library) {
+  if (dgp_mode == "external_pilot") {
+    if (is.null(pilot_q0))
+      stop("The lock's dgp_mode is 'external_pilot': supply `pilot_q0` ",
+           "(baseline event probabilities fitted on external pilot data, ",
+           "as a numeric vector over the lock rows or a function of the ",
+           "covariate data frame).", call. = FALSE)
+    if (!is.null(q0_library))
+      warning("`q0_library` is ignored in external_pilot mode: the ",
+              "baseline surface comes from `pilot_q0`.", call. = FALSE)
+  } else if (!is.null(pilot_q0)) {
+    stop("`pilot_q0` was supplied but the lock's dgp_mode is 'hybrid'. ",
+         "The generator mode is a locked field: create the lock with ",
+         "dgp_mode = 'external_pilot' to use pilot-based generation.",
+         call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+# Resolve external-pilot baseline probabilities to a length-n vector.
+#' @keywords internal
+.resolve_pilot_q0 <- function(pilot_q0, data, covariates, n) {
+  p <- if (is.function(pilot_q0))
+    pilot_q0(data[, covariates, drop = FALSE]) else pilot_q0
+  p <- as.numeric(p)
+  if (length(p) != n)
+    stop("`pilot_q0` must yield one probability per lock row (need ", n,
+         ", got ", length(p), ").", call. = FALSE)
+  if (anyNA(p) || any(p <= 0) || any(p >= 1))
+    stop("`pilot_q0` values must lie strictly inside (0, 1) with no NA.",
+         call. = FALSE)
+  p
+}
+
+# Mann-Whitney c-statistic of a propensity against treatment.
+#' @keywords internal
+.ps_cstat <- function(g, A) {
+  n1 <- sum(A == 1); n0 <- sum(A == 0)
+  if (n1 == 0 || n0 == 0) return(NA_real_)
+  (sum(rank(g)[A == 1]) - n1 * (n1 + 1) / 2) / (n1 * n0)
+}
+
+# Hybrid-mode leakage warning under strong separation: E[Y|W] read
+# alongside a well-separated propensity approximates the outcome rate by
+# propensity stratum, which approaches the crude treatment-outcome
+# association (see the generator-modes section of the plasmode docs).
+#' @keywords internal
+.warn_hybrid_separation <- function(cstat, caller) {
+  if (is.finite(cstat) && cstat > 0.80)
+    warning(caller, ": the propensity c-statistic is ",
+            sprintf("%.3f", cstat), " (> 0.80). In hybrid mode the ",
+            "covariate-only Q0 is fitted on the real outcome, and under ",
+            "separation this strong E[Y|W] approximates the outcome rate ",
+            "by propensity stratum, i.e. the crude treatment-outcome ",
+            "association. Consider dgp_mode = 'external_pilot'.",
+            call. = FALSE)
+  invisible(cstat)
+}
+
+
 #' Run Plasmode-Simulation Feasibility Evaluation
 #'
 #' Evaluates the performance of prespecified TMLE candidate specifications
-#' using plasmode simulation.  Synthetic binary outcomes are generated from
+#' using plasmode simulation.  Simulated binary outcomes are generated from
 #' a parametric baseline-risk model fit on the real covariates, augmented
 #' with a specified additive treatment effect.  Each TMLE candidate is fit
 #' on every replicate and performance metrics (bias, RMSE, coverage,
@@ -1234,7 +1440,24 @@ expand_tmle_candidate_grid <- function(
 #'   treatment--outcome association is never used; only simulated
 #'   outcomes are generated.
 #'
-#' @param lock A `cleanroom_lock` from [create_analysis_lock()].
+#' @section Generator modes and what each can leak:
+#' The baseline outcome surface Q0(W) comes from the lock's locked
+#' `dgp_mode`. In `"hybrid"` mode (the default) Q0 is fitted on the
+#' lock's real outcome against the covariates only, so the analyst's
+#' code holds an estimate of E\[Y|W\]. When the covariates strongly
+#' separate the arms, E\[Y|W\] read alongside the fitted propensity
+#' approximates the outcome rate within high- and low-propensity strata,
+#' which approaches the crude treatment-outcome association as the
+#' c-statistic grows; the function therefore warns when the propensity
+#' c-statistic exceeds 0.80, and neither the fitted Q0 object nor its
+#' predictions nor the lock data appear anywhere in the returned object
+#' (only per-replicate candidate metrics do). In `"external_pilot"` mode
+#' the caller supplies `pilot_q0` fitted on external pilot data; the
+#' primary outcome column is never read, and the function runs on a
+#' masked lock.
+#'
+#' @param lock A `cleanroom_lock` from [create_analysis_lock()]; its
+#'   locked `dgp_mode` selects the generator mode.
 #' @param tmle_candidates A list of \code{\link{tmle_candidate}} objects.
 #'   If \code{NULL}, a default grid is generated via
 #'   \code{\link{expand_tmle_candidate_grid}}.
@@ -1244,16 +1467,22 @@ expand_tmle_candidate_grid <- function(
 #'   Defaults to `lock$plasmode_reps`.
 #' @param q0_library Optional SuperLearner library used to fit the
 #'   baseline outcome model Q0 (covariates only) that generates the
-#'   synthetic outcomes for candidate selection. If `NULL` (default),
-#'   Q0 is a logistic GLM in the covariates, which biases candidate
-#'   selection toward learners that handle linear-in-logit structure
-#'   well. Set this to a SuperLearner library (e.g.
-#'   `c("SL.glm", "SL.glmnet", "SL.gam", "SL.mean")`) to generate
-#'   synthetic outcomes from a richer Q0 surface.
-#' @param design Character; how each synthetic replicate is generated.
+#'   simulated outcomes for candidate selection (`"hybrid"` mode only).
+#'   If `NULL` (default), Q0 is a logistic GLM in the covariates, which
+#'   biases candidate selection toward learners that handle
+#'   linear-in-logit structure well. Set this to a SuperLearner library
+#'   (e.g. `c("SL.glm", "SL.glmnet", "SL.gam", "SL.mean")`) to generate
+#'   simulated outcomes from a richer Q0 surface.
+#' @param pilot_q0 Required when the lock's `dgp_mode` is
+#'   `"external_pilot"` (and refused otherwise): baseline event
+#'   probabilities for the lock rows, fitted on external pilot data.
+#'   Either a numeric vector of length `nrow(lock$data)` with values in
+#'   (0, 1), or a function that receives the covariate data frame and
+#'   returns such a vector.
+#' @param design Character; how each simulated replicate is generated.
 #'   `"generate_treatment"` (default) resamples the covariate rows with
 #'   replacement and draws treatment from a propensity model fitted on the
-#'   real data, so the synthetic data satisfy positivity to the same extent
+#'   real data, so the simulated data satisfy positivity to the same extent
 #'   the cohort does. `"sample_treatment"` keeps every subject's observed
 #'   treatment and simulates only the outcome, which Shaw et al. (2025,
 #'   arXiv:2504.11740) show induces a positivity violation by construction
@@ -1292,10 +1521,13 @@ run_plasmode_feasibility <- function(lock,
                                       q0_library      = NULL,
                                       design          = c("generate_treatment",
                                                           "sample_treatment"),
+                                      pilot_q0        = NULL,
                                       verbose         = FALSE) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
-  design <- match.arg(design)
+  design   <- match.arg(design)
+  dgp_mode <- lock$dgp_mode %||% "hybrid"
+  .check_pilot_q0_contract(dgp_mode, pilot_q0, q0_library)
   if (design == "sample_treatment") {
     rlang::warn(paste(
       "design = 'sample_treatment' keeps each subject's observed treatment and",
@@ -1320,55 +1552,63 @@ run_plasmode_feasibility <- function(lock,
   covariates <- lock$covariates
 
   A <- data[[treatment]]
-  Y <- data[[outcome]]
   n <- nrow(data)
 
-  n_obs_y <- sum(!is.na(Y))
-  if (n_obs_y == 0L) {
-    stop("Q0 model cannot be fit: lock$data[[lock$outcome]] has zero ",
-         "non-NA observations. If the outcome is masked, call ",
-         "unmask_outcome() before run_plasmode_feasibility().",
-         call. = FALSE)
-  }
-  if (n_obs_y < length(covariates) + 1L) {
-    stop("Q0 model cannot be fit: only ", n_obs_y, " non-NA outcome ",
-         "rows available for ", length(covariates), " covariates.",
-         call. = FALSE)
-  }
-
-  # Fit baseline outcome model (covariates only; outcome-blind in the
-  # sense that the treatment--outcome association is not used).
-  # By default Q0 is a logistic GLM; pass `q0_library` (a SuperLearner
-  # library) to use a richer Q0 -- important when the true outcome
-  # surface is nonlinear, so that the synthetic outcomes used to
-  # select among candidates are not biased toward linear-in-logit
-  # learners.
-  if (is.null(q0_library)) {
-    Q0_fml <- stats::reformulate(covariates, response = outcome)
-    Q0_fit <- stats::glm(Q0_fml, data = data, family = stats::binomial(),
-                         na.action = stats::na.exclude)
-    p_base <- as.numeric(stats::predict(Q0_fit, type = "response",
-                                         newdata = data))
+  if (dgp_mode == "external_pilot") {
+    # External-pilot mode: the baseline surface comes from pilot data
+    # supplied by the caller; the primary outcome column is never read,
+    # so this path runs on a masked lock.
+    p_base <- .resolve_pilot_q0(pilot_q0, data, covariates, n)
   } else {
-    if (!requireNamespace("SuperLearner", quietly = TRUE))
-      stop("`q0_library` requested but 'SuperLearner' package is not ",
-           "available. Install it or leave q0_library = NULL.",
+    Y <- data[[outcome]]
+    n_obs_y <- sum(!is.na(Y))
+    if (n_obs_y == 0L) {
+      stop("Q0 model cannot be fit: lock$data[[lock$outcome]] has zero ",
+           "non-NA observations. If the outcome is masked, either call ",
+           "unmask_outcome() before run_plasmode_feasibility() or lock ",
+           "dgp_mode = 'external_pilot' and supply `pilot_q0`.",
            call. = FALSE)
-    cc <- stats::complete.cases(data[, c(outcome, covariates),
-                                      drop = FALSE])
-    p_base <- rep(NA_real_, nrow(data))
-    Q0_sl <- SuperLearner::SuperLearner(
-      Y          = data[[outcome]][cc],
-      X          = data[cc, covariates, drop = FALSE],
-      family     = stats::binomial(),
-      SL.library = q0_library,
-      env        = .cleantmle_sl_env()
-    )
-    p_base[cc] <- as.numeric(Q0_sl$SL.predict)
-    if (any(!cc)) {
-      p_base[!cc] <- as.numeric(
-        stats::predict(Q0_sl,
-                       newdata = data[!cc, covariates, drop = FALSE])$pred)
+    }
+    if (n_obs_y < length(covariates) + 1L) {
+      stop("Q0 model cannot be fit: only ", n_obs_y, " non-NA outcome ",
+           "rows available for ", length(covariates), " covariates.",
+           call. = FALSE)
+    }
+
+    # Hybrid mode: fit the baseline outcome model on the real outcome
+    # (covariates only; the treatment--outcome association is not used).
+    # By default Q0 is a logistic GLM; pass `q0_library` (a SuperLearner
+    # library) to use a richer Q0 -- important when the true outcome
+    # surface is nonlinear, so that the simulated outcomes used to
+    # select among candidates are not biased toward linear-in-logit
+    # learners.
+    if (is.null(q0_library)) {
+      Q0_fml <- stats::reformulate(covariates, response = outcome)
+      Q0_fit <- stats::glm(Q0_fml, data = data, family = stats::binomial(),
+                           na.action = stats::na.exclude)
+      p_base <- as.numeric(stats::predict(Q0_fit, type = "response",
+                                           newdata = data))
+    } else {
+      if (!requireNamespace("SuperLearner", quietly = TRUE))
+        stop("`q0_library` requested but 'SuperLearner' package is not ",
+             "available. Install it or leave q0_library = NULL.",
+             call. = FALSE)
+      cc <- stats::complete.cases(data[, c(outcome, covariates),
+                                        drop = FALSE])
+      p_base <- rep(NA_real_, nrow(data))
+      Q0_sl <- SuperLearner::SuperLearner(
+        Y          = data[[outcome]][cc],
+        X          = data[cc, covariates, drop = FALSE],
+        family     = stats::binomial(),
+        SL.library = q0_library,
+        env        = .cleantmle_sl_env()
+      )
+      p_base[cc] <- as.numeric(Q0_sl$SL.predict)
+      if (any(!cc)) {
+        p_base[!cc] <- as.numeric(
+          stats::predict(Q0_sl,
+                         newdata = data[!cc, covariates, drop = FALSE])$pred)
+      }
     }
   }
   # Handle NAs from quasi-separation or missing covariate values
@@ -1380,7 +1620,7 @@ run_plasmode_feasibility <- function(lock,
 
   # Generating propensity for the generate-treatment design: fitted once on
   # the real data, then treatment is redrawn from it on every replicate so the
-  # synthetic data satisfy positivity exactly to the extent the cohort does.
+  # simulated data satisfy positivity exactly to the extent the cohort does.
   # Keeping the observed treatment instead (design = "sample_treatment") makes
   # P(A = a | W) degenerate at the observed a, the artifact Shaw et al. (2025)
   # warn about.
@@ -1389,6 +1629,9 @@ run_plasmode_feasibility <- function(lock,
                            family = stats::binomial())
   ps_base <- pmin(pmax(as.numeric(
     stats::predict(ps_mod_gen, type = "response")), 0.001), 0.999)
+  if (dgp_mode == "hybrid")
+    .warn_hybrid_separation(.ps_cstat(ps_base, A),
+                            "run_plasmode_feasibility")
 
   cand_ids <- vapply(tmle_candidates, function(x) x$candidate_id, character(1))
 
@@ -1418,7 +1661,7 @@ run_plasmode_feasibility <- function(lock,
       data_rep <- data[idx, , drop = FALSE]
       data_rep[[treatment]] <- A_rep
 
-      # Synthetic outcomes: additive risk difference es for treated.
+      # Simulated outcomes: additive risk difference es for treated.
       # Clamp BOTH bounds: with negative es and small p_base, an
       # unclamped p_base + es can go negative and stats::rbinom()
       # returns NA, causing every candidate fit to fail downstream.
@@ -1583,11 +1826,15 @@ run_plasmode_feasibility <- function(lock,
     warning(msg, call. = FALSE)
   }
 
+  # The returned object deliberately carries no lock, no data, and no
+  # fitted Q0: only per-replicate candidate metrics plus the lock
+  # fingerprint and the generator mode (see the generator-modes section).
   result <- list(
     results         = all_results,
     metrics         = metrics,
     tmle_candidates = tmle_candidates,
-    lock            = lock,
+    lock_hash       = lock$lock_hash,
+    dgp_mode        = dgp_mode,
     effect_sizes    = effect_sizes,
     reps            = reps,
     design          = design,
@@ -1805,8 +2052,9 @@ select_tmle_candidate <- function(sim_results,
       metrics          = best_metrics,
       thresholds_used  = thresholds,
       all_failed       = all_failed,
-      lock_hash        = if (!is.null(sim_results$lock))
-                           sim_results$lock$lock_hash else NA_character_
+      lock_hash        = sim_results$lock_hash %||%
+                           (if (!is.null(sim_results$lock))
+                              sim_results$lock$lock_hash else NA_character_)
     )
   )
   class(result) <- c("tmle_selected_spec", "tmle_candidate_spec")
@@ -3130,7 +3378,7 @@ gate_check <- function(metrics, scenario_name = "plasmode", targets = NULL,
   # Support both new "candidate" column and legacy "method" column
   id_col <- if ("candidate" %in% names(metrics)) "candidate" else "method"
 
-  # If the requested method/candidate isn't present, fall back to the
+  # If the requested method/candidate is not present, fall back to the
   # first row -- helpful when callers pass `method = "TMLE"` against a
   # candidate-keyed metrics frame.
   if (!method %in% metrics[[id_col]]) {

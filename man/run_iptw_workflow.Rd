@@ -33,3 +33,4 @@ Computes stabilized inverse probability of treatment weights from the
 fitted propensity score and estimates the causal risk difference using
 the Hajek (normalized) estimator with influence-curve-based variance.
 }
+\keyword{internal}

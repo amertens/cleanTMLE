@@ -31,3 +31,4 @@ plot(diag)
 }
 
 }
+\keyword{internal}

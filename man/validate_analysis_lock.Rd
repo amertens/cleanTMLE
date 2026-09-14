@@ -28,3 +28,4 @@ lock <- create_analysis_lock(
 validate_analysis_lock(lock)
 
 }
+\keyword{internal}

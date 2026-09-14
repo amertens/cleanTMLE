@@ -16,3 +16,4 @@ An object of class \code{cleantmle_audit}.
 Initialises an empty audit log that accumulates entries as the
 analysis progresses through stages.
 }
+\keyword{internal}

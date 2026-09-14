@@ -218,7 +218,7 @@ ic_histogram <- function(tmle_result, bins = 30L) {
 #' @param cens_var Character or \code{NULL}; name of the censoring
 #'   indicator variable.
 #' @param learner_lib Character vector of SuperLearner algorithms.
-#'   **Required** — the function will stop if not provided.
+#'   **Required**: the function will stop if not provided.
 #' @param truncation Numeric vector of length 2 giving the lower and
 #'   upper PS truncation bounds.  Default: \code{c(0.01, 0.99)}.
 #' @param neg_control_outcomes Character vector of negative-control

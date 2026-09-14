@@ -24,3 +24,4 @@ Calculates absolute SMDs for each covariate in a matched dataset,
 returning a named numeric vector suitable for
 \code{\link{love_plot_threeway}}.
 }
+\keyword{internal}

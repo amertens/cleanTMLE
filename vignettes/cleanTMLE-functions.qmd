@@ -52,10 +52,10 @@ The function index below labels each exported function by what it
 uses internally from the outcome side of the data:
 
 - **No outcome access**: uses W, A, metadata, lock objects,
-  synthetic outcomes, or diagnostics not involving Y.
+  simulated outcomes, or diagnostics not involving Y.
 - **Marginal Y only**: uses event counts or marginal outcome
   support (no estimation of the A--Y association).
-- **Synthetic Y only**: uses plasmode-generated outcomes; no
+- **Simulated Y only**: uses plasmode-generated outcomes; no
   observed Y.
 - **Negative-control Y only**: uses prespecified NC outcomes,
   not the primary outcome.
@@ -161,7 +161,7 @@ kept for continuity.
 | Design | `assess_support()` | No | Graded overlap verdict (PASS/FLAG/SEVERE/FAIL), balance table, near-deterministic strata, tree search, mirrored plot; `thresholds =` a named list of overrides |
 | Design | `estimand_feasibility()` | No | Per-estimand weights, ESS, removals, target population, verdict; `profile_vars =` adds the removed-versus-kept profile as `$unsupported` |
 | Design | `declare_estimand_ladder()` | No | Pre-register primary, fallbacks, trigger, sensitivity floors; `candidate =` binds the selected TMLE specification |
-| Design | `simulate_support()` | Synthetic | Outcome-blind support map (generate-treatment plasmode, per-estimand truths); `surface =` a named list; `design = "parametric_bootstrap"` gives the Petersen check, labelled optimistic |
+| Design | `simulate_support()` | Simulated | Outcome-blind support map (generate-treatment plasmode, per-estimand truths); `surface =` a named list; `design = "parametric_bootstrap"` gives the Petersen check, labelled optimistic |
 | Design | `design_report()` | No | The pre-outcome bundle a review team reads, with a recommendation and the TARGET emulation table (`$emulation`, `protocol =`) |
 | Design | `create_contrast_locks()` | No | One lock per contrast from a multi-level treatment, shared covariates and controls |
 | Design | `run_negative_control_ladder()` | NC | Registered controls on nested cohorts; names what turns null after restriction |
@@ -177,9 +177,10 @@ kept for continuity.
 | 1a | `attach_estimand()` | No | Attach estimand metadata *(cleanroomGov)* |
 | 1a | `declare_sensitivity_plan()` | No | Declare a sensitivity plan *(cleanroomGov)* |
 | 1a | `define_negative_control()` | No | Register a negative control variable |
-| 1b | `checkpoint_cohort_adequacy()` | Marginal Y only | Check Point 1: sample size / events |
-| 1b | `estimate_design_precision()` | Marginal Y only | Design-stage precision/MDD |
-| 1b | `summarize_event_support()` | Marginal Y only | Event counts by arm |
+| 1b | `checkpoint_cohort_adequacy()` | Marginal Y only | Check Point 1: sample size / marginal events |
+| 1b | `estimate_design_precision()` | Marginal Y only | Design-stage precision/MDD (marginal event count and rate) |
+| 1b | `summarize_event_support()` | Marginal Y only | Marginal event count and rate |
+| 1b | `event_support_by_arm()` | **Y by arm (logged)** | Arm-specific event counts: mandatory reason, warning, design-log entry |
 | 2 | `fit_ps_glm()` | No | Logistic regression PS |
 | 2 | `fit_ps_superlearner()` | No | SuperLearner PS |
 | 2 | `compute_ps_diagnostics()` | No | Overlap, ESS, SMDs |
@@ -187,7 +188,7 @@ kept for continuity.
 | 2b | `tmle_candidate()` | No | Define a TMLE candidate specification |
 | 2b | `expand_tmle_candidate_grid()` | No | Generate candidate grid |
 | 2b | `validate_tmle_candidates()` | No | Validate candidate list |
-| 2b | `run_plasmode_feasibility()` | Synthetic Y only | Plasmode simulation evaluation |
+| 2b | `run_plasmode_feasibility()` | Simulated Y only | Plasmode simulation evaluation |
 | 2b | `summarize_plasmode_results()` | No | Print plasmode metrics |
 | 2b | `select_tmle_candidate()` | No | Select best TMLE specification |
 | 2b | `lock_primary_tmle_spec()` | No | Lock selected spec in the lock |
@@ -242,13 +243,21 @@ kept for continuity.
 | 1 | `clean_event_process_table()` | No outcome access | Event-process classification table *(cleanroomGov)* |
 | 1 | `clean_check_event_processes()` | No outcome access | Verify event-process specification *(cleanroomGov)* |
 | 2 | `clean_weight_diagnostics()` | No outcome access | Weight ESS, percentiles, max-weight thresholds |
-| 3  | `refine_ps_after_nco()` | Negative-control Y only | Iterative PS refinement after NCO signal |
-| 2c | `run_plasmode_dq_stress()` | Synthetic Y only | DQ stress test (missingness, misclass, U) |
-| 2c | `summarize_dq_degradation()` | No | DQ degradation comparison table |
+| 2c | `run_plasmode_dq_stress()` | Simulated Y only (hybrid: real Y feeds Q0) | DQ stress test (missingness, misclass, U); locked verdict and tipping points when `dq_thresholds` are declared |
+| 2c | `dq_locked_verdict()` | No | Pure GO/FLAG/STOP from locked thresholds and metrics |
+| 2c | `dq_tipping_points()` | No | First declared severity crossing a locked bound |
+| 2c | `summarize_dq_degradation()` | No | DQ degradation comparison table (all candidates; `selected` flag) |
+| 3 | `nc_ladder_verdict()` | No | Check Point 3 from locked `nc_criteria` and the ladder table |
+| Log | `export_design_log()` | No | Design log as tidy or Muntner Table S1 columns |
 | Gate | `gate_all()` | No | Composite GO/FLAG/STOP across checkpoints |
 
+`refine_ps_after_nco()` was removed in 0.3.0: refitting the propensity
+model after reading negative-control results is a protocol amendment,
+not a workflow step, and the ladder plus the design log now carry that
+record instead.
+
 **Marginal Y only**: accesses event counts or marginal outcome support, not the A--Y association.
-**Synthetic Y only**: generates simulated outcomes; does not use the real outcome association.
+**Simulated Y only**: generates simulated outcomes; does not use the real outcome association.
 **Negative-control Y only**: accesses prespecified negative-control outcomes, not the primary outcome.
 **Primary Y**: estimates the observed treatment--primary-outcome association and requires authorization.
 
@@ -394,7 +403,7 @@ print(selected)
 
 ## Stage 2c: Data-quality stress testing
 
-`run_plasmode_dq_stress()` perturbs the synthetic outcome under
+`run_plasmode_dq_stress()` perturbs the simulated outcome under
 locked data-quality severity ranges. The severity values are not
 chosen here; they come from external sources (validation studies,
 data profiling, or expert elicitation) and are locked before the

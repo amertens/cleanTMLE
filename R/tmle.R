@@ -636,7 +636,7 @@ estimate_surv_tmle <- function(data, treatment = "treatment",
           p_value  = ate$pvalue
         )
       } else {
-        # TMLE failed — fall back to an UNADJUSTED arm difference on the
+        # TMLE failed: fall back to an UNADJUSTED arm difference on the
         # censoring-subsetted data. This is a crude estimate with no
         # confounding or censoring adjustment, so it is generally biased;
         # warn loudly rather than return it silently as if it were the TMLE.

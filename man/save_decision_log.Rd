@@ -27,3 +27,4 @@ Invisibly returns \code{path}.
 Writes the decision log to the \code{inst/decision_logs/} directory
 inside the package source tree, or to a user-specified path.
 }
+\keyword{internal}

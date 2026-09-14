@@ -4,19 +4,26 @@
 \alias{love_plot}
 \title{Love Plot: Weighted vs Unweighted SMDs}
 \usage{
-love_plot(ps_diag, threshold = 0.1)
+love_plot(ps_diag, threshold = 0.1, matched = NULL)
 }
 \arguments{
-\item{ps_diag}{A \code{ps_diagnostics} object.}
+\item{ps_diag}{A \code{support_assessment} from \code{\link[=assess_support]{assess_support()}} or a
+\code{ps_diagnostics} object.}
 
 \item{threshold}{Numeric; dashed reference line for the balance
 threshold. Default: 0.10.}
+
+\item{matched}{Optional data.frame with columns \code{variable} and \code{smd}
+(matched-cohort SMDs, e.g. from an internal matched fit), drawn as a
+third series.}
 }
 \value{
 A \code{ggplot2} object.
 }
 \description{
 Produces a dot-plot showing standardised mean differences before and
-after IPW weighting.  Requires a \code{ps_diagnostics} object from
-\code{\link{compute_ps_diagnostics}}.
+after IPW weighting, from a \code{\link[=assess_support]{assess_support()}} result (its \verb{$balance}
+table) or a legacy \code{ps_diagnostics} object. When a matched cohort's SMDs
+are supplied via \code{matched}, a third series is drawn (the former
+three-way love plot).
 }

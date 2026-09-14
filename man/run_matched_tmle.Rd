@@ -34,3 +34,4 @@ identified by row indices (e.g., from PS matching).  Creates a
 temporary sub-lock, fits the Q-model on the subset, and returns
 a standard \code{tmle_fit}.
 }
+\keyword{internal}

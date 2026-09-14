@@ -40,3 +40,4 @@ diag   <- compute_ps_diagnostics(ps_fit)
 }
 
 }
+\keyword{internal}

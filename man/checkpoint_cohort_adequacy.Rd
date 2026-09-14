@@ -54,3 +54,4 @@ cp1 <- checkpoint_cohort_adequacy(lock)
 print(cp1)
 
 }
+\keyword{internal}

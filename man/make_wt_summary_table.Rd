@@ -19,3 +19,4 @@ A data.frame with weight summaries.
 Produces a summary table of weight distributions by treatment group,
 including percentiles and summary statistics.
 }
+\keyword{internal}

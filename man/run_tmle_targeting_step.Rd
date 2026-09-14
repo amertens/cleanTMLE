@@ -24,3 +24,4 @@ submodel through the initial outcome estimates using the clever covariate
 H(A,W) = A/g(W) - (1-A)/(1-g(W)). Returns updated outcome predictions,
 the fluctuation parameter epsilon, and the efficient influence curve.
 }
+\keyword{internal}

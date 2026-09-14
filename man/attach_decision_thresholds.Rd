@@ -29,3 +29,4 @@ lock <- create_analysis_lock(dat, "treatment", "event_24",
 lock <- attach_decision_thresholds(lock, decision_thresholds())
 lock$thresholds_hash
 }
+\keyword{internal}

@@ -183,7 +183,7 @@ test_that("run_plasmode_dq_stress includes the MAR covariate-missingness scenari
 })
 
 # ── assess_dgp_fidelity ──────────────────────────────────────────────────
-test_that("assess_dgp_fidelity flags a shifted synthetic covariate", {
+test_that("assess_dgp_fidelity flags a shifted simulated covariate", {
   set.seed(11)
   real  <- data.frame(age = rnorm(500), sex = rbinom(500, 1, 0.5),
                       treatment = rbinom(500, 1, 0.5))

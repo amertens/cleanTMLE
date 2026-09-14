@@ -1,6 +1,6 @@
 Package: cleanTMLE
 Title: Software Layer for an Outcome-Blind Staged Targeted-Learning Workflow
-Version: 0.2.0
+Version: 0.2.0.9000
 Authors@R: c(
     person("Andrew", "Mertens", role = c("aut", "cre"),
            email = "amertens@berkeley.edu"),
@@ -18,7 +18,7 @@ Description: Software infrastructure for an outcome-blind staged workflow
     simulation-selected TMLE via SuperLearner ensemble learning.
     The first methodological contribution is an outcome-blind plasmode
     candidate-selection procedure in which nuisance-parameter strategies
-    are evaluated by oracle coverage on synthetic outcomes before real
+    are evaluated by oracle coverage on simulated outcomes before real
     outcome access. The second is a prespecified data-quality stress test
     ('run_plasmode_dq_stress') that evaluates each candidate under
     covariate-missingness, treatment-misclassification, outcome-
@@ -40,6 +40,7 @@ Depends:
 Imports:
     survival,
     stats,
+    utils,
     ggplot2,
     rlang,
     sandwich,

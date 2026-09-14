@@ -20,3 +20,4 @@ A data.frame with one row per workflow containing columns
 Creates a side-by-side comparison table of estimates from multiple
 cleanroom workflow objects (matching, IPTW, TMLE).
 }
+\keyword{internal}

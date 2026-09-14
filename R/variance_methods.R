@@ -187,15 +187,15 @@ bootstrap_rd_variance <- function(data, treatment, outcome, covariates,
 
 #' Select the variance method that achieves nominal oracle coverage (FIORD stage 2)
 #'
-#' Given the locked point estimator and a set of synthetic (plasmode)
-#' datasets with a known synthetic truth, evaluates each candidate variance
+#' Given the locked point estimator and a set of simulated (plasmode)
+#' datasets with a known simulated truth, evaluates each candidate variance
 #' method by its empirical (oracle) coverage and returns the method whose
 #' coverage is closest to the nominal target while not falling below it. This
 #' is the second stage of the FIORD two-stage selector (Nance et al. 2026):
 #' the point estimator is fixed, and only the variance method varies.
 #'
-#' @param plasmode_datasets A list of data frames (synthetic outcomes).
-#' @param truth The synthetic-truth risk difference used to generate them.
+#' @param plasmode_datasets A list of data frames (simulated outcomes).
+#' @param truth The simulated-truth risk difference used to generate them.
 #' @param treatment,outcome,covariates Column names.
 #' @param estimator Locked point estimator: `"tmle"`, `"iptw"`, or
 #'   `"match_tmle"`. For `"match_tmle"`, the `"influence"` method uses the

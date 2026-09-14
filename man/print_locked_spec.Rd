@@ -24,3 +24,4 @@ right candidate.
 print_locked_spec(lock)
 }
 }
+\keyword{internal}

@@ -22,3 +22,4 @@ Implements the Phillips et al. 2023 rule of thumb:
 recommend_cv_V(compute_n_eff(rbinom(200, 1, 0.1)))
 
 }
+\keyword{internal}

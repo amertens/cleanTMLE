@@ -2,7 +2,7 @@
 % Please edit documentation in R/plasmode_dq.R
 \name{assess_dgp_fidelity}
 \alias{assess_dgp_fidelity}
-\title{Assess Synthetic-vs-Real Data Fidelity for a Plasmode Generator}
+\title{Assess Simulated-vs-Real Data Fidelity for a Plasmode Generator}
 \usage{
 assess_dgp_fidelity(
   real_data,
@@ -29,16 +29,16 @@ per-covariate \code{table}, the treatment-prevalence difference, and a
 \code{decision} ("GO" or "FLAG").
 }
 \description{
-Compares the covariate and treatment distributions of a synthetic
+Compares the covariate and treatment distributions of a simulated
 (plasmode) sample against the real lock data, so the analyst can defend
 that the plasmode generator is faithful enough to base candidate
 selection on. This addresses the central caveat of the DQ stress test:
-estimator rankings under synthetic outcomes only transfer to the real
-study when the synthetic-data-generating process is faithful.
+estimator rankings under simulated outcomes only transfer to the real
+study when the simulated-data-generating process is faithful.
 }
 \details{
 For each covariate the function reports the absolute standardised mean
-difference (SMD) between real and synthetic samples and, for continuous
+difference (SMD) between real and simulated samples and, for continuous
 covariates, a two-sample Kolmogorov-Smirnov statistic. It also reports
 the absolute difference in treatment prevalence. A FLAG is raised when
 any covariate SMD exceeds \code{smd_threshold} or any KS statistic
@@ -51,3 +51,4 @@ fid <- assess_dgp_fidelity(real, synth,
 print(fid)
 }
 }
+\keyword{internal}

@@ -22,3 +22,4 @@ Extracts the final TMLE point estimate, influence-curve standard error,
 95\% confidence interval, p-value, and one-step diagnostics from a
 \code{tmle_update} object.
 }
+\keyword{internal}

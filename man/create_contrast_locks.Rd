@@ -14,7 +14,11 @@ create_contrast_locks(
   seed = 42L,
   negative_controls = NULL,
   treatment_name = ".A_contrast",
-  cleanroom_enabled = TRUE
+  cleanroom_enabled = TRUE,
+  dgp_mode = c("hybrid", "external_pilot"),
+  nc_criteria = NULL,
+  dq_thresholds = NULL,
+  roles = NULL
 )
 }
 \arguments{
@@ -37,6 +41,10 @@ and a registered control is never dropped silently.}
 \code{".A_contrast"}.}
 
 \item{cleanroom_enabled}{As in \code{\link[=create_analysis_lock]{create_analysis_lock()}}. Default TRUE.}
+
+\item{dgp_mode, nc_criteria, dq_thresholds, roles}{As in
+\code{\link[=create_analysis_lock]{create_analysis_lock()}}; shared by every contrast lock so the
+declarations are made once for the whole family.}
 }
 \value{
 A named list of class \code{contrast_locks}.

@@ -263,15 +263,47 @@ test_that("estimate_design_precision compares against target MDD", {
   expect_false(dp2$mdd_feasible)
 })
 
-test_that("summarize_event_support returns data.frame", {
+test_that("summarize_event_support is marginal only", {
   dat  <- sim_func1(n = 300, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex", "biomarker"), seed = 1)
   es <- cleanTMLE:::summarize_event_support(lock)
   expect_true(is.data.frame(es))
-  expect_equal(nrow(es), 3)
-  expect_true(all(c("arm", "n", "events", "event_rate") %in% names(es)))
-  expect_equal(es$arm, c("Treated", "Control", "Total"))
+  expect_equal(nrow(es), 1)
+  expect_true(all(c("n", "events", "event_rate") %in% names(es)))
+  expect_false("arm" %in% names(es))
+  expect_equal(es$events, sum(dat$event_24))
+})
+
+test_that("event_support_by_arm requires a reason, warns, and logs", {
+  dat  <- sim_func1(n = 300, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex", "biomarker"), seed = 1)
+  expect_error(event_support_by_arm(lock), "reason")
+  expect_warning(
+    esa <- event_support_by_arm(lock, reason = "sparse-cell check"),
+    "crude treatment-outcome association")
+  expect_s3_class(esa, "event_support_by_arm")
+  expect_equal(nrow(esa$table), 3)
+  expect_true(all(c("arm", "n", "events", "event_rate") %in%
+                    names(esa$table)))
+  # The access is on the returned lock's design log.
+  expect_true(any(esa$lock$design_log$type == "event_support_by_arm"))
+  expect_true(any(grepl("sparse-cell check", esa$lock$design_log$note)))
+  # And the per-arm counts reconcile with the marginal summary.
+  es <- cleanTMLE:::summarize_event_support(lock)
+  expect_equal(sum(esa$table$events[esa$table$arm != "Total"]), es$events)
+})
+
+test_that("estimate_design_precision output carries no per-arm outcome split", {
+  dat  <- sim_func1(n = 300, seed = 1)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex", "biomarker"), seed = 1)
+  dp <- estimate_design_precision(lock)
+  expect_null(dp$events_per_arm)
+  expect_null(dp$crude_rates)
+  expect_false(any(grepl("arm", names(dp$event_support))))
+  expect_output(print(dp), "marginal")
 })
 
 

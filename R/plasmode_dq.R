@@ -221,9 +221,9 @@ print_locked_spec <- function(lock) {
 }
 
 
-#' Fit all candidates for one synthetic replicate, bounded by a wall clock.
+#' Fit all candidates for one simulated replicate, bounded by a wall clock.
 #'
-#' A degraded synthetic design can send the SuperLearner/glmnet candidate fit
+#' A degraded simulated design can send the SuperLearner/glmnet candidate fit
 #' into a CPU/memory runaway. That is not an R error (so a plain tryCatch does
 #' not help) and in-process elapsed-time limits (setTimeLimit / withTimeout)
 #' abort the R front end unsafely on some platforms. We therefore run the
@@ -530,12 +530,19 @@ print_locked_spec <- function(lock) {
 #' degradations. For each DQ scenario and severity level, plasmode
 #' outcomes are generated from the real covariate distribution and
 #' the fitted Q0 model, then degraded before each prespecified TMLE
-#' candidate is fit. The procedure is outcome-blind: only synthetic
+#' candidate is fit. The procedure is outcome-blind: only simulated
 #' outcomes are used.
 #'
 #' @section Clean-room stage: Stage 2b (pre-outcome).
 #'
-#' @param lock A \code{cleanroom_lock}.
+#' @param lock A \code{cleanroom_lock}; its locked \code{dgp_mode}
+#'   selects the outcome-generator mode, and its locked
+#'   \code{dq_thresholds} (when declared) drive the pure verdict and
+#'   tipping-point outputs. See the generator-modes section of
+#'   [run_plasmode_feasibility()] for what \code{"hybrid"} mode can leak
+#'   under strong separation (the function warns when the propensity
+#'   c-statistic exceeds 0.80) and for the fully outcome-blind
+#'   \code{"external_pilot"} alternative.
 #' @param tmle_candidates A list of \code{tmle_candidate_spec} objects.
 #' @param effect_sizes Numeric vector of true risk differences.
 #'   Default: \code{c(0.05)}.
@@ -543,11 +550,16 @@ print_locked_spec <- function(lock) {
 #'   typically smaller than the baseline plasmode for speed.
 #' @param data_quality_scenarios A named list of DQ scenarios; see Details.
 #' @param q0_library Optional SuperLearner library (character vector) for
-#'   the plasmode outcome generator Q0. Default \code{NULL} uses a
-#'   covariate-only logistic GLM. Supplying a richer library reduces the
-#'   linear-in-logit bias the GLM Q0 imposes on candidate selection when
-#'   the true outcome surface is nonlinear.
-#' @param design Character; how each synthetic replicate is generated.
+#'   the plasmode outcome generator Q0 (\code{"hybrid"} mode only).
+#'   Default \code{NULL} uses a covariate-only logistic GLM. Supplying a
+#'   richer library reduces the linear-in-logit bias the GLM Q0 imposes
+#'   on candidate selection when the true outcome surface is nonlinear.
+#' @param pilot_q0 Required when the lock's \code{dgp_mode} is
+#'   \code{"external_pilot"} (and refused otherwise): baseline event
+#'   probabilities for the lock rows fitted on external pilot data, as a
+#'   numeric vector of length \code{nrow(lock$data)} in (0, 1) or a
+#'   function of the covariate data frame returning one.
+#' @param design Character; how each simulated replicate is generated.
 #'   \code{"generate_treatment"} (default) resamples covariate rows with
 #'   replacement and draws treatment from a propensity model fitted on the
 #'   real data. \code{"sample_treatment"} keeps the observed treatment and
@@ -619,6 +631,17 @@ print_locked_spec <- function(lock) {
 #'       contributed to each row.}
 #'     \item{scenarios}{the input \code{data_quality_scenarios}.}
 #'     \item{baseline}{rows of metrics where scenario == "none".}
+#'     \item{verdict}{when the lock declares \code{dq_thresholds}: one
+#'       row per candidate with the GO / FLAG / STOP reading, a pure
+#'       function of the locked thresholds, the declared threat grid,
+#'       and the metrics (see [dq_locked_verdict()]). \code{NULL}
+#'       otherwise.}
+#'     \item{tipping}{when the lock declares \code{dq_thresholds}: the
+#'       tipping-point table, one row per candidate per threat family,
+#'       giving the first severity level at which the locked bias or
+#'       coverage bound is crossed. \code{NULL} otherwise.}
+#'     \item{lock_hash, dgp_mode}{provenance; the lock itself, its
+#'       data, and the fitted Q0 are deliberately not returned.}
 #'   }
 #'
 #' @export
@@ -630,11 +653,14 @@ run_plasmode_dq_stress <- function(lock,
                                     q0_library      = NULL,
                                     design          = c("generate_treatment",
                                                         "sample_treatment"),
+                                    pilot_q0        = NULL,
                                     fit_timeout     = Inf,
                                     verbose         = TRUE) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
-  design <- match.arg(design)
+  design   <- match.arg(design)
+  dgp_mode <- lock$dgp_mode %||% "hybrid"
+  .check_pilot_q0_contract(dgp_mode, pilot_q0, q0_library)
   if (design == "sample_treatment") {
     rlang::warn(paste(
       "design = 'sample_treatment' keeps each subject's observed treatment and",
@@ -660,58 +686,68 @@ run_plasmode_dq_stress <- function(lock,
   A          <- data[[treatment]]
   n          <- nrow(data)
 
-  # Guard against locks where the outcome column is fully NA (e.g. a lock
-  # that has been mask_outcome()'d). The Q0 fit needs the real outcome.
-  y_all <- data[[outcome]]
-  n_obs_y <- sum(!is.na(y_all))
-  if (n_obs_y == 0L) {
-    stop("Q0 model cannot be fit: lock$data[[lock$outcome]] has zero ",
-         "non-NA observations. If the outcome is masked, call ",
-         "unmask_outcome() before run_plasmode_dq_stress(); plasmode ",
-         "uses the marginal Y|W distribution but does not look at the ",
-         "treatment-outcome association.", call. = FALSE)
-  }
-  if (n_obs_y < length(covariates) + 1L) {
-    stop("Q0 model cannot be fit: only ", n_obs_y, " non-NA outcome ",
-         "rows available for ", length(covariates), " covariates. ",
-         "Drop covariates or check the cohort filter.", call. = FALSE)
-  }
-
-  # Baseline outcome model for plasmode DGP (Q0; outcome-blind in the sense
-  # that the treatment-outcome association is not used here -- this is the
-  # covariate-only mean of Y). Fit on complete cases and predict for ALL
-  # rows so the resulting probability vector has length n. Without
-  # newdata = data, predict.glm() returns predictions only for the rows
-  # used in fitting (which fails downstream when Y has NAs).
-  # Default Q0 is a covariate-only logistic GLM. When `q0_library` is
-  # supplied and SuperLearner is available, fit Q0 with that library
-  # instead; this relaxes the linear-in-logit bias that a GLM Q0 imposes
-  # on candidate selection when the true outcome surface is nonlinear.
-  use_sl_q0 <- !is.null(q0_library) &&
-    requireNamespace("SuperLearner", quietly = TRUE)
-  if (use_sl_q0) {
-    cc <- !is.na(data[[outcome]])
-    Q0_sl <- SuperLearner::SuperLearner(
-      Y = data[[outcome]][cc],
-      X = data[cc, covariates, drop = FALSE],
-      family = stats::binomial(), SL.library = q0_library,
-      env = .cleantmle_sl_env())
-    p_base <- as.numeric(predict(
-      Q0_sl, newdata = data[, covariates, drop = FALSE])$pred)
+  if (dgp_mode == "external_pilot") {
+    # External-pilot mode: the baseline surface comes from pilot data
+    # supplied by the caller; the primary outcome column is never read,
+    # so this path runs on a masked lock.
+    p_base <- .resolve_pilot_q0(pilot_q0, data, covariates, n)
   } else {
-    if (!is.null(q0_library))
-      warning("q0_library supplied but SuperLearner is not available; ",
-              "falling back to logistic-GLM Q0.", call. = FALSE)
-    Q0_fml <- stats::reformulate(covariates, response = outcome)
-    Q0_fit <- stats::glm(Q0_fml, data = data, family = stats::binomial(),
-                         na.action = stats::na.exclude)
-    p_base <- as.numeric(stats::predict(Q0_fit, newdata = data,
-                                         type = "response"))
-  }
-  if (length(p_base) != n) {
-    stop("Internal error in plasmode Q0 fit: predicted vector length (",
-         length(p_base), ") does not match data rows (", n, ").",
-         call. = FALSE)
+    # Hybrid mode. Guard against locks where the outcome column is fully
+    # NA (e.g. a lock that has been mask_outcome()'d): this Q0 fit needs
+    # the real outcome.
+    y_all <- data[[outcome]]
+    n_obs_y <- sum(!is.na(y_all))
+    if (n_obs_y == 0L) {
+      stop("Q0 model cannot be fit: lock$data[[lock$outcome]] has zero ",
+           "non-NA observations. If the outcome is masked, either call ",
+           "unmask_outcome() before run_plasmode_dq_stress() or lock ",
+           "dgp_mode = 'external_pilot' and supply `pilot_q0`. In hybrid ",
+           "mode the plasmode uses the covariate-conditional mean of Y ",
+           "but never the treatment-outcome association.", call. = FALSE)
+    }
+    if (n_obs_y < length(covariates) + 1L) {
+      stop("Q0 model cannot be fit: only ", n_obs_y, " non-NA outcome ",
+           "rows available for ", length(covariates), " covariates. ",
+           "Drop covariates or check the cohort filter.", call. = FALSE)
+    }
+
+    # Baseline outcome model for plasmode DGP (Q0; outcome-blind in the
+    # sense that the treatment-outcome association is not used here --
+    # this is the covariate-only mean of Y). Fit on complete cases and
+    # predict for ALL rows so the resulting probability vector has
+    # length n. Without newdata = data, predict.glm() returns
+    # predictions only for the rows used in fitting (which fails
+    # downstream when Y has NAs). Default Q0 is a covariate-only
+    # logistic GLM. When `q0_library` is supplied and SuperLearner is
+    # available, fit Q0 with that library instead; this relaxes the
+    # linear-in-logit bias that a GLM Q0 imposes on candidate selection
+    # when the true outcome surface is nonlinear.
+    use_sl_q0 <- !is.null(q0_library) &&
+      requireNamespace("SuperLearner", quietly = TRUE)
+    if (use_sl_q0) {
+      cc <- !is.na(data[[outcome]])
+      Q0_sl <- SuperLearner::SuperLearner(
+        Y = data[[outcome]][cc],
+        X = data[cc, covariates, drop = FALSE],
+        family = stats::binomial(), SL.library = q0_library,
+        env = .cleantmle_sl_env())
+      p_base <- as.numeric(predict(
+        Q0_sl, newdata = data[, covariates, drop = FALSE])$pred)
+    } else {
+      if (!is.null(q0_library))
+        warning("q0_library supplied but SuperLearner is not available; ",
+                "falling back to logistic-GLM Q0.", call. = FALSE)
+      Q0_fml <- stats::reformulate(covariates, response = outcome)
+      Q0_fit <- stats::glm(Q0_fml, data = data, family = stats::binomial(),
+                           na.action = stats::na.exclude)
+      p_base <- as.numeric(stats::predict(Q0_fit, newdata = data,
+                                           type = "response"))
+    }
+    if (length(p_base) != n) {
+      stop("Internal error in plasmode Q0 fit: predicted vector length (",
+           length(p_base), ") does not match data rows (", n, ").",
+           call. = FALSE)
+    }
   }
   if (any(is.na(p_base))) p_base[is.na(p_base)] <- mean(p_base, na.rm = TRUE)
   p_base <- pmin(pmax(p_base, 0.001), 0.999)
@@ -724,6 +760,8 @@ run_plasmode_dq_stress <- function(lock,
   ps_mod  <- stats::glm(ps_fml, data = data, family = stats::binomial())
   ps_base <- as.numeric(stats::predict(ps_mod, type = "response"))
   ps_base <- pmin(pmax(ps_base, 0.001), 0.999)
+  if (dgp_mode == "hybrid")
+    .warn_hybrid_separation(.ps_cstat(ps_base, A), "run_plasmode_dq_stress")
 
   cand_ids <- vapply(tmle_candidates, function(x) x$candidate_id, character(1))
 
@@ -850,7 +888,7 @@ run_plasmode_dq_stress <- function(lock,
 
   # ── Out-of-process fit guard ──────────────────────────────────────────
   # Each replicate's candidate fits run in a persistent, killable callr
-  # subprocess so a degenerate synthetic design that sends glmnet into a
+  # subprocess so a degenerate simulated design that sends glmnet into a
   # runaway cannot wedge the whole study. See .fit_candidates_bounded().
   # Falls back to in-process fitting when callr is unavailable.
   sess <- NULL
@@ -928,7 +966,7 @@ run_plasmode_dq_stress <- function(lock,
         }
         ps_rep <- ps_base[idx]
 
-        # Generate synthetic outcome and possibly modify A under U.
+        # Generate simulated outcome and possibly modify A under U.
         # Clamp BOTH bounds so negative `es` with small p_base does
         # not produce negative probabilities (rbinom -> NA).
         p1_sim <- pmin(pmax(p_base[idx] + es, 0.001), 0.999)
@@ -1029,7 +1067,7 @@ run_plasmode_dq_stress <- function(lock,
 
         # Fit all candidates for this replicate inside a killable subprocess
         # bounded by `fit_timeout` seconds (see .fit_candidates_bounded): a
-        # degraded synthetic design can send the SuperLearner/glmnet fit into
+        # degraded simulated design can send the SuperLearner/glmnet fit into
         # a CPU/memory runaway that is not an R error, so one pathological draw
         # would otherwise wedge the entire stress test. On timeout the worker
         # is killed and this replicate's candidates are recorded as NA.
@@ -1084,17 +1122,152 @@ run_plasmode_dq_stress <- function(lock,
 
   metrics <- do.call(rbind, all_metrics)
 
+  # The returned object deliberately carries no lock, no data, and no
+  # fitted Q0: only per-replicate candidate metrics plus provenance.
   result <- list(
     metrics   = metrics,
     scenarios = data_quality_scenarios,
     baseline  = metrics[metrics$scenario == "none", ],
-    lock      = lock,
+    lock_hash = lock$lock_hash,
+    dgp_mode  = dgp_mode,
     reps      = reps,
     design    = design,
     call      = match.call()
   )
   class(result) <- "plasmode_dq_results"
+
+  # Pure locked verdict and tipping points, computed only when the lock
+  # declared dq_thresholds (a fingerprinted field): the reading is a
+  # function of (locked thresholds, declared threat grid, metrics) and
+  # of nothing else -- no realised bias, no true effect.
+  if (!is.null(lock$dq_thresholds)) {
+    result$thresholds <- lock$dq_thresholds
+    result$verdict    <- dq_locked_verdict(result, lock$dq_thresholds)
+    result$tipping    <- dq_tipping_points(result, lock$dq_thresholds)
+  } else {
+    if (verbose)
+      message("No dq_thresholds declared on the lock; the stress test ",
+              "reports metrics only. Declare dq_thresholds in ",
+              "create_analysis_lock() to obtain the locked verdict and ",
+              "tipping points.")
+    result$verdict <- NULL
+    result$tipping <- NULL
+  }
   result
+}
+
+
+#' Locked GO / FLAG / STOP Reading of a DQ Stress Test
+#'
+#' A pure function of the locked thresholds, the declared threat grid,
+#' and the stress-test metrics: for each candidate, STOP when any
+#' degraded cell breaches \code{max_abs_bias}, \code{min_coverage}, or
+#' \code{max_rmse_ratio} (RMSE relative to the candidate's own clean
+#' baseline); FLAG when no STOP bound is breached but a declared softer
+#' envelope (\code{flag_coverage}, \code{flag_rmse_ratio}) is; GO
+#' otherwise. Nothing here reads realised data, the true effect, or any
+#' quantity outside the metrics table, so the same locked grid produces
+#' the same reading wherever it is applied.
+#'
+#' @param dq_results A \code{plasmode_dq_results} object (its
+#'   \code{metrics} are read).
+#' @param thresholds A \code{dq_thresholds} list as declared on the lock
+#'   (see [create_analysis_lock()]).
+#' @return A data.frame with one row per candidate: worst absolute bias,
+#'   worst coverage, worst RMSE ratio over the degraded cells, the
+#'   breached bounds, and the verdict.
+#' @export
+dq_locked_verdict <- function(dq_results, thresholds) {
+  if (!inherits(dq_results, "plasmode_dq_results"))
+    stop("`dq_results` must be a plasmode_dq_results object.", call. = FALSE)
+  th  <- .normalize_dq_thresholds(thresholds)
+  deg <- summarize_dq_degradation(dq_results)
+  if (!nrow(deg))
+    stop("dq_locked_verdict: no degraded scenario rows to read.",
+         call. = FALSE)
+  rows <- lapply(split(deg, deg$candidate), function(d) {
+    worst_bias <- max(abs(d$bias_degraded), na.rm = TRUE)
+    worst_cov  <- min(d$cov_degraded, na.rm = TRUE)
+    worst_rr   <- max(d$rmse_ratio, na.rm = TRUE)
+    stop_bias  <- worst_bias > th$max_abs_bias
+    stop_cov   <- worst_cov < th$min_coverage
+    stop_rr    <- worst_rr > th$max_rmse_ratio
+    flag_cov   <- !is.na(th$flag_coverage)   && worst_cov < th$flag_coverage
+    flag_rr    <- !is.na(th$flag_rmse_ratio) && worst_rr > th$flag_rmse_ratio
+    verdict <- if (stop_bias || stop_cov || stop_rr) "STOP"
+               else if (flag_cov || flag_rr) "FLAG" else "GO"
+    breached <- c(if (stop_bias) "bias", if (stop_cov) "coverage",
+                  if (stop_rr) "rmse_ratio")
+    data.frame(candidate = d$candidate[1],
+               worst_abs_bias = round(worst_bias, 5),
+               worst_coverage = round(worst_cov, 3),
+               worst_rmse_ratio = round(worst_rr, 3),
+               breached = paste(breached, collapse = "+"),
+               verdict = verdict, stringsAsFactors = FALSE)
+  })
+  out <- do.call(rbind, rows)
+  rownames(out) <- NULL
+  attr(out, "thresholds") <- th
+  out
+}
+
+
+#' Tipping Points of a DQ Stress Test Under Locked Thresholds
+#'
+#' For each candidate and threat family, the first severity level (in
+#' the declared grid order, which runs from mild to severe) at which the
+#' locked \code{max_abs_bias} or \code{min_coverage} bound is crossed.
+#' This is the primary reading of the stress test: it states the threat
+#' severity at which the planned analysis would no longer meet the
+#' locked operating-characteristic thresholds, and it returns the same
+#' answer whether or not the realised data contain such a threat. For
+#' the unmeasured-confounding family the tipping level's odds ratio is
+#' also parsed into \code{tipping_or}.
+#'
+#' @inheritParams dq_locked_verdict
+#' @return A data.frame with one row per candidate per threat family:
+#'   the tipping level for bias and for coverage (\code{NA} when no
+#'   declared severity crosses the bound), and \code{tipping_or} for the
+#'   unmeasured-confounding family.
+#' @export
+dq_tipping_points <- function(dq_results, thresholds) {
+  if (!inherits(dq_results, "plasmode_dq_results"))
+    stop("`dq_results` must be a plasmode_dq_results object.", call. = FALSE)
+  th <- .normalize_dq_thresholds(thresholds)
+  m  <- dq_results$metrics
+  m  <- m[m$scenario != "none", , drop = FALSE]
+  if (!nrow(m))
+    stop("dq_tipping_points: no degraded scenario rows to read.",
+         call. = FALSE)
+  # Preserve the declared grid order (mild to severe) per scenario.
+  m$.row <- seq_len(nrow(m))
+  rows <- lapply(split(m, list(m$candidate, m$scenario), drop = TRUE),
+                 function(d) {
+    d <- d[order(d$.row), , drop = FALSE]
+    over_bias <- which(abs(d$bias) > th$max_abs_bias)
+    under_cov <- which(d$coverage < th$min_coverage)
+    tip_bias  <- if (length(over_bias)) d$level[over_bias[1]] else NA_character_
+    tip_cov   <- if (length(under_cov)) d$level[under_cov[1]] else NA_character_
+    tip_first <- if (length(c(over_bias, under_cov)))
+      d$level[min(c(over_bias, under_cov))] else NA_character_
+    or_of <- function(lv) {
+      if (is.na(lv)) return(NA_real_)
+      mm <- regmatches(lv, regexec("OR_trt([0-9.]+)_out", lv))[[1]]
+      if (length(mm) == 2) as.numeric(mm[2]) else NA_real_
+    }
+    data.frame(candidate = d$candidate[1], scenario = d$scenario[1],
+               n_levels = nrow(d),
+               tipping_level = tip_first,
+               tipping_level_bias = tip_bias,
+               tipping_level_coverage = tip_cov,
+               tipping_or = or_of(tip_first),
+               stringsAsFactors = FALSE)
+  })
+  out <- do.call(rbind, rows)
+  rownames(out) <- NULL
+  out <- out[order(out$candidate, out$scenario), , drop = FALSE]
+  attr(out, "thresholds") <- th
+  out
 }
 
 
@@ -1103,7 +1276,22 @@ print.plasmode_dq_results <- function(x, ...) {
   cat("Plasmode Data-Quality Stress Test\n")
   cat("==================================\n")
   cat(sprintf("Replicates per scenario: %d\n", x$reps))
-  cat(sprintf("Total scenario-candidate rows: %d\n\n", nrow(x$metrics)))
+  if (!is.null(x$dgp_mode))
+    cat(sprintf("Generator mode (locked): %s\n", x$dgp_mode))
+  cat(sprintf("Total scenario-candidate rows: %d\n", nrow(x$metrics)))
+  if (!is.null(x$verdict)) {
+    th <- attr(x$verdict, "thresholds")
+    cat(sprintf("Locked thresholds: |bias| <= %.3g, coverage >= %.2f, RMSE ratio <= %.2f\n",
+                th$max_abs_bias, th$min_coverage, th$max_rmse_ratio))
+    cat("Locked verdict by candidate:\n")
+    print(x$verdict, row.names = FALSE)
+    cat("Tipping points (first declared severity crossing a locked bound):\n")
+    print(x$tipping[, c("candidate", "scenario", "tipping_level",
+                        "tipping_or")], row.names = FALSE)
+  } else {
+    cat("No dq_thresholds declared on the lock: metrics only, no verdict.\n")
+  }
+  cat("\n")
 
   scenarios <- unique(x$metrics$scenario)
   for (sc in scenarios) {
@@ -1318,14 +1506,19 @@ summary.plasmode_dq_results <- function(object, ...) {
 #'
 #' Computes the relative change in bias, RMSE, and coverage versus the
 #' baseline (no degradation) for each DQ scenario, level, and candidate.
-#' Reached as `summary()` on a `plasmode_dq_results` object.
+#' Reached as `summary()` on a `plasmode_dq_results` object. Every
+#' candidate is always reported; when `selected` names a candidate, a
+#' logical `selected` column flags its rows so tables can mark the
+#' locked candidate without dropping the others.
 #'
 #' @param dq_results A \code{plasmode_dq_results} object.
+#' @param selected Optional candidate id to flag in a `selected` column.
 #'
-#' @return A data.frame with relative degradation metrics.
+#' @return A data.frame with relative degradation metrics for every
+#'   candidate.
 #'
 #' @keywords internal
-summarize_dq_degradation <- function(dq_results) {
+summarize_dq_degradation <- function(dq_results, selected = NULL) {
   if (!inherits(dq_results, "plasmode_dq_results"))
     stop("`dq_results` must be a plasmode_dq_results object.", call. = FALSE)
 
@@ -1357,21 +1550,24 @@ summarize_dq_degradation <- function(dq_results) {
       stringsAsFactors = FALSE
     )
   })
-  do.call(rbind, Filter(Negate(is.null), rows))
+  out <- do.call(rbind, Filter(Negate(is.null), rows))
+  if (!is.null(selected) && !is.null(out) && nrow(out))
+    out$selected <- out$candidate == selected
+  out
 }
 
 
-#' Assess Synthetic-vs-Real Data Fidelity for a Plasmode Generator
+#' Assess Simulated-vs-Real Data Fidelity for a Plasmode Generator
 #'
-#' Compares the covariate and treatment distributions of a synthetic
+#' Compares the covariate and treatment distributions of a simulated
 #' (plasmode) sample against the real lock data, so the analyst can defend
 #' that the plasmode generator is faithful enough to base candidate
 #' selection on. This addresses the central caveat of the DQ stress test:
-#' estimator rankings under synthetic outcomes only transfer to the real
-#' study when the synthetic-data-generating process is faithful.
+#' estimator rankings under simulated outcomes only transfer to the real
+#' study when the simulated-data-generating process is faithful.
 #'
 #' For each covariate the function reports the absolute standardised mean
-#' difference (SMD) between real and synthetic samples and, for continuous
+#' difference (SMD) between real and simulated samples and, for continuous
 #' covariates, a two-sample Kolmogorov-Smirnov statistic. It also reports
 #' the absolute difference in treatment prevalence. A FLAG is raised when
 #' any covariate SMD exceeds \code{smd_threshold} or any KS statistic
@@ -1454,7 +1650,7 @@ assess_dgp_fidelity <- function(real_data, synth_data, covariates,
 
 #' @export
 print.cleantmle_dgp_fidelity <- function(x, ...) {
-  cat("Plasmode DGP fidelity (real vs synthetic)\n")
+  cat("Plasmode DGP fidelity (real vs simulated)\n")
   cat("=========================================\n")
   print(x$table, row.names = FALSE)
   if (!is.na(x$trt_prev_diff))

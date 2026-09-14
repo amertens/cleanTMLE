@@ -18,3 +18,4 @@ Modified \code{cleantmle_audit}.
 Convenience wrapper that extracts stage, decision, and rationale from
 a \code{cleantmle_checkpoint} and appends them to the audit log.
 }
+\keyword{internal}

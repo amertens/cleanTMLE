@@ -66,3 +66,4 @@ lock <- create_simple_lock(
 isFALSE(lock$cleanroom_enabled)
 
 }
+\keyword{internal}

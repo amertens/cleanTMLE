@@ -49,3 +49,4 @@ cp2  <- checkpoint_balance(diag, lock_hash = lock$lock_hash)
 print(cp2)
 
 }
+\keyword{internal}

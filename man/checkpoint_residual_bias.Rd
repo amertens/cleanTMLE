@@ -71,3 +71,4 @@ cp3  <- checkpoint_residual_bias(nc, lock_hash = lock$lock_hash)
 print(cp3)
 
 }
+\keyword{internal}

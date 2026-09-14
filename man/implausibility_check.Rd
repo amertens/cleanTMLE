@@ -30,3 +30,4 @@ narrow, so nothing in an estimator's own output separates such artifacts
 from real findings; this guard and the support verdict catch different
 failures and both travel with every estimate the package reports.
 }
+\keyword{internal}

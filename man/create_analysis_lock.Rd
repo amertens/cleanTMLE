@@ -15,7 +15,11 @@ create_analysis_lock(
   cleanroom_enabled = TRUE,
   negative_controls = NULL,
   mask = FALSE,
-  enforce = FALSE
+  enforce = FALSE,
+  dgp_mode = c("hybrid", "external_pilot"),
+  nc_criteria = NULL,
+  dq_thresholds = NULL,
+  roles = NULL
 )
 }
 \arguments{
@@ -50,6 +54,37 @@ with \code{\link[=unmask_outcome]{unmask_outcome()}}. Default \code{FALSE}.}
 \item{enforce}{Logical; if \code{TRUE}, the lock additionally requires a
 recorded pre-outcome authorisation before Stage 4 estimators run (the
 software-enforced two-pass contract). Default \code{FALSE}.}
+
+\item{dgp_mode}{Character; the plasmode outcome-generator mode, a
+locked field read by \code{\link[=run_plasmode_feasibility]{run_plasmode_feasibility()}} and
+\code{\link[=run_plasmode_dq_stress]{run_plasmode_dq_stress()}}. \code{"hybrid"} (default) fits the
+generator's baseline outcome model Q0(W) on the lock's real outcome
+(covariate-only; the treatment-outcome association is never used);
+\code{"external_pilot"} requires the caller to supply Q0 predictions
+fitted on external pilot data, so the plasmode stage reads no real
+outcome at all and runs on a masked lock.}
+
+\item{nc_criteria}{Optional prespecified negative-control decision
+criteria, declared before outcome access and fingerprinted: a list
+with \code{null_band} (positive half-width on the \code{scale}), and
+optionally \code{scale} (\code{"rd"}, the default, or \code{"ratio"}), \code{rule}
+(\code{"point_in_band"}, the default, or \code{"ci_in_band"}),
+\code{min_per_domain} (default 1), and \code{consistency}
+(\code{"all_within_band"}, the default, or \code{"majority_within_band"}).
+Read by \code{\link[=run_negative_control_ladder]{run_negative_control_ladder()}}, which refuses to grade
+controls without them.}
+
+\item{dq_thresholds}{Optional prespecified data-quality decision
+thresholds, declared before outcome access and fingerprinted: a
+list with \code{max_abs_bias}, \code{min_coverage}, \code{max_rmse_ratio}, and
+optionally \code{flag_coverage} and \code{flag_rmse_ratio}. Read by
+\code{\link[=run_plasmode_dq_stress]{run_plasmode_dq_stress()}}, whose verdict and tipping points are a
+pure function of these thresholds and the declared threat grid.}
+
+\item{roles}{Optional named list or character vector recording the
+personnel structure (for example \code{programmer}, \code{analyst},
+\code{analytic_advisor}, \code{review_team}). Recorded and printed in the
+design report header; nothing is enforced.}
 }
 \value{
 An object of class \code{cleanroom_lock} containing all specified
@@ -65,12 +100,15 @@ pre-specified analytic plan across all subsequent stages.
 
 The \code{lock_hash} is a sha256 digest (via \pkg{digest}; with a
 clearly-labelled non-cryptographic checksum fallback) computed over the
-treatment name, outcome name, sorted covariate vector, SuperLearner library,
-integer seed, and the row count, column count, and sorted column names of
-\code{data}. Changing any of these fields (estimand variables, covariate
-set, candidate-grid library, severity ranges that re-enter as part of the
-lock metadata, decision thresholds bound into the candidate selection
-rule) invalidates the hash.
+treatment name, outcome name, sorted covariate vector, SuperLearner
+library, integer seed, the row count, column count, and sorted column
+names of \code{data}, a content digest of every column of \code{data}
+except the outcome column (so swapping design-data values is
+detectable, while masking or unmasking the outcome leaves the
+fingerprint unchanged and the fingerprint commits to nothing about
+the outcome), the plasmode generator mode (\code{dgp_mode}), and the
+declared \code{nc_criteria} and \code{dq_thresholds}. Changing any of
+these invalidates the hash.
 }
 
 \section{What does NOT invalidate the lock}{
@@ -84,7 +122,7 @@ recorded for traceability but the lock fingerprint is unchanged.
 \section{Outcome-access taxonomy}{
 
 The workflow distinguishes pre-outcome access (no Y, marginal Y summaries
-used only for design-stage precision, synthetic Y from plasmode simulation,
+used only for design-stage precision, simulated Y from plasmode simulation,
 and negative-control Y) from post-outcome access (primary Y). Stage 4
 functions check \code{lock$.outcome_masked} via the internal outcome guard
 and refuse to run on the primary Y until the gate authorises it or the

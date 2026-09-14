@@ -77,3 +77,4 @@ targets <- list(
 gate_check(metrics, "Example", targets, method = "glm_t01")
 
 }
+\keyword{internal}

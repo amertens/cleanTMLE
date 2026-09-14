@@ -44,3 +44,4 @@ compute_G_value(estimate = 0.031, ci_lower = -0.001, ci_upper = 0.063)
 Gruber S, et al. (2023) \emph{Evaluating and improving RWE
 with Targeted Learning}.
 }
+\keyword{internal}

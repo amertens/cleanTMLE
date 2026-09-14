@@ -25,3 +25,4 @@ outcome using the modular TMLE pipeline (doubly robust), rather than
 IPTW.  Uses the same g-model (propensity score) as the primary
 analysis but fits a separate Q-model for the negative-control outcome.
 }
+\keyword{internal}

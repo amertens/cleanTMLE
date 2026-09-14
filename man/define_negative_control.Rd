@@ -55,3 +55,4 @@ lock <- define_negative_control(lock, "nc_outcome",
   domain = "confounding_by_indication")
 
 }
+\keyword{internal}

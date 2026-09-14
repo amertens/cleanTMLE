@@ -14,14 +14,84 @@
   ATO = "patients in clinical equipoise, weighted g(1-g)",
   matched_ATT = "treated patients with a matched control")
 
-# Design-decision log on the lock: a plain data frame, no tokens.
+# Design-decision log on the lock: a plain data frame, no tokens. The
+# canonical columns follow the decision-log structure of Muntner et al.
+# (2024), Table S1: date, stage, issue, decision, rationale, decided_by.
+# `type` and `note` are the package-internal shorthand (`note` is the
+# issue text); the structured fields are optional and default to NA so
+# existing call sites keep working.
 #' @keywords internal
-.log_design_decision <- function(lock, type, note) {
+.design_log_cols <- c("timestamp", "type", "note", "stage", "decision",
+                      "rationale", "decided_by")
+
+#' @keywords internal
+.log_design_decision <- function(lock, type, note, stage = NA_character_,
+                                 decision = NA_character_,
+                                 rationale = NA_character_,
+                                 decided_by = NA_character_) {
   entry <- data.frame(timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
-                      type = type, note = note, stringsAsFactors = FALSE)
-  lock$design_log <- if (is.null(lock$design_log)) entry else
-    rbind(lock$design_log, entry)
+                      type = type, note = note, stage = stage,
+                      decision = decision, rationale = rationale,
+                      decided_by = decided_by, stringsAsFactors = FALSE)
+  lock$design_log <- rbind(.pad_design_log(lock$design_log), entry)
   lock
+}
+
+# Bring a design log (possibly written by an earlier package version
+# with fewer columns) up to the canonical column set.
+#' @keywords internal
+.pad_design_log <- function(log) {
+  if (is.null(log)) return(NULL)
+  for (cn in .design_log_cols)
+    if (!cn %in% names(log)) log[[cn]] <- NA_character_
+  log[.design_log_cols]
+}
+
+
+#' Export the Design Log
+#'
+#' Returns the lock's design log as a tidy data frame, or in the
+#' decision-log structure of Muntner et al. (2024), Table S1 (columns
+#' date, stage, issue, decision, rationale, decided_by), so the log can
+#' be released as supplementary material in the form the staged-analysis
+#' literature uses. Entries written before the structured fields existed
+#' carry NA in the columns they never recorded.
+#'
+#' @param lock A `cleanroom_lock` (or an `estimand_ladder_result`, whose
+#'   `design_log` is used).
+#' @param format `"tidy"` (the internal columns) or `"muntner"` (the
+#'   Table S1 columns).
+#' @param file Optional path; when given the log is also written as CSV.
+#' @return A data.frame (invisibly when `file` is given).
+#' @references Muntner P et al. (2024) Pharmacoepidemiol Drug Saf
+#'   33:e5770, supplementary Table S1.
+#' @export
+export_design_log <- function(lock, format = c("tidy", "muntner"),
+                              file = NULL) {
+  format <- match.arg(format)
+  log <- if (inherits(lock, "cleanroom_lock")) lock$design_log
+         else if (!is.null(lock$design_log)) lock$design_log
+         else stop("`lock` carries no design log.", call. = FALSE)
+  log <- .pad_design_log(log)
+  if (is.null(log))
+    log <- stats::setNames(
+      as.data.frame(matrix(character(0), nrow = 0,
+                           ncol = length(.design_log_cols))),
+      .design_log_cols)
+  out <- if (format == "muntner") {
+    data.frame(date = log$timestamp,
+               stage = ifelse(is.na(log$stage), log$type, log$stage),
+               issue = log$note,
+               decision = log$decision,
+               rationale = log$rationale,
+               decided_by = log$decided_by,
+               stringsAsFactors = FALSE)
+  } else log
+  if (!is.null(file)) {
+    utils::write.csv(out, file, row.names = FALSE)
+    return(invisible(out))
+  }
+  out
 }
 
 
@@ -124,8 +194,10 @@ estimand_feasibility <- function(ps_fit,
           note = "estimand changes: common-support population; g refit at estimation")
       }
     } else if (ed == "matched_ATT") {
-      set.seed(1L)
-      m <- .greedy_caliper_match(g, A, caliper_sd = caliper_sd)
+      # Deterministic matching order for the design diagnostic: no RNG,
+      # no hidden seed (treated are matched hardest-first).
+      m <- .greedy_caliper_match(g, A, caliper_sd = caliper_sd,
+                                 order = "sorted")
       w <- numeric(length(A))
       w[m$treated] <- 1; w[m$control] <- 1
       rows[[length(rows) + 1L]] <- row_for(
@@ -358,11 +430,14 @@ run_estimand_ladder <- function(lock, ps_fit,
   }
   feasible_of <- function(ed) sev_rank[[verdict_of(ed)]] < trigger_rank
 
-  design_log <- lock$design_log
-  note <- function(type, msg) {
+  design_log <- .pad_design_log(lock$design_log)
+  note <- function(type, msg, decision = NA_character_,
+                   rationale = NA_character_) {
     design_log <<- rbind(design_log, data.frame(
       timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
-      type = type, note = msg, stringsAsFactors = FALSE))
+      type = type, note = msg, stage = "Stage 4 (estimand ladder)",
+      decision = decision, rationale = rationale,
+      decided_by = NA_character_, stringsAsFactors = FALSE))
     if (verbose) message("[", type, "] ", msg)
   }
 
@@ -374,12 +449,17 @@ run_estimand_ladder <- function(lock, ps_fit,
     note("override", sprintf(
       "Primary %s is infeasible (verdict %s at trigger %s) and is estimated anyway. Reason: %s",
       ladder$primary, verdict_of(ladder$primary), ladder$trigger,
-      override_reason))
+      override_reason),
+      decision = "estimate the infeasible primary (override)",
+      rationale = override_reason)
     todo <- ladder$primary
   } else {
     note("estimand_switch", sprintf(
       "Primary %s infeasible (verdict %s at trigger %s); moving down the declared ladder.",
-      ladder$primary, verdict_of(ladder$primary), ladder$trigger))
+      ladder$primary, verdict_of(ladder$primary), ladder$trigger),
+      decision = "move down the declared ladder",
+      rationale = sprintf("support verdict %s at declared trigger %s",
+                          verdict_of(ladder$primary), ladder$trigger))
   }
   for (fb in ladder$fallbacks)
     if (feasible_of(fb)) todo <- c(todo, fb)

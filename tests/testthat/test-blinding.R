@@ -164,25 +164,19 @@ test_that("design_report is blind and carries no raw data", {
 })
 
 test_that("estimate_design_precision reads only marginal outcome summaries", {
-  skip(paste("WP1 item 1 pending (Stage 0 finding F3):",
-             "estimate_design_precision() and summarize_event_support()",
-             "return per-arm event counts and crude per-arm rates, the",
-             "crude treatment-outcome association. Once WP1 restricts the",
-             "default output to totals and the marginal rate, remove this",
-             "skip: the assertions below must then pass."))
   dp  <- estimate_design_precision(fx$lock)
   dpP <- estimate_design_precision(fx$perm)
   # A permutation preserves total events and the marginal rate, so a
   # marginal-only summary is permutation invariant.
   expect_blind_identical(dp, dpP)
+  # The masked lock is refused (marginal counts still need the column),
+  # and the output carries no per-arm outcome split.
+  expect_error(estimate_design_precision(fx$masked), "masked")
+  expect_null(dp$events_per_arm)
+  expect_null(dp$crude_rates)
 })
 
 test_that("plasmode results do not carry the primary outcome", {
-  skip(paste("WP1 item 2 pending (Stage 0 finding F4):",
-             "run_plasmode_feasibility() and run_plasmode_dq_stress()",
-             "return the entire lock, including the real outcome column,",
-             "as result$lock. Once WP1 stops storing the outcome on the",
-             "returned objects, remove this skip."))
   cand <- list(tmle_candidate("c1", g_library = "SL.glm", truncation = 0.01))
   plas <- run_plasmode_feasibility(fx$lock, tmle_candidates = cand,
                                    effect_sizes = 0.05, reps = 2L)
@@ -193,11 +187,49 @@ test_that("plasmode results do not carry the primary outcome", {
     FALSE
   }
   expect_false(carries_y(plas))
+  expect_null(plas[["lock"]])
+  expect_identical(plas$lock_hash, fx$lock$lock_hash)
+  expect_identical(plas$dgp_mode, "hybrid")
+
+  dq <- suppressMessages(run_plasmode_dq_stress(
+    fx$lock, tmle_candidates = cand, effect_sizes = 0.05, reps = 2L,
+    data_quality_scenarios = list(
+      unmeasured_confounding = list(U_prevalence = 0.2,
+                                    U_treatment_OR = 2,
+                                    U_outcome_OR = 2)),
+    verbose = FALSE))
+  expect_false(carries_y(dq))
+  expect_null(dq[["lock"]])
 })
 
 test_that("plasmode external-pilot mode is fully outcome blind", {
-  skip(paste("WP1 item 2 / decision D8 pending: dgp_mode",
-             "('hybrid', 'external_pilot') is not implemented yet.",
-             "Once implemented, external_pilot runs must be identical on",
-             "the reference, masked, and permuted locks."))
+  covs <- c("age", "sex", "biomarker")
+  pilot <- function(W) stats::plogis(-1 + 0.01 * W$age + 0.2 * W$sex)
+  mk <- function(d) create_analysis_lock(d, "treatment", "event_24", covs,
+                                         seed = 7,
+                                         dgp_mode = "external_pilot")
+  lock_ep   <- mk(fx$dat)
+  perm_ep   <- mk(fx$perm$data)
+  masked_ep <- mask_outcome(lock_ep)
+  cand <- list(tmle_candidate("c1", g_library = "SL.glm", truncation = 0.01))
+
+  run_ep <- function(l) run_plasmode_feasibility(
+    l, tmle_candidates = cand, effect_sizes = 0.05, reps = 3L,
+    pilot_q0 = pilot)
+  p  <- run_ep(lock_ep)
+  pM <- run_ep(masked_ep)   # a masked lock is fine: no real Y is read
+  pP <- run_ep(perm_ep)
+  expect_blind_identical(p, pM)
+  expect_blind_identical(p, pP)
+  expect_identical(p$dgp_mode, "external_pilot")
+
+  # The mode is locked: pilot_q0 on a hybrid lock is refused, and
+  # external_pilot without pilot_q0 is refused.
+  expect_error(run_plasmode_feasibility(fx$lock, tmle_candidates = cand,
+                                        effect_sizes = 0.05, reps = 2L,
+                                        pilot_q0 = pilot),
+               "hybrid")
+  expect_error(run_plasmode_feasibility(lock_ep, tmle_candidates = cand,
+                                        effect_sizes = 0.05, reps = 2L),
+               "pilot_q0")
 })

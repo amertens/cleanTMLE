@@ -23,3 +23,4 @@ A data.frame with the K most extreme-weighted observations.
 Returns the top K observations with the most extreme IPW weights,
 along with key columns for inspection.
 }
+\keyword{internal}

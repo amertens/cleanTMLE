@@ -2,7 +2,7 @@
 % Please edit documentation in R/simulate_support.R
 \name{support_surfaces}
 \alias{support_surfaces}
-\title{Prespecify the Synthetic Outcome-Surface Family for simulate_support()}
+\title{Prespecify the Simulated Outcome-Surface Family for simulate_support()}
 \usage{
 support_surfaces(
   confounding = c(0, 1, 2),
@@ -31,7 +31,7 @@ log-odds, curvature a main-terms Q model misses. Default \code{"linear"}.}
 Default 0.05.}
 
 \item{base_rate}{Numeric in (0, 1) or \code{NULL}; the marginal baseline
-outcome rate the synthetic surface is anchored to. \code{NULL} uses the
+outcome rate the simulated surface is anchored to. \code{NULL} uses the
 observed marginal outcome rate when the lock's outcome is readable
 (a marginal summary, not the treatment-outcome association), else 0.10.}
 }
@@ -39,7 +39,7 @@ observed marginal outcome rate when the lock's outcome is readable
 An object of class \code{support_surfaces}: the grid specification.
 }
 \description{
-The synthetic outcome family spans three axes. The confounding axis scales
+The simulated outcome family spans three axes. The confounding axis scales
 how strongly the outcome depends on the covariate direction that most
 predicts treatment (the standardised logit of the fitted propensity), so
 extrapolation error under non-overlap grows along it. The modification axis
@@ -58,3 +58,4 @@ support_surfaces(confounding = c(0, 0.5, 1, 2), modification = c(0, 0.5, 1))
 \seealso{
 \code{\link[=simulate_support]{simulate_support()}}
 }
+\keyword{internal}

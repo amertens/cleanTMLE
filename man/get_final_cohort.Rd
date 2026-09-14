@@ -16,3 +16,4 @@ A data.frame.
 Returns the data.frame after all inclusion/exclusion criteria have
 been applied.
 }
+\keyword{internal}

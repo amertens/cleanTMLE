@@ -87,7 +87,7 @@ test_that("q0 sources are enforced: primary outcome needs explicit authorisation
 })
 
 test_that("the generate-treatment design beats the Shaw et al. artifact", {
-  # Under the sample-treatment design the synthetic assignment mechanism is
+  # Under the sample-treatment design the simulated assignment mechanism is
   # degenerate (P(A = a | W) = 1 at the observed a), so the ATE estimator
   # shows bias and undercoverage that the generate-treatment design does not,
   # on the same cohort, at the same replicate count. Deterministic given the

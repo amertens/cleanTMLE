@@ -31,3 +31,4 @@ estimate to extreme weights.
  Stage 4 (post-outcome).
 }
 
+\keyword{internal}

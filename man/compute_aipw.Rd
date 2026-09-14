@@ -23,3 +23,4 @@ inverse-probability-weighting estimate of the average treatment
 effect along with its IF-based standard error. Useful as a
 candidate-grid comparator in the plasmode loop.
 }
+\keyword{internal}

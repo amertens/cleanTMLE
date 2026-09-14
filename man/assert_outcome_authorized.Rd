@@ -53,3 +53,4 @@ audit <- record_checkpoint(audit, cp3)
 assert_outcome_authorized(audit)
 
 }
+\keyword{internal}

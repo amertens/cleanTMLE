@@ -1,9 +1,9 @@
 # Outcome-blind support simulation.
 #
 # simulate_support() is the design team's answer to "which estimands can this
-# design deliver?". It generates synthetic data under the generate-treatment
+# design deliver?". It generates simulated data under the generate-treatment
 # plasmode design (resample W, draw A from the fitted propensity, draw Y from
-# a prespecified synthetic outcome family), computes the truth for every
+# a prespecified simulated outcome family), computes the truth for every
 # estimand on every replicate from the generating model, and reports bias,
 # RMSE, coverage and SE calibration per estimator per estimand per point on a
 # confounding-by-effect-modification grid. The support map summarises where
@@ -11,9 +11,9 @@
 # near-nominal coverage. An estimand whose estimator fails inside the plausible
 # region of the grid is infeasible for this design.
 
-#' Prespecify the Synthetic Outcome-Surface Family for simulate_support()
+#' Prespecify the Simulated Outcome-Surface Family for simulate_support()
 #'
-#' The synthetic outcome family spans three axes. The confounding axis scales
+#' The simulated outcome family spans three axes. The confounding axis scales
 #' how strongly the outcome depends on the covariate direction that most
 #' predicts treatment (the standardised logit of the fitted propensity), so
 #' extrapolation error under non-overlap grows along it. The modification axis
@@ -39,7 +39,7 @@
 #' @param effect Numeric; the additive risk difference at `s = 0`.
 #'   Default 0.05.
 #' @param base_rate Numeric in (0, 1) or `NULL`; the marginal baseline
-#'   outcome rate the synthetic surface is anchored to. `NULL` uses the
+#'   outcome rate the simulated surface is anchored to. `NULL` uses the
 #'   observed marginal outcome rate when the lock's outcome is readable
 #'   (a marginal summary, not the treatment-outcome association), else 0.10.
 #'
@@ -73,7 +73,7 @@ support_surfaces <- function(confounding = c(0, 1, 2),
 
 #' @export
 print.support_surfaces <- function(x, ...) {
-  cat("Synthetic outcome-surface family for simulate_support()\n")
+  cat("Simulated outcome-surface family for simulate_support()\n")
   cat(sprintf("  confounding strengths:  %s\n",
               paste(x$confounding, collapse = ", ")))
   cat(sprintf("  effect modification:    %s\n",
@@ -183,10 +183,10 @@ print.support_surfaces <- function(x, ...) {
 #' Outcome-Blind Support Simulation and Support Map
 #'
 #' Decides, before outcome access, which estimands this design can deliver.
-#' Synthetic replicates are generated under the generate-treatment plasmode
+#' Simulated replicates are generated under the generate-treatment plasmode
 #' design: covariate rows are resampled with replacement, treatment is drawn
 #' from the propensity model fitted on the real data, and the outcome is drawn
-#' from the prespecified synthetic family of [support_surfaces()]. On every
+#' from the prespecified simulated family of [support_surfaces()]. On every
 #' replicate the truth for each estimand (ATE, ATT among the treated as
 #' realised, ATO, trimmed ATE on the prespecified band, matched ATT on the
 #' matched set) is computed from the generating model, so the output is bias,
@@ -219,7 +219,7 @@ print.support_surfaces <- function(x, ...) {
 #'   estimand and the region used by the support verdicts. Default
 #'   `c(0.05, 0.95)`.
 #' @param q0_source Where the baseline outcome surface comes from:
-#'   `"synthetic"` (default; the [support_surfaces()] family anchored at
+#'   `"simulated"` (default; the [support_surfaces()] family anchored at
 #'   `base_rate`), `"negative_control"` or `"auxiliary"` (a covariate-only
 #'   GLM fitted to `q0_variable`, with the confounding axis adding outcome
 #'   dependence on the propensity direction on top of it), `"heldout"` (fit
@@ -267,7 +267,7 @@ simulate_support <- function(lock,
                                         "sample_treatment",
                                         "parametric_bootstrap"),
                              band = c(0.05, 0.95),
-                             q0_source = c("synthetic", "negative_control",
+                             q0_source = c("simulated", "negative_control",
                                            "auxiliary", "heldout",
                                            "primary_outcome"),
                              q0_variable = NULL,
@@ -314,7 +314,7 @@ simulate_support <- function(lock,
   if (q0_source == "primary_outcome" && !isTRUE(allow_outcome_q0))
     stop("Fitting Q0 on the primary outcome is not outcome-blind. ",
          "Pass allow_outcome_q0 = TRUE to authorise it explicitly, or use ",
-         "q0_source = 'synthetic', 'negative_control', 'auxiliary' or ",
+         "q0_source = 'simulated', 'negative_control', 'auxiliary' or ",
          "'heldout'.", call. = FALSE)
 
   data       <- lock$data

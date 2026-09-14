@@ -33,3 +33,4 @@ Petersen ML, Porter KE, Gruber S, Wang Y, van der Laan MJ
 (2012). Diagnosing and responding to violations in the positivity
 assumption. Stat Methods Med Res 21:31-54.
 }
+\keyword{internal}

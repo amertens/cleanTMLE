@@ -47,3 +47,4 @@ lock <- lock_primary_tmle_spec(lock, spec)
 get_primary_tmle_spec(lock)
 
 }
+\keyword{internal}

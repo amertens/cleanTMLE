@@ -7,11 +7,11 @@
 simulate_support(
   lock,
   ps_fit = NULL,
-  surface = support_surfaces(),
+  surface = NULL,
   reps = 200L,
-  design = c("generate_treatment", "sample_treatment"),
+  design = c("generate_treatment", "sample_treatment", "parametric_bootstrap"),
   band = c(0.05, 0.95),
-  q0_source = c("synthetic", "negative_control", "auxiliary", "heldout",
+  q0_source = c("simulated", "negative_control", "auxiliary", "heldout",
     "primary_outcome"),
   q0_variable = NULL,
   heldout_fraction = 0.3,
@@ -44,7 +44,7 @@ estimand and the region used by the support verdicts. Default
 \code{c(0.05, 0.95)}.}
 
 \item{q0_source}{Where the baseline outcome surface comes from:
-\code{"synthetic"} (default; the \code{\link[=support_surfaces]{support_surfaces()}} family anchored at
+\code{"simulated"} (default; the \code{\link[=support_surfaces]{support_surfaces()}} family anchored at
 \code{base_rate}), \code{"negative_control"} or \code{"auxiliary"} (a covariate-only
 GLM fitted to \code{q0_variable}, with the confounding axis adding outcome
 dependence on the propensity direction on top of it), \code{"heldout"} (fit
@@ -83,10 +83,10 @@ grid point per estimand), \code{map} (the pass/fail matrix), \code{feasible}
 }
 \description{
 Decides, before outcome access, which estimands this design can deliver.
-Synthetic replicates are generated under the generate-treatment plasmode
+Simulated replicates are generated under the generate-treatment plasmode
 design: covariate rows are resampled with replacement, treatment is drawn
 from the propensity model fitted on the real data, and the outcome is drawn
-from the prespecified synthetic family of \code{\link[=support_surfaces]{support_surfaces()}}. On every
+from the prespecified simulated family of \code{\link[=support_surfaces]{support_surfaces()}}. On every
 replicate the truth for each estimand (ATE, ATT among the treated as
 realised, ATO, trimmed ATE on the prespecified band, matched ATT on the
 matched set) is computed from the generating model, so the output is bias,

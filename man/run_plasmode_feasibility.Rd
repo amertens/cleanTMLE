@@ -11,11 +11,13 @@ run_plasmode_feasibility(
   reps = lock$plasmode_reps,
   q0_library = NULL,
   design = c("generate_treatment", "sample_treatment"),
+  pilot_q0 = NULL,
   verbose = FALSE
 )
 }
 \arguments{
-\item{lock}{A \code{cleanroom_lock} from \code{\link[=create_analysis_lock]{create_analysis_lock()}}.}
+\item{lock}{A \code{cleanroom_lock} from \code{\link[=create_analysis_lock]{create_analysis_lock()}}; its
+locked \code{dgp_mode} selects the generator mode.}
 
 \item{tmle_candidates}{A list of \code{\link{tmle_candidate}} objects.
 If \code{NULL}, a default grid is generated via
@@ -29,23 +31,30 @@ Defaults to \code{lock$plasmode_reps}.}
 
 \item{q0_library}{Optional SuperLearner library used to fit the
 baseline outcome model Q0 (covariates only) that generates the
-synthetic outcomes for candidate selection. If \code{NULL} (default),
-Q0 is a logistic GLM in the covariates, which biases candidate
-selection toward learners that handle linear-in-logit structure
-well. Set this to a SuperLearner library (e.g.
-\code{c("SL.glm", "SL.glmnet", "SL.gam", "SL.mean")}) to generate
-synthetic outcomes from a richer Q0 surface.}
+simulated outcomes for candidate selection (\code{"hybrid"} mode only).
+If \code{NULL} (default), Q0 is a logistic GLM in the covariates, which
+biases candidate selection toward learners that handle
+linear-in-logit structure well. Set this to a SuperLearner library
+(e.g. \code{c("SL.glm", "SL.glmnet", "SL.gam", "SL.mean")}) to generate
+simulated outcomes from a richer Q0 surface.}
 
-\item{design}{Character; how each synthetic replicate is generated.
+\item{design}{Character; how each simulated replicate is generated.
 \code{"generate_treatment"} (default) resamples the covariate rows with
 replacement and draws treatment from a propensity model fitted on the
-real data, so the synthetic data satisfy positivity to the same extent
+real data, so the simulated data satisfy positivity to the same extent
 the cohort does. \code{"sample_treatment"} keeps every subject's observed
 treatment and simulates only the outcome, which Shaw et al. (2025,
 arXiv:2504.11740) show induces a positivity violation by construction
 (propensity-based estimators appear biased and undercover even when the
 source population has no violation); it is retained only for
 reproducing legacy runs and warns when used.}
+
+\item{pilot_q0}{Required when the lock's \code{dgp_mode} is
+\code{"external_pilot"} (and refused otherwise): baseline event
+probabilities for the lock rows, fitted on external pilot data.
+Either a numeric vector of length \code{nrow(lock$data)} with values in
+(0, 1), or a function that receives the covariate data frame and
+returns such a vector.}
 
 \item{verbose}{Logical; if \code{TRUE}, print progress messages and emit
 warnings when any candidate converges on < 50\% of inner reps.
@@ -61,7 +70,7 @@ An object of class \code{plasmode_results} containing:
 }
 \description{
 Evaluates the performance of prespecified TMLE candidate specifications
-using plasmode simulation.  Synthetic binary outcomes are generated from
+using plasmode simulation.  Simulated binary outcomes are generated from
 a parametric baseline-risk model fit on the real covariates, augmented
 with a specified additive treatment effect.  Each TMLE candidate is fit
 on every replicate and performance metrics (bias, RMSE, coverage,
@@ -71,6 +80,24 @@ empirical SD, mean SE) are computed against the known true effect.
  Stage 2b (pre-outcome).  The real
 treatment--outcome association is never used; only simulated
 outcomes are generated.
+}
+
+\section{Generator modes and what each can leak}{
+
+The baseline outcome surface Q0(W) comes from the lock's locked
+\code{dgp_mode}. In \code{"hybrid"} mode (the default) Q0 is fitted on the
+lock's real outcome against the covariates only, so the analyst's
+code holds an estimate of E[Y|W]. When the covariates strongly
+separate the arms, E[Y|W] read alongside the fitted propensity
+approximates the outcome rate within high- and low-propensity strata,
+which approaches the crude treatment-outcome association as the
+c-statistic grows; the function therefore warns when the propensity
+c-statistic exceeds 0.80, and neither the fitted Q0 object nor its
+predictions nor the lock data appear anywhere in the returned object
+(only per-replicate candidate metrics do). In \code{"external_pilot"} mode
+the caller supplies \code{pilot_q0} fitted on external pilot data; the
+primary outcome column is never read, and the function runs on a
+masked lock.
 }
 
 \examples{

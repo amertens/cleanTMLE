@@ -50,3 +50,4 @@ audit <- record_decision_log_entry(
 )
 
 }
+\keyword{internal}

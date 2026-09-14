@@ -33,3 +33,4 @@ The updated decision-log data.frame.
 \description{
 Append a Row to a Decision Log
 }
+\keyword{internal}

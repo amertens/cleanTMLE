@@ -26,3 +26,4 @@ audit <- record_stage(audit, "Stage 1a", "Analysis lock created")
 export_audit_trail(audit)
 
 }
+\keyword{internal}

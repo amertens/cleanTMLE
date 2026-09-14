@@ -28,8 +28,13 @@ restricted. The full cohort is always included first as
 registered controls.}
 
 \item{method}{\code{"tmle"} (default; \code{\link[=run_negative_control_tmle]{run_negative_control_tmle()}}, with a
-propensity model refitted on each rung) or \code{"unadjusted"}
-(two-proportion difference, the balance-check reading).}
+propensity model refitted on each rung and, when the lock carries a
+selected candidate, the locked candidate's nuisance libraries and
+truncation) or \code{"unadjusted"} (two-proportion difference, the
+descriptive balance-check reading). A failed fit is recorded as a
+failed row for the method that failed; no other method is ever
+substituted silently, and every row carries a \code{method} column
+naming the estimator that produced it.}
 
 \item{ps_method}{Propensity method per rung for \code{method = "tmle"}:
 \code{"glm"} (default; the controls are checks, not the primary fit) or
@@ -44,9 +49,13 @@ Default 5.}
 }
 \value{
 An object of class \code{nc_ladder}: a data.frame with one row per
-control per cohort (estimate, CI, p, flagged, status) plus a
-\code{turned_null} summary naming the controls that fail on an earlier rung
-and pass on a later one.
+control per cohort (estimate, CI, p, flagged, status, method,
+domain) plus a \code{turned_null} summary naming the controls that fail
+on an earlier rung and pass on a later one. When the lock declares
+\code{nc_criteria} (see \code{\link[=create_analysis_lock]{create_analysis_lock()}}), the result also
+carries \code{verdict}, the Check Point 3 reading computed by
+\code{\link[=nc_ladder_verdict]{nc_ladder_verdict()}} from the locked criteria and nothing else;
+without declared criteria the ladder reports estimates only.
 }
 \description{
 Fits every registered negative control on every nested cohort and reports

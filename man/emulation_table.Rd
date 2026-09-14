@@ -34,3 +34,4 @@ Cashin AG, Hansford HJ, Hernan MA, et al. (2025). Guidance
 for reporting target trial emulation studies (TARGET). JAMA
 334(12):1084-1093.
 }
+\keyword{internal}

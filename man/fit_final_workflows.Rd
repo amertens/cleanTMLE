@@ -34,3 +34,4 @@ A named list with elements named by the requested workflows.
 Convenience wrapper that runs matching, IPTW, and modular TMLE in a
 single call, returning a named list of all fitted workflow objects.
 }
+\keyword{internal}

@@ -106,7 +106,7 @@ run_clean_tmle_preoutcome <- function(data, Avar, Yvar, covariates = NULL,
 
   required_stages <- c("Check Point 1", "Check Point 2")
 
-  # Stage 2b/2c: outcome-blind candidate selection and DQ stress (synthetic Y).
+  # Stage 2b/2c: outcome-blind candidate selection and DQ stress (simulated Y).
   plasmode_results <- NULL; dq_results <- NULL; selected <- NULL
   if (isTRUE(run_selection)) {
     plasmode_results <- run_plasmode_feasibility(

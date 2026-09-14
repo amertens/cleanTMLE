@@ -12,12 +12,20 @@ run_plasmode_dq_stress(
   data_quality_scenarios = list(),
   q0_library = NULL,
   design = c("generate_treatment", "sample_treatment"),
+  pilot_q0 = NULL,
   fit_timeout = Inf,
   verbose = TRUE
 )
 }
 \arguments{
-\item{lock}{A \code{cleanroom_lock}.}
+\item{lock}{A \code{cleanroom_lock}; its locked \code{dgp_mode}
+selects the outcome-generator mode, and its locked
+\code{dq_thresholds} (when declared) drive the pure verdict and
+tipping-point outputs. See the generator-modes section of
+\code{\link[=run_plasmode_feasibility]{run_plasmode_feasibility()}} for what \code{"hybrid"} mode can leak
+under strong separation (the function warns when the propensity
+c-statistic exceeds 0.80) and for the fully outcome-blind
+\code{"external_pilot"} alternative.}
 
 \item{tmle_candidates}{A list of \code{tmle_candidate_spec} objects.}
 
@@ -30,12 +38,12 @@ typically smaller than the baseline plasmode for speed.}
 \item{data_quality_scenarios}{A named list of DQ scenarios; see Details.}
 
 \item{q0_library}{Optional SuperLearner library (character vector) for
-the plasmode outcome generator Q0. Default \code{NULL} uses a
-covariate-only logistic GLM. Supplying a richer library reduces the
-linear-in-logit bias the GLM Q0 imposes on candidate selection when
-the true outcome surface is nonlinear.}
+the plasmode outcome generator Q0 (\code{"hybrid"} mode only).
+Default \code{NULL} uses a covariate-only logistic GLM. Supplying a
+richer library reduces the linear-in-logit bias the GLM Q0 imposes
+on candidate selection when the true outcome surface is nonlinear.}
 
-\item{design}{Character; how each synthetic replicate is generated.
+\item{design}{Character; how each simulated replicate is generated.
 \code{"generate_treatment"} (default) resamples covariate rows with
 replacement and draws treatment from a propensity model fitted on the
 real data. \code{"sample_treatment"} keeps the observed treatment and
@@ -44,6 +52,12 @@ show induces a positivity violation by construction; retained only for
 legacy runs and warns when used. The unmeasured-confounding and
 near-positivity scenarios redraw treatment from their modified
 propensities under either design.}
+
+\item{pilot_q0}{Required when the lock's \code{dgp_mode} is
+\code{"external_pilot"} (and refused otherwise): baseline event
+probabilities for the lock rows fitted on external pilot data, as a
+numeric vector of length \code{nrow(lock$data)} in (0, 1) or a
+function of the covariate data frame returning one.}
 
 \item{fit_timeout}{Numeric seconds; see the out-of-process fit guard
 section below. Default \code{Inf} runs fits in-process.}
@@ -65,6 +79,17 @@ stress test; \code{n_converged} records how many replicates
 contributed to each row.}
 \item{scenarios}{the input \code{data_quality_scenarios}.}
 \item{baseline}{rows of metrics where scenario == "none".}
+\item{verdict}{when the lock declares \code{dq_thresholds}: one
+row per candidate with the GO / FLAG / STOP reading, a pure
+function of the locked thresholds, the declared threat grid,
+and the metrics (see \code{\link[=dq_locked_verdict]{dq_locked_verdict()}}). \code{NULL}
+otherwise.}
+\item{tipping}{when the lock declares \code{dq_thresholds}: the
+tipping-point table, one row per candidate per threat family,
+giving the first severity level at which the locked bias or
+coverage bound is crossed. \code{NULL} otherwise.}
+\item{lock_hash, dgp_mode}{provenance; the lock itself, its
+data, and the fitted Q0 are deliberately not returned.}
 }
 }
 \description{
@@ -72,7 +97,7 @@ Evaluates TMLE candidate robustness under controlled data-quality
 degradations. For each DQ scenario and severity level, plasmode
 outcomes are generated from the real covariate distribution and
 the fitted Q0 model, then degraded before each prespecified TMLE
-candidate is fit. The procedure is outcome-blind: only synthetic
+candidate is fit. The procedure is outcome-blind: only simulated
 outcomes are used.
 }
 \details{

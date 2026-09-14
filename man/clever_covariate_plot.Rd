@@ -37,3 +37,4 @@ Plots the clever covariate H(A,W) = A/g(W) - (1-A)/(1-g(W))
 by treatment group.  Large or asymmetric values indicate
 near-positivity violations.
 }
+\keyword{internal}

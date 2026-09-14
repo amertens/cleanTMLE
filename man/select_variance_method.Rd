@@ -19,9 +19,9 @@ select_variance_method(
 )
 }
 \arguments{
-\item{plasmode_datasets}{A list of data frames (synthetic outcomes).}
+\item{plasmode_datasets}{A list of data frames (simulated outcomes).}
 
-\item{truth}{The synthetic-truth risk difference used to generate them.}
+\item{truth}{The simulated-truth risk difference used to generate them.}
 
 \item{treatment, outcome, covariates}{Column names.}
 
@@ -48,8 +48,8 @@ A list with \code{selected} (the chosen method), \code{coverage} (named
 vector of empirical coverage by method), and \code{n_datasets}.
 }
 \description{
-Given the locked point estimator and a set of synthetic (plasmode)
-datasets with a known synthetic truth, evaluates each candidate variance
+Given the locked point estimator and a set of simulated (plasmode)
+datasets with a known simulated truth, evaluates each candidate variance
 method by its empirical (oracle) coverage and returns the method whose
 coverage is closest to the nominal target while not falling below it. This
 is the second stage of the FIORD two-stage selector (Nance et al. 2026):

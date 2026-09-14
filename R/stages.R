@@ -143,9 +143,11 @@ checkpoint_cohort_adequacy <- function(lock,
   n    <- nrow(data)
   n1   <- sum(A == 1, na.rm = TRUE)
   n0   <- sum(A == 0, na.rm = TRUE)
+  # Marginal outcome quantities only: the decision reads total events
+  # and prevalence, and the metrics table carries nothing that splits
+  # the outcome by arm (arm-specific event counts are the crude
+  # association; see event_support_by_arm()).
   events_total <- sum(Y == 1, na.rm = TRUE)
-  events_trt   <- sum(Y[A == 1] == 1, na.rm = TRUE)
-  events_ctrl  <- sum(Y[A == 0] == 1, na.rm = TRUE)
   prevalence   <- mean(Y == 1, na.rm = TRUE)
   if (is.na(prevalence)) prevalence <- 0
 
@@ -157,9 +159,9 @@ checkpoint_cohort_adequacy <- function(lock,
 
   metrics <- data.frame(
     metric = c("N total", "N treated", "N control",
-               "Events total", "Events treated", "Events control",
+               "Events total (marginal)",
                "Outcome prevalence", "MDD (approx)"),
-    value  = c(n, n1, n0, events_total, events_trt, events_ctrl,
+    value  = c(n, n1, n0, events_total,
                round(prevalence, 4), round(mdd, 4)),
     stringsAsFactors = FALSE
   )
@@ -911,12 +913,17 @@ get_primary_tmle_spec <- function(lock) {
 
 #' Estimate Design-Stage Precision Summaries
 #'
-#' Computes pre-outcome precision summaries using only sample size and
-#' event information available at the design stage.  No outcome modelling
-#' is performed.
+#' Computes pre-outcome precision summaries from arm sizes and marginal
+#' outcome information only. No outcome modelling is performed, and
+#' nothing in the output stratifies the outcome by treatment arm: total
+#' events, the marginal event rate, and the precision proxies derived
+#' from them are the only outcome quantities read. Arm-specific event
+#' counts are the crude treatment-outcome association; they are
+#' available only through [event_support_by_arm()], which requires a
+#' recorded reason.
 #'
-#' @section Clean-room stage: Stage 1b (design-stage; uses outcome counts
-#'   for power/precision summaries only, not for estimation).
+#' @section Clean-room stage: Stage 1b (design-stage; marginal outcome
+#'   counts only, never the treatment-outcome association).
 #'
 #' @param lock A \code{cleanroom_lock}.
 #' @param target_mdd Numeric; an optional target minimum detectable
@@ -924,14 +931,16 @@ get_primary_tmle_spec <- function(lock) {
 #'   computed MDD.  Default \code{NULL} (no comparison).
 #'
 #' @return A list of class `design_precision` with elements: `n_total`
-#'   (total sample size); `n_treated`; `n_control`; `events_total`;
-#'   `events_per_arm` (named vector of events per arm); `crude_rates`
-#'   (crude event rates per arm); `prevalence` (overall outcome
-#'   prevalence); `se_proxy` (SE proxy for the risk difference);
-#'   `ci_halfwidth` (95% CI half-width proxy, 1.96 * se_proxy); `mdd_80`
-#'   (minimum detectable difference at 80% power, 2.8 * se_proxy);
-#'   `target_mdd` (the user-supplied target, or `NULL`); and
-#'   `mdd_feasible` (logical; present only when `target_mdd` is supplied).
+#'   (total sample size); `n_treated`; `n_control` (arm sizes are
+#'   treatment-marginal design quantities); `events_total` (marginal
+#'   event count); `prevalence` (marginal outcome prevalence among rows
+#'   with an observed outcome); `se_proxy` (SE proxy for the risk
+#'   difference under the marginal rate); `ci_halfwidth` (95% CI
+#'   half-width proxy, 1.96 * se_proxy); `mdd_80` (minimum detectable
+#'   difference at 80% power, 2.8 * se_proxy); `target_mdd` (the
+#'   user-supplied target, or `NULL`); `mdd_feasible` (logical; present
+#'   only when `target_mdd` is supplied); and `event_support` (the
+#'   marginal table from [summarize_event_support()]).
 #'
 #' @examples
 #' dat  <- sim_func1(n = 500, seed = 1)
@@ -960,20 +969,12 @@ estimate_design_precision <- function(lock, target_mdd = NULL) {
   n_treated <- sum(A == 1L, na.rm = TRUE)
   n_control <- sum(A == 0L, na.rm = TRUE)
 
-  events_treated <- sum(Y[A == 1L], na.rm = TRUE)
-  events_control <- sum(Y[A == 0L], na.rm = TRUE)
-  events_total   <- events_treated + events_control
+  # Marginal outcome quantities only: total events and the marginal rate.
+  # No quantity below conditions the outcome on the treatment arm.
+  events_total <- sum(Y, na.rm = TRUE)
+  n_obs_y      <- sum(!is.na(Y))
 
-  n_treated_y <- sum(A == 1L & !is.na(Y))
-  n_control_y <- sum(A == 0L & !is.na(Y))
-  rate_treated <- if (n_treated_y > 0) events_treated / n_treated_y else NA_real_
-  rate_control <- if (n_control_y > 0) events_control / n_control_y else NA_real_
-  crude_rates  <- c(treated = rate_treated, control = rate_control)
-
-  events_per_arm <- c(treated = events_treated, control = events_control)
-
-  prevalence  <- if ((n_treated_y + n_control_y) > 0)
-                   events_total / (n_treated_y + n_control_y) else NA_real_
+  prevalence  <- if (n_obs_y > 0) events_total / n_obs_y else NA_real_
   p           <- prevalence
   se_proxy    <- if (!is.na(p) && n_treated > 0 && n_control > 0)
                    sqrt(p * (1 - p) * (1 / n_treated + 1 / n_control))
@@ -986,8 +987,6 @@ estimate_design_precision <- function(lock, target_mdd = NULL) {
     n_treated      = n_treated,
     n_control      = n_control,
     events_total   = events_total,
-    events_per_arm = events_per_arm,
-    crude_rates    = crude_rates,
     prevalence     = prevalence,
     se_proxy       = se_proxy,
     ci_halfwidth   = ci_halfwidth,
@@ -999,8 +998,7 @@ estimate_design_precision <- function(lock, target_mdd = NULL) {
     result$mdd_feasible <- mdd_80 <= target_mdd
   }
 
-  # The marginal event-support table (formerly summarize_event_support())
-  # rides on the precision object.
+  # The marginal event-support table rides on the precision object.
   result$event_support <- tryCatch(summarize_event_support(lock),
                                    error = function(e) NULL)
 
@@ -1011,17 +1009,17 @@ estimate_design_precision <- function(lock, target_mdd = NULL) {
 
 #' @export
 print.design_precision <- function(x, ...) {
-  cat("=== Design-Stage Precision Summary ===\n")
+  cat("=== Design-Stage Precision Summary (marginal outcome only) ===\n")
   tbl <- data.frame(
     Metric = c(
       "N total", "N treated", "N control",
-      "Events total", "Events (treated)", "Events (control)",
-      "Overall prevalence",
+      "Events total (marginal)",
+      "Marginal prevalence",
       "SE proxy (RD)", "95% CI half-width", "MDD (80% power)"
     ),
     Value = c(
       x$n_total, x$n_treated, x$n_control,
-      x$events_total, x$events_per_arm[["treated"]], x$events_per_arm[["control"]],
+      x$events_total,
       round(x$prevalence,    4),
       round(x$se_proxy,      5),
       round(x$ci_halfwidth,  5),
@@ -1037,23 +1035,28 @@ print.design_precision <- function(x, ...) {
       if (isTRUE(x$mdd_feasible)) "YES" else "NO"
     ))
   }
+  cat("Arm-specific event counts require event_support_by_arm(lock, reason = ...).\n")
   invisible(x)
 }
 
 
 # ── Event Support Summary ─────────────────────────────────────────────────
 
-#' Summarise Event Support by Treatment Arm
+#' Summarise Marginal Event Support
 #'
-#' Returns a data frame with event counts and rates per arm, and prints
-#' a warning if any arm has fewer than 10 events (sparse-event flag).
+#' Returns a one-row data frame with the total sample size, the marginal
+#' event count, and the marginal event rate. Nothing here conditions the
+#' outcome on the treatment arm: arm-specific counts are the crude
+#' treatment-outcome association and are available only through
+#' [event_support_by_arm()], which requires a recorded reason.
 #'
-#' @section Clean-room stage: Stage 1b (design diagnostics).
+#' @section Clean-room stage: Stage 1b (design diagnostics; marginal
+#'   outcome only).
 #'
 #' @param lock A \code{cleanroom_lock}.
 #'
-#' @return A data.frame with columns \code{arm}, \code{n},
-#'   \code{events}, and \code{event_rate}.
+#' @return A one-row data.frame with columns \code{n}, \code{events},
+#'   and \code{event_rate} (all marginal).
 #'
 #' @examples
 #' dat  <- sim_func1(n = 500, seed = 1)
@@ -1067,7 +1070,6 @@ summarize_event_support <- function(lock) {
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
 
   data <- lock$data
-  A    <- data[[lock$treatment]]
   Y    <- data[[lock$outcome]]
 
   if (isTRUE(lock$.outcome_masked) || all(is.na(Y))) {
@@ -1076,7 +1078,75 @@ summarize_event_support <- function(lock) {
          call. = FALSE)
   }
 
-  # Use treatment_strategies labels from the estimand if attached.
+  n_obs_y <- sum(!is.na(Y))
+  events  <- sum(Y, na.rm = TRUE)
+
+  out <- data.frame(
+    n          = nrow(data),
+    events     = events,
+    event_rate = round(if (n_obs_y > 0) events / n_obs_y else NA_real_, 4),
+    stringsAsFactors = FALSE
+  )
+
+  if (events < 10L) {
+    message("Sparse-event warning: fewer than 10 events in total. ",
+            "Estimates may be unstable.")
+  }
+
+  out
+}
+
+
+#' Event Counts by Treatment Arm (Logged Access)
+#'
+#' Tabulates event counts and rates per treatment arm. Arm-specific
+#' event counts are the crude treatment-outcome association, so this
+#' access path is deliberately separate from the marginal design
+#' diagnostics: it requires a stated `reason`, emits a warning, and
+#' writes a design-log entry recording that arm-specific counts were
+#' viewed. The returned object carries both the table and the updated
+#' lock; keep the lock so the access stays on the record:
+#' `esa <- event_support_by_arm(lock, reason = "..."); lock <- esa$lock`.
+#'
+#' @section Clean-room stage: outside the outcome-blind design path; the
+#'   access itself is what the design log records.
+#'
+#' @param lock A \code{cleanroom_lock} with a readable outcome column.
+#' @param reason Character; why arm-specific counts are needed (for
+#'   example a data-manager review of sparse cells). Mandatory.
+#'
+#' @return An object of class `event_support_by_arm`: a list with
+#'   `table` (columns `arm`, `n`, `events`, `event_rate`), `reason`, and
+#'   `lock` (the lock with the access recorded in its design log).
+#'
+#' @examples
+#' dat  <- sim_func1(n = 500, seed = 1)
+#' lock <- create_analysis_lock(dat, "treatment", "event_24",
+#'                              c("age", "sex", "biomarker"), seed = 1)
+#' esa  <- event_support_by_arm(lock,
+#'   reason = "data-manager check of sparse cells before locking")
+#' esa$table
+#' lock <- esa$lock  # keep the logged access on the lock
+#'
+#' @export
+event_support_by_arm <- function(lock, reason) {
+  if (!inherits(lock, "cleanroom_lock"))
+    stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
+  if (missing(reason) || !is.character(reason) || length(reason) != 1L ||
+      !nzchar(trimws(reason)))
+    stop("event_support_by_arm() requires a non-empty `reason`: ",
+         "arm-specific event counts reveal the crude treatment-outcome ",
+         "association, and the access is recorded in the design log.",
+         call. = FALSE)
+
+  data <- lock$data
+  A    <- data[[lock$treatment]]
+  Y    <- data[[lock$outcome]]
+  if (isTRUE(lock$.outcome_masked) || all(is.na(Y)))
+    stop("event_support_by_arm() requires the outcome column to be ",
+         "available. The lock is masked or the outcome is all NA.",
+         call. = FALSE)
+
   strat <- lock$estimand$treatment_strategies
   treated_lbl <- if (!is.null(strat) && length(strat) >= 1) strat[1] else "Treated"
   control_lbl <- if (!is.null(strat) && length(strat) >= 2) strat[2] else "Control"
@@ -1085,29 +1155,42 @@ summarize_event_support <- function(lock) {
   n0 <- sum(A == 0L, na.rm = TRUE)
   e1 <- sum(Y[A == 1L], na.rm = TRUE)
   e0 <- sum(Y[A == 0L], na.rm = TRUE)
-  nt <- n1 + n0
-  et <- e1 + e0
 
-  out <- data.frame(
+  tab <- data.frame(
     arm        = c(treated_lbl, control_lbl, "Total"),
-    n          = c(n1, n0, nt),
-    events     = c(e1, e0, et),
+    n          = c(n1, n0, n1 + n0),
+    events     = c(e1, e0, e1 + e0),
     event_rate = round(c(if (n1 > 0) e1 / n1 else NA_real_,
                          if (n0 > 0) e0 / n0 else NA_real_,
-                         if (nt > 0) et / nt else NA_real_), 4),
+                         if (n1 + n0 > 0) (e1 + e0) / (n1 + n0) else NA_real_),
+                       4),
     stringsAsFactors = FALSE
   )
 
-  sparse_arms <- out$arm[out$arm != "Total" & out$events < 10L]
-  if (length(sparse_arms) > 0L) {
-    message(
-      "Sparse-event warning: fewer than 10 events in arm(s): ",
-      paste(sparse_arms, collapse = ", "),
-      ". Estimates may be unstable."
-    )
-  }
+  warning("Arm-specific event counts reveal the crude treatment-outcome ",
+          "association; this access has been recorded in the design log.",
+          call. = FALSE)
 
+  sparse_arms <- tab$arm[tab$arm != "Total" & tab$events < 10L]
+  if (length(sparse_arms) > 0L)
+    message("Sparse-event warning: fewer than 10 events in arm(s): ",
+            paste(sparse_arms, collapse = ", "), ".")
+
+  lock <- .log_design_decision(
+    lock, "event_support_by_arm",
+    sprintf("Arm-specific event counts viewed. Reason: %s", reason))
+
+  out <- list(table = tab, reason = reason, lock = lock)
+  class(out) <- "event_support_by_arm"
   out
+}
+
+#' @export
+print.event_support_by_arm <- function(x, ...) {
+  cat("Event support by arm (logged access)\n")
+  print(x$table, row.names = FALSE)
+  cat("Reason recorded in the design log:", x$reason, "\n")
+  invisible(x)
 }
 
 

@@ -23,3 +23,4 @@ A \code{ggplot2} object.
 Extends \code{\link{love_plot}} to show unweighted, IPTW-weighted,
 and PS-matched SMDs side by side.
 }
+\keyword{internal}

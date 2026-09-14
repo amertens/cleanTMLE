@@ -18,3 +18,4 @@ Invisibly returns \code{x}.
 Convenience function that prints and invisibly returns the performance
 metrics from \code{\link[=run_plasmode_feasibility]{run_plasmode_feasibility()}}.
 }
+\keyword{internal}

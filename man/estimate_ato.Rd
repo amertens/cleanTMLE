@@ -46,3 +46,4 @@ rows with an observed outcome.
 Li F, Morgan KL, Zaslavsky AM (2018) JASA 113:390-400.
 Mao H, Li L, Greene T (2019) Stat Methods Med Res 28:2439-2454.
 }
+\keyword{internal}

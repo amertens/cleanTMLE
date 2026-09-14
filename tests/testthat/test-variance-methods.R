@@ -53,7 +53,7 @@ test_that("bootstrap_rd_variance works for match_tmle", {
 })
 
 test_that("select_variance_method returns a method and per-method coverage", {
-  # Build a small set of synthetic datasets with a known truth.
+  # Build a small set of simulated datasets with a known truth.
   set.seed(99)
   truth <- 0.10
   dsets <- lapply(1:15, function(i) {

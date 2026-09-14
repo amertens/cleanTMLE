@@ -96,3 +96,4 @@ gate  <- authorize_outcome_analysis(audit)
 print(gate)
 
 }
+\keyword{internal}

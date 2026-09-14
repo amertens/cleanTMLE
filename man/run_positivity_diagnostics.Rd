@@ -40,3 +40,4 @@ diag$near_violation
 \references{
 Gruber S, van der Laan MJ (2009); Gruber S et al. (2023) RWE.
 }
+\keyword{internal}

@@ -72,3 +72,4 @@ cp <- checkpoint_weights(w, treatment = A,
 print(cp)
 
 }
+\keyword{internal}

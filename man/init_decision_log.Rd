@@ -13,3 +13,4 @@ A data.frame with columns \code{stage}, \code{metric},
 \description{
 Creates a zero-row data.frame with the standard decision-log schema.
 }
+\keyword{internal}

@@ -16,3 +16,4 @@ Invisibly returns \code{candidates} if valid; errors otherwise.
 Checks that all candidates are \code{tmle_candidate_spec} objects with
 unique IDs and valid settings.
 }
+\keyword{internal}

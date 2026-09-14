@@ -60,3 +60,4 @@ built by the same internal builder as every other delegation in the
 package, so the ATT's propensity model cannot silently differ from the
 ATE's.
 }
+\keyword{internal}

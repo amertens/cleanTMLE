@@ -27,3 +27,4 @@ audit <- record_decision_log_entry(audit, "Stage 2", "model_specification",
 export_decision_log(audit)
 
 }
+\keyword{internal}

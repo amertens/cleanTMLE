@@ -35,3 +35,4 @@ lock <- create_analysis_lock(
 run_crude_workflow(lock)
 
 }
+\keyword{internal}

@@ -280,7 +280,11 @@ run_negative_control_tmle <- function(lock, variable, ps_fit,
   if (!variable %in% names(lock$data))
     stop("Variable '", variable, "' not found in lock data.", call. = FALSE)
 
-  if (is.null(sl_library)) sl_library <- lock$sl_library
+  # Check Point 3 is assessed with the locked primary specification when
+  # one has been selected: the candidate's Q library, falling back to
+  # the lock library.
+  if (is.null(sl_library))
+    sl_library <- lock$primary_tmle_spec$q_library %||% lock$sl_library
 
   data       <- lock$data
   A          <- data[[lock$treatment]]
@@ -329,8 +333,13 @@ run_negative_control_tmle <- function(lock, variable, ps_fit,
   }, error = function(e) NULL)
 
   if (is.null(Q_fit)) {
-    # Fallback to IPTW
-    return(run_negative_control(lock, variable, ps_fit))
+    # Never substitute another estimator silently: a failed TMLE fit is
+    # an error the caller records as a failed row (the ladder does), not
+    # an invisible method switch.
+    stop("run_negative_control_tmle: the Q-model fit for '", variable,
+         "' failed; no fallback estimator is substituted. Run the ",
+         "unadjusted ladder explicitly if a descriptive reading is ",
+         "wanted.", call. = FALSE)
   }
 
   # Targeting step
@@ -1176,143 +1185,4 @@ get_final_cohort <- function(attrition) {
   if (!inherits(attrition, "cleantmle_attrition"))
     stop("`attrition` must be a cleantmle_attrition object.", call. = FALSE)
   attr(attrition, "final_data")
-}
-
-
-# ── Iterative PS Refinement After NCO ────────────────────────────────────
-
-#' Refine PS Model Based on Negative Control Results
-#'
-#' When negative control outcomes suggest residual confounding in a
-#' particular domain (e.g., healthcare-seeking behaviour), this function
-#' adds specified variables to the PS model and re-estimates, following
-#' the iterative workflow described in the Muntner staging framework.
-#'
-#' The function: (1) adds new covariates to the lock, (2) re-fits the
-#' PS model, (3) re-runs the NCO analysis, and (4) records the
-#' refinement in the audit log.
-#'
-#' @param lock A \code{cleanroom_lock}.
-#' @param ps_fit The current \code{ps_fit} object.
-#' @param additional_covariates Character vector of new covariate names
-#'   to add to the PS model.
-#' @param nc_variables Character vector of negative control outcomes
-#'   to re-evaluate.
-#' @param audit Optional \code{cleantmle_audit} to record the refinement.
-#' @param rationale Character; why these variables are being added
-#'   (for the decision log).
-#'
-#' @return A list with elements:
-#'   \describe{
-#'     \item{lock}{Updated \code{cleanroom_lock} with expanded covariates.}
-#'     \item{ps_fit}{New \code{ps_fit} with additional covariates.}
-#'     \item{ps_diagnostics}{New diagnostics.}
-#'     \item{nc_results}{Re-evaluated negative control results.}
-#'     \item{nc_checkpoint}{New Check Point 3.}
-#'     \item{audit}{Updated audit log (if provided).}
-#'     \item{comparison}{data.frame comparing NC estimates before and
-#'       after refinement.}
-#'   }
-#'
-#' @keywords internal
-refine_ps_after_nco <- function(lock, ps_fit, additional_covariates,
-                                nc_variables, audit = NULL,
-                                rationale = "NCO suggested residual confounding") {
-  .superseded("refine_ps_after_nco", "run_negative_control_ladder()")
-  if (!inherits(lock, "cleanroom_lock"))
-    stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
-
-  # Validate new covariates exist
-  missing_covs <- additional_covariates[!additional_covariates %in% names(lock$data)]
-  if (length(missing_covs) > 0)
-    stop("Variables not found in data: ",
-         paste(missing_covs, collapse = ", "), call. = FALSE)
-
-  # Run NCO with current PS for baseline comparison
-  nc_before <- lapply(nc_variables, function(v) {
-    tryCatch(run_negative_control(lock, v, ps_fit),
-             error = function(e) NULL)
-  })
-  names(nc_before) <- nc_variables
-
-  # Create updated lock with expanded covariates
-  new_covariates <- unique(c(lock$covariates, additional_covariates))
-  lock_new <- create_analysis_lock(
-    data          = lock$data,
-    treatment     = lock$treatment,
-    outcome       = lock$outcome,
-    covariates    = new_covariates,
-    sl_library    = lock$sl_library,
-    plasmode_reps = lock$plasmode_reps,
-    seed          = lock$seed
-  )
-
-  # Transfer metadata from original lock
-  if (!is.null(lock$estimand))
-    lock_new$estimand <- lock$estimand
-  if (!is.null(lock$sensitivity_plans))
-    lock_new$sensitivity_plans <- lock$sensitivity_plans
-  if (!is.null(lock$negative_controls))
-    lock_new$negative_controls <- lock$negative_controls
-  if (!is.null(lock$primary_tmle_spec))
-    lock_new <- lock_primary_tmle_spec(lock_new, lock$primary_tmle_spec)
-
-  # Re-fit PS with expanded covariates
-  ps_new  <- fit_ps_glm(lock_new)
-  diag_new <- compute_ps_diagnostics(ps_new)
-
-  # Re-run NCO with new PS
-  nc_after <- lapply(nc_variables, function(v) {
-    tryCatch(run_negative_control(lock_new, v, ps_new),
-             error = function(e) NULL)
-  })
-  names(nc_after) <- nc_variables
-
-  # Build comparison table
-  comparison_rows <- lapply(nc_variables, function(v) {
-    before <- nc_before[[v]]
-    after  <- nc_after[[v]]
-    data.frame(
-      variable    = v,
-      est_before  = if (!is.null(before)) round(before$estimate, 5) else NA,
-      p_before    = if (!is.null(before)) round(before$p_value, 4) else NA,
-      est_after   = if (!is.null(after)) round(after$estimate, 5) else NA,
-      p_after     = if (!is.null(after)) round(after$p_value, 4) else NA,
-      attenuated  = if (!is.null(before) && !is.null(after))
-        abs(after$estimate) < abs(before$estimate) else NA,
-      stringsAsFactors = FALSE
-    )
-  })
-  comparison <- do.call(rbind, comparison_rows)
-
-  # Checkpoint
-  nc_after_valid <- Filter(Negate(is.null), nc_after)
-  cp3_new <- if (length(nc_after_valid) > 0) {
-    checkpoint_residual_bias(nc_after_valid, lock_hash = lock_new$lock_hash)
-  } else NULL
-
-  # Record in audit log
-  if (!is.null(audit)) {
-    audit <- record_stage(audit, "Stage 2b (PS Refinement)",
-      sprintf("Added covariates: %s. Rationale: %s",
-              paste(additional_covariates, collapse = ", "), rationale))
-    if (!is.null(cp3_new))
-      audit <- record_checkpoint(audit, cp3_new)
-    audit <- record_decision_log_entry(audit,
-      stage         = "Stage 2b",
-      decision_type = "ps_refinement",
-      description   = sprintf("PS model refined: added %s",
-                               paste(additional_covariates, collapse = ", ")),
-      rationale     = rationale)
-  }
-
-  list(
-    lock           = lock_new,
-    ps_fit         = ps_new,
-    ps_diagnostics = diag_new,
-    nc_results     = nc_after,
-    nc_checkpoint  = cp3_new,
-    audit          = audit,
-    comparison     = comparison
-  )
 }

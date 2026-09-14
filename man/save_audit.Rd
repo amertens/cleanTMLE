@@ -17,3 +17,4 @@ Invisibly returns \code{path}.
 \description{
 Save an Audit Log to Disk
 }
+\keyword{internal}

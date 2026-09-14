@@ -7,9 +7,10 @@
 estimand_feasibility(
   ps_fit,
   estimands = .ladder_estimands,
-  thresholds = support_thresholds(),
+  thresholds = NULL,
   trim_levels = c(0.05, 0.1),
-  caliper_sd = 0.2
+  caliper_sd = 0.2,
+  profile_vars = NULL
 )
 }
 \arguments{

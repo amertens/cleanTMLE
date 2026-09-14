@@ -24,6 +24,9 @@
 #' @param treatment_name Name of the derived binary column. Default
 #'   `".A_contrast"`.
 #' @param cleanroom_enabled As in [create_analysis_lock()]. Default TRUE.
+#' @param dgp_mode,nc_criteria,dq_thresholds,roles As in
+#'   [create_analysis_lock()]; shared by every contrast lock so the
+#'   declarations are made once for the whole family.
 #' @return A named list of class `contrast_locks`.
 #' @examples
 #' \dontrun{
@@ -42,7 +45,12 @@ create_contrast_locks <- function(data, treatment_factor, contrasts,
                                   seed = 42L,
                                   negative_controls = NULL,
                                   treatment_name = ".A_contrast",
-                                  cleanroom_enabled = TRUE) {
+                                  cleanroom_enabled = TRUE,
+                                  dgp_mode = c("hybrid", "external_pilot"),
+                                  nc_criteria = NULL,
+                                  dq_thresholds = NULL,
+                                  roles = NULL) {
+  dgp_mode <- match.arg(dgp_mode)
   if (!treatment_factor %in% names(data))
     stop("treatment_factor '", treatment_factor, "' not found.",
          call. = FALSE)
@@ -65,7 +73,9 @@ create_contrast_locks <- function(data, treatment_factor, contrasts,
     lock <- create_analysis_lock(
       data = sub, treatment = treatment_name, outcome = outcome,
       covariates = covariates, sl_library = sl_library, seed = seed,
-      cleanroom_enabled = cleanroom_enabled)
+      cleanroom_enabled = cleanroom_enabled, dgp_mode = dgp_mode,
+      nc_criteria = nc_criteria, dq_thresholds = dq_thresholds,
+      roles = roles)
     lock$contrast <- list(name = cn, label = cc$label %||% cn,
                           treated = cc$treated, control = cc$control,
                           source_column = treatment_factor)
@@ -115,8 +125,13 @@ print.contrast_locks <- function(x, ...) {
 #' @param negative_controls Optional character vector overriding the lock's
 #'   registered controls.
 #' @param method `"tmle"` (default; [run_negative_control_tmle()], with a
-#'   propensity model refitted on each rung) or `"unadjusted"`
-#'   (two-proportion difference, the balance-check reading).
+#'   propensity model refitted on each rung and, when the lock carries a
+#'   selected candidate, the locked candidate's nuisance libraries and
+#'   truncation) or `"unadjusted"` (two-proportion difference, the
+#'   descriptive balance-check reading). A failed fit is recorded as a
+#'   failed row for the method that failed; no other method is ever
+#'   substituted silently, and every row carries a `method` column
+#'   naming the estimator that produced it.
 #' @param ps_method Propensity method per rung for `method = "tmle"`:
 #'   `"glm"` (default; the controls are checks, not the primary fit) or
 #'   `"superlearner"`.
@@ -125,9 +140,13 @@ print.contrast_locks <- function(x, ...) {
 #'   Default 5.
 #' @param verbose Print progress. Default TRUE.
 #' @return An object of class `nc_ladder`: a data.frame with one row per
-#'   control per cohort (estimate, CI, p, flagged, status) plus a
-#'   `turned_null` summary naming the controls that fail on an earlier rung
-#'   and pass on a later one.
+#'   control per cohort (estimate, CI, p, flagged, status, method,
+#'   domain) plus a `turned_null` summary naming the controls that fail
+#'   on an earlier rung and pass on a later one. When the lock declares
+#'   `nc_criteria` (see [create_analysis_lock()]), the result also
+#'   carries `verdict`, the Check Point 3 reading computed by
+#'   [nc_ladder_verdict()] from the locked criteria and nothing else;
+#'   without declared criteria the ladder reports estimates only.
 #' @export
 run_negative_control_ladder <- function(lock, restrictions,
                                         negative_controls = NULL,
@@ -144,6 +163,10 @@ run_negative_control_ladder <- function(lock, restrictions,
     stop("No negative controls: register them with ",
          "define_negative_control() or pass `negative_controls`.",
          call. = FALSE)
+  domain_of <- function(nc) {
+    d <- lock$negative_controls[[nc]]$domain
+    if (is.null(d) || !nzchar(d)) "undeclared" else d
+  }
   data <- lock$data
   A <- as.integer(data[[lock$treatment]])
 
@@ -155,6 +178,15 @@ run_negative_control_ladder <- function(lock, restrictions,
                         "vector over the lock data rows.", call. = FALSE)
                  r & !is.na(r)
                }))
+
+  row_of <- function(cname, nc, n, est = NA_real_, lo = NA_real_,
+                     hi = NA_real_, p = NA_real_, flagged = NA,
+                     status, used_method) {
+    data.frame(cohort = cname, negative_control = nc, domain = domain_of(nc),
+               n = n, estimate = est, ci_lower = lo, ci_upper = hi,
+               p_value = p, flagged = flagged, status = status,
+               method = used_method, stringsAsFactors = FALSE)
+  }
 
   rows <- list()
   for (ci in seq_along(cohorts)) {
@@ -168,27 +200,38 @@ run_negative_control_ladder <- function(lock, restrictions,
       cells <- c(sum(y[a == 1]), sum(1 - y[a == 1]),
                  sum(y[a == 0]), sum(1 - y[a == 0]))
       if (length(y) < 20L || any(cells < min_events)) {
-        rows[[length(rows) + 1L]] <- data.frame(
-          cohort = cname, negative_control = nc, n = length(y),
-          estimate = NA_real_, ci_lower = NA_real_, ci_upper = NA_real_,
-          p_value = NA_real_, flagged = NA,
+        rows[[length(rows) + 1L]] <- row_of(
+          cname, nc, length(y),
           status = sprintf("inestimable (a cell below %d events)",
                            min_events),
-          stringsAsFactors = FALSE)
+          used_method = method)
         next
       }
-      res <- if (method == "tmle") {
+      if (method == "tmle") {
         sub_lock <- lock
         sub_lock$data <- data[sel, , drop = FALSE]
         f <- tryCatch({
           psf <- fit_ps(sub_lock, method = ps_method)
-          run_negative_control_tmle(sub_lock, nc, psf)
-        }, error = function(e) NULL)
-        if (is.null(f)) NULL else
-          list(est = f$estimate, lo = f$ci_lower, hi = f$ci_upper,
-               p = f$p_value)
-      } else NULL
-      if (is.null(res)) {
+          list(ok = TRUE, fit = run_negative_control_tmle(sub_lock, nc, psf))
+        }, error = function(e) list(ok = FALSE,
+                                    msg = conditionMessage(e)))
+        if (!isTRUE(f$ok)) {
+          # A failed TMLE fit stays a failed TMLE row. Substituting the
+          # unadjusted estimate here would let an adjusted table carry
+          # unadjusted rows with nothing to show for it.
+          rows[[length(rows) + 1L]] <- row_of(
+            cname, nc, length(y),
+            status = sprintf("failed (tmle: %s)",
+                             substr(f$msg, 1, 80)),
+            used_method = "tmle")
+          if (verbose)
+            message(sprintf("  [%s] %s: TMLE fit failed (%s)", cname, nc,
+                            substr(f$msg, 1, 60)))
+          next
+        }
+        res <- list(est = f$fit$estimate, lo = f$fit$ci_lower,
+                    hi = f$fit$ci_upper, p = f$fit$p_value)
+      } else {
         p1 <- mean(y[a == 1]); p0 <- mean(y[a == 0])
         se <- sqrt(p1 * (1 - p1) / sum(a == 1) +
                      p0 * (1 - p0) / sum(a == 0))
@@ -196,12 +239,12 @@ run_negative_control_ladder <- function(lock, restrictions,
         res <- list(est = est, lo = est - 1.96 * se, hi = est + 1.96 * se,
                     p = 2 * stats::pnorm(-abs(est / se)))
       }
-      rows[[length(rows) + 1L]] <- data.frame(
-        cohort = cname, negative_control = nc, n = length(y),
-        estimate = round(res$est, 5), ci_lower = round(res$lo, 5),
-        ci_upper = round(res$hi, 5), p_value = round(res$p, 5),
+      rows[[length(rows) + 1L]] <- row_of(
+        cname, nc, length(y),
+        est = round(res$est, 5), lo = round(res$lo, 5),
+        hi = round(res$hi, 5), p = round(res$p, 5),
         flagged = res$p < alpha, status = "estimated",
-        stringsAsFactors = FALSE)
+        used_method = method)
       if (verbose)
         message(sprintf("  [%s] %s: %.4f (p = %.3f)%s", cname, nc, res$est,
                         res$p, if (res$p < alpha) " FLAGGED" else ""))
@@ -222,23 +265,111 @@ run_negative_control_ladder <- function(lock, restrictions,
   }
 
   out <- list(table = tab, turned_null = turned_null, method = method,
-              alpha = alpha, call = match.call())
+              alpha = alpha, criteria = lock$nc_criteria,
+              call = match.call())
   class(out) <- "nc_ladder"
+  if (!is.null(lock$nc_criteria)) {
+    out$verdict <- nc_ladder_verdict(out, lock$nc_criteria)
+  } else if (verbose) {
+    message("No nc_criteria declared on the lock; the ladder reports ",
+            "estimates only. Declare nc_criteria in ",
+            "create_analysis_lock() to obtain the Check Point 3 verdict.")
+  }
   out
+}
+
+
+#' Check Point 3 Verdict from Locked Negative-Control Criteria
+#'
+#' Grades a negative-control ladder against the criteria declared on the
+#' lock before outcome access, and against nothing else: the null band,
+#' the in-band rule (point estimate or whole confidence interval), the
+#' minimum number of estimable controls per domain, and the consistency
+#' rule within a domain. Per rung and domain the reading is `pass`,
+#' `fail`, or `insufficient` (fewer estimable controls than
+#' `min_per_domain`); the rung verdict is STOP when any domain fails,
+#' FLAG when any domain is insufficient, and GO otherwise.
+#'
+#' @param nc_ladder An `nc_ladder` object from
+#'   [run_negative_control_ladder()], or its table.
+#' @param criteria The locked `nc_criteria` list (see
+#'   [create_analysis_lock()]).
+#' @return A list with `by_domain` (one row per rung per domain),
+#'   `by_rung` (one row per rung with the verdict), and the echoed
+#'   `criteria`.
+#' @export
+nc_ladder_verdict <- function(nc_ladder, criteria) {
+  tab <- if (inherits(nc_ladder, "nc_ladder")) nc_ladder$table else nc_ladder
+  cr  <- .normalize_nc_criteria(criteria)
+  if (is.null(cr))
+    stop("`criteria` must be a non-NULL nc_criteria list.", call. = FALSE)
+  if (!"domain" %in% names(tab)) tab$domain <- "undeclared"
+
+  in_band <- function(d) {
+    if (cr$rule == "ci_in_band")
+      d$ci_lower > -cr$null_band & d$ci_upper < cr$null_band
+    else
+      abs(d$estimate) < cr$null_band
+  }
+
+  by_domain <- do.call(rbind, lapply(
+    split(tab, list(tab$cohort, tab$domain), drop = TRUE), function(d) {
+      est <- d[d$status == "estimated", , drop = FALSE]
+      n_est <- nrow(est)
+      n_within <- if (n_est) sum(in_band(est), na.rm = TRUE) else 0L
+      reading <- if (n_est < cr$min_per_domain) "insufficient"
+      else if (cr$consistency == "all_within_band") {
+        if (n_within == n_est) "pass" else "fail"
+      } else {
+        if (n_within > n_est / 2) "pass" else "fail"
+      }
+      data.frame(cohort = d$cohort[1], domain = d$domain[1],
+                 n_controls = nrow(d), n_estimated = n_est,
+                 n_within_band = n_within, reading = reading,
+                 stringsAsFactors = FALSE)
+    }))
+  rownames(by_domain) <- NULL
+
+  by_rung <- do.call(rbind, lapply(
+    split(by_domain, by_domain$cohort), function(d) {
+      verdict <- if (any(d$reading == "fail")) "STOP"
+                 else if (any(d$reading == "insufficient")) "FLAG"
+                 else "GO"
+      data.frame(cohort = d$cohort[1], verdict = verdict,
+                 stringsAsFactors = FALSE)
+    }))
+  rownames(by_rung) <- NULL
+  # Keep the ladder's rung order.
+  ord <- unique(tab$cohort)
+  by_rung   <- by_rung[match(ord, by_rung$cohort), , drop = FALSE]
+  by_domain <- by_domain[order(match(by_domain$cohort, ord),
+                               by_domain$domain), , drop = FALSE]
+  list(by_domain = by_domain, by_rung = by_rung, criteria = cr)
 }
 
 #' @export
 print.nc_ladder <- function(x, ...) {
   cat("Negative controls along the restriction ladder (", x$method,
       ")\n\n", sep = "")
-  print(x$table[, c("cohort", "negative_control", "n", "estimate",
-                    "ci_lower", "ci_upper", "p_value", "flagged")],
+  print(x$table[, c("cohort", "negative_control", "domain", "n",
+                    "estimate", "ci_lower", "ci_upper", "p_value",
+                    "flagged", "method")],
         row.names = FALSE)
   if (length(x$turned_null)) {
     cat("\n")
     for (s in x$turned_null) cat("  ", s, "\n", sep = "")
   } else {
     cat("\n  No control turned from failing to null along the ladder.\n")
+  }
+  if (!is.null(x$verdict)) {
+    cr <- x$verdict$criteria
+    cat(sprintf(
+      "\n  Check Point 3 verdict (locked criteria: |%s| < %.3g, rule %s, min %d per domain, %s):\n",
+      if (cr$rule == "ci_in_band") "CI" else "estimate", cr$null_band,
+      cr$rule, cr$min_per_domain, cr$consistency))
+    print(x$verdict$by_rung, row.names = FALSE)
+  } else {
+    cat("\n  No nc_criteria declared on the lock: estimates only, no verdict.\n")
   }
   invisible(x)
 }

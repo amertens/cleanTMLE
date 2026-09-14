@@ -15,23 +15,30 @@ computed MDD.  Default \code{NULL} (no comparison).}
 }
 \value{
 A list of class \code{design_precision} with elements: \code{n_total}
-(total sample size); \code{n_treated}; \code{n_control}; \code{events_total};
-\code{events_per_arm} (named vector of events per arm); \code{crude_rates}
-(crude event rates per arm); \code{prevalence} (overall outcome
-prevalence); \code{se_proxy} (SE proxy for the risk difference);
-\code{ci_halfwidth} (95\% CI half-width proxy, 1.96 * se_proxy); \code{mdd_80}
-(minimum detectable difference at 80\% power, 2.8 * se_proxy);
-\code{target_mdd} (the user-supplied target, or \code{NULL}); and
-\code{mdd_feasible} (logical; present only when \code{target_mdd} is supplied).
+(total sample size); \code{n_treated}; \code{n_control} (arm sizes are
+treatment-marginal design quantities); \code{events_total} (marginal
+event count); \code{prevalence} (marginal outcome prevalence among rows
+with an observed outcome); \code{se_proxy} (SE proxy for the risk
+difference under the marginal rate); \code{ci_halfwidth} (95\% CI
+half-width proxy, 1.96 * se_proxy); \code{mdd_80} (minimum detectable
+difference at 80\% power, 2.8 * se_proxy); \code{target_mdd} (the
+user-supplied target, or \code{NULL}); \code{mdd_feasible} (logical; present
+only when \code{target_mdd} is supplied); and \code{event_support} (the
+marginal table from \code{\link[=summarize_event_support]{summarize_event_support()}}).
 }
 \description{
-Computes pre-outcome precision summaries using only sample size and
-event information available at the design stage.  No outcome modelling
-is performed.
+Computes pre-outcome precision summaries from arm sizes and marginal
+outcome information only. No outcome modelling is performed, and
+nothing in the output stratifies the outcome by treatment arm: total
+events, the marginal event rate, and the precision proxies derived
+from them are the only outcome quantities read. Arm-specific event
+counts are the crude treatment-outcome association; they are
+available only through \code{\link[=event_support_by_arm]{event_support_by_arm()}}, which requires a
+recorded reason.
 }
 \section{Clean-room stage}{
- Stage 1b (design-stage; uses outcome counts
-for power/precision summaries only, not for estimation).
+ Stage 1b (design-stage; marginal outcome
+counts only, never the treatment-outcome association).
 }
 
 \examples{

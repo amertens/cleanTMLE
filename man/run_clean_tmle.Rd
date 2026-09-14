@@ -39,7 +39,7 @@ variable.  If provided, survival TMLE is used.}
 indicator variable.}
 
 \item{learner_lib}{Character vector of SuperLearner algorithms.
-\strong{Required} — the function will stop if not provided.}
+\strong{Required}: the function will stop if not provided.}
 
 \item{truncation}{Numeric vector of length 2 giving the lower and
 upper PS truncation bounds.  Default: \code{c(0.01, 0.99)}.}

@@ -64,8 +64,8 @@ and \code{\link[=dt_nco]{dt_nco()}} extract the argument lists for each step.
 }
 \details{
 Centralising the thresholds addresses a gap in earlier versions: the
-decision rule — arguably the most outcome-relevant set of analyst
-choices — was passed ad hoc to each checkpoint and was not part of the
+decision rule, arguably the most outcome-relevant set of analyst
+choices, was passed ad hoc to each checkpoint and was not part of the
 lock fingerprint. With \code{\link[=attach_decision_thresholds]{attach_decision_thresholds()}} the thresholds
 receive their own SHA-256 \code{thresholds_hash} recorded on the lock, so a
 reviewer can verify the decision rule was fixed before unblinding.
@@ -75,3 +75,4 @@ dt <- decision_thresholds(dq_max_abs_bias = 0.02, nco_rule = "equivalence",
                           nco_null_band = 0.02)
 dt_dq(dt)
 }
+\keyword{internal}

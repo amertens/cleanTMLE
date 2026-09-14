@@ -24,3 +24,4 @@ logit(0.9)  # ~2.20
 \seealso{
 \code{\link[=expit]{expit()}} for the inverse operation.
 }
+\keyword{internal}

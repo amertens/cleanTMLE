@@ -25,3 +25,4 @@ expit(-Inf) # 0
 \seealso{
 \code{\link[=logit]{logit()}} for the inverse operation.
 }
+\keyword{internal}

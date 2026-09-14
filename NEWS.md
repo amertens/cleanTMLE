@@ -1,4 +1,81 @@
-# cleanTMLE 0.2.0 (development)
+# cleanTMLE 0.3.0 (development)
+
+Blinding and gate corrections (revision WP1). The blinding contract is
+now a tested invariant: `tests/testthat/test-blinding.R` asserts that
+every design-stage verb returns identical output on a masked lock and
+under a permuted outcome.
+
+## Blinding corrections (breaking)
+
+* `estimate_design_precision()` and `summarize_event_support()` report
+  the total event count and the marginal rate only; the per-arm event
+  counts and crude per-arm rates they previously returned and printed
+  are the crude treatment-outcome association and are gone from both.
+  `checkpoint_cohort_adequacy()` (superseded) likewise drops its
+  per-arm event rows. Arm-specific counts are available only through
+  the new `event_support_by_arm(lock, reason = )`, which requires a
+  reason, warns, and records the access in the design log.
+* `run_plasmode_feasibility()` and `run_plasmode_dq_stress()` no longer
+  return the lock on their results (the lock carries the full data,
+  including the outcome). Results carry `lock_hash` and `dgp_mode`
+  instead; `select_tmle_candidate()` reads the hash from the new field.
+* The plasmode generator mode is a locked field:
+  `create_analysis_lock(dgp_mode = )` with `"hybrid"` (Q0 fitted on the
+  real outcome, covariates only; both plasmode functions now warn when
+  the propensity c-statistic exceeds 0.80, where E[Y|W] approaches the
+  outcome rate by propensity stratum) and `"external_pilot"`
+  (`pilot_q0` supplied from external pilot data; no real outcome is
+  read and the plasmode runs on a masked lock).
+* The lock fingerprint now includes a content digest of every column
+  except the outcome, so swapped design-data values invalidate the
+  hash while masking, unmasking, or permuting the outcome leaves it
+  unchanged. Pre-0.3.0 locks are validated against the legacy
+  fingerprint with a message.
+
+## Gate and negative-control corrections
+
+* `create_analysis_lock(dq_thresholds = )` declares the data-quality
+  decision thresholds as a fingerprinted field. The stress-test result
+  then carries `verdict` (`dq_locked_verdict()`, new export) and
+  `tipping` (`dq_tipping_points()`, new export): pure functions of the
+  locked thresholds, the declared threat grid, and the metrics, with
+  the tipping-point severity (for unmeasured confounding, the odds
+  ratio) as the primary reading. Nothing in the verdict reads realised
+  bias or the true effect.
+* `create_analysis_lock(nc_criteria = )` declares the negative-control
+  decision criteria (null band on the risk-difference scale, in-band
+  rule, minimum estimable controls per domain, within-domain
+  consistency). `run_negative_control_ladder()` grades rungs against
+  them via `nc_ladder_verdict()` (new export) and reports no verdict
+  when no criteria were locked.
+* `run_negative_control_ladder()` never substitutes methods silently:
+  a failed TMLE fit is recorded as a failed TMLE row, every row carries
+  a `method` column and the control's declared `domain`, and
+  `run_negative_control_tmle()` errors instead of falling back to the
+  IPTW helper. The TMLE path defaults to the locked candidate's Q
+  library when one is on the lock.
+* `design_report()` stores summary statistics only (the per-patient
+  propensity and treatment vectors are removed from the embedded
+  support object), prints the lock's `roles`
+  (`create_analysis_lock(roles = )`, records only), and accepts
+  `dq = ` so the locked DQ verdict and Check Point 3 reading enter the
+  recommendation.
+* `export_design_log(lock, format = "muntner")` (new export) writes the
+  design log in the decision-log column structure of Muntner et al.
+  (2024), Table S1; ladder switches and overrides now fill the
+  structured columns.
+
+## Removed
+
+* `refine_ps_after_nco()` (unexported, superseded) is removed:
+  refitting the propensity model after reading negative-control results
+  is a protocol amendment, and nothing recorded it unless an optional
+  audit object was passed.
+* `estimand_feasibility()` no longer calls `set.seed(1)` internally;
+  its matched-ATT diagnostic uses a deterministic (sorted) greedy
+  matching order instead of hidden RNG state.
+
+# cleanTMLE 0.2.0
 
 This release refocuses the package on deciding, before outcome access,
 whether a comparison is estimable and with which estimand. The Rescue.Co
@@ -64,7 +141,7 @@ were patched.
   not a regression.
 
 * **`simulate_support()`** is the new outcome-blind support simulation. It
-  draws synthetic data under the generate-treatment design from a
+  draws simulated data under the generate-treatment design from a
   prespecified outcome family (`support_surfaces()`) that spans a
   confounding axis (outcome dependence on the covariate direction that most
   predicts treatment), an effect-modification axis (so the ATE, ATT and ATO
@@ -288,7 +365,7 @@ were patched.
 * **`select_variance_method()`** implements the second stage of the
   FIORD two-stage selector (Nance et al. 2026): with the point estimator
   locked, it chooses the variance method whose oracle coverage on
-  synthetic data is closest to nominal. Together with
+  simulated data is closest to nominal. Together with
   `select_tmle_candidate(rule = "fiord_two_stage")` (stage 1) this closes
   the gap to the full FIORD procedure.
 * **`run_match_workflow()`** Roxygen now includes a `@section Variance`
@@ -322,8 +399,8 @@ were patched.
   persistent, killable `callr` subprocess (`.fit_candidates_bounded()`). If the
   fits exceed `fit_timeout` seconds the subprocess is killed, a fresh session
   is started for subsequent replicates, and every candidate for that replicate
-  is recorded as `NA` — exactly as a fit error would be. This prevents a
-  degenerate synthetic design (e.g. near-positivity scenarios that send
+  is recorded as `NA`, exactly as a fit error would be. This prevents a
+  degenerate simulated design (e.g. near-positivity scenarios that send
   `glmnet` into a runaway) from wedging the entire stress test. The default
   (`Inf`) preserves the existing in-process behaviour so existing scripts are
   unaffected; setting `fit_timeout = 120` is recommended when any SuperLearner
@@ -340,7 +417,7 @@ were patched.
 
 This release hardens the GO/FLAG/STOP decision layer, centralises the
 decision thresholds, strengthens the negative-control and missingness
-checks, and adds a synthetic-data fidelity diagnostic.
+checks, and adds a simulated-data fidelity diagnostic.
 
 ## Decision-layer fixes
 
@@ -382,14 +459,14 @@ checks, and adds a synthetic-data fidelity diagnostic.
 
 ## Plasmode / DQ-stress additions
 
-* **`run_plasmode_dq_stress(q0_library = ...)`** lets the synthetic-outcome
+* **`run_plasmode_dq_stress(q0_library = ...)`** lets the simulated-outcome
   generator Q0 use a SuperLearner library instead of a logistic GLM,
   matching the option already available in `run_plasmode_feasibility()`.
 * **MAR covariate-missingness scenario** (`covariate_missingness_mar`):
   treatment-dependent missingness with median imputation, a stronger test
   than the existing MCAR scenario because the imputation is biased rather
   than merely inefficient.
-* **`assess_dgp_fidelity()`** compares synthetic vs real covariate and
+* **`assess_dgp_fidelity()`** compares simulated vs real covariate and
   treatment distributions (per-covariate SMD and KS, treatment-prevalence
   difference) and returns a GO/FLAG decision, so the analyst can defend
   that the plasmode generator is faithful enough to base candidate
@@ -433,7 +510,7 @@ and ergonomics improvements; a few extend the public API.
   and runs `tmle::tmle()` with `Delta = R` so the targeting step uses
   the censoring weights internally rather than dropping incomplete
   rows. Falls back to a complete-case TMLE weighted by the IPCW when
-  the installed `tmle` version doesn't accept the `Delta` argument.
+  the installed `tmle` version does not accept the `Delta` argument.
   The returned object is a `tmle_fit` and works with
   `summarize_cleanroom_results()`, `forest_plot()`, and `make_table2()`.
 * **`run_crude_workflow()` and `run_match_workflow()`** now warn and

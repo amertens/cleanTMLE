@@ -34,3 +34,4 @@ parallel::stopCluster(cl)
 }
 
 }
+\keyword{internal}
