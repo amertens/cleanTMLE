@@ -120,6 +120,13 @@ from Suggests.
 * Snapshot tests pin the printed `design_report()` and the
   Muntner-format `export_design_log()`.
 
+## Bug fix
+
+* A threat list that named `covariate_missingness_mnar` (or `_mar`)
+  without `covariate_missingness` also ran the MCAR sweep, because the
+  scenario list was read with `$` and partially matched. Lookups are
+  exact now; only the declared mechanisms run.
+
 ## Blinding corrections (breaking)
 
 * `estimate_design_precision()` and `summarize_event_support()` report

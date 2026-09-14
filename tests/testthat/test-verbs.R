@@ -97,3 +97,17 @@ test_that("negative_control_ladder wraps the engine and classes the result", {
   expect_true(all(c("full cohort", "biomarker below median") %in%
                     ncl$table$cohort))
 })
+
+test_that("a threat list naming only the MNAR mechanism runs only MNAR", {
+  # `$` on the scenario list partially matched covariate_missingness to
+  # covariate_missingness_mnar, so declaring MNAR alone also ran MCAR.
+  dat  <- sim_func1(n = 300, seed = 26)
+  lock <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex", "biomarker"), seed = 26)
+  cand <- define_candidates("glm", g_library = "SL.glm",
+                            truncation = 0.01)
+  st <- suppressMessages(stress_test(
+    lock, cand, reps = 2L, verbose = FALSE,
+    threats = list(covariate_missingness_mnar = list(fractions = 0.10))))
+  expect_setequal(unique(st$metrics$scenario), c("none", "cov_miss_mnar"))
+})

@@ -741,34 +741,34 @@ run_plasmode_dq_stress <- function(lock,
 
   dqs <- data_quality_scenarios
 
-  if (!is.null(dqs$covariate_missingness)) {
-    for (f in dqs$covariate_missingness$fractions) {
+  if (!is.null(dqs[["covariate_missingness"]])) {
+    for (f in dqs[["covariate_missingness"]]$fractions) {
       scenario_grid <- rbind(scenario_grid, data.frame(
         scenario = "cov_miss", level = as.character(f),
         stringsAsFactors = FALSE))
     }
   }
 
-  if (!is.null(dqs$covariate_missingness_mar)) {
-    for (f in dqs$covariate_missingness_mar$fractions) {
+  if (!is.null(dqs[["covariate_missingness_mar"]])) {
+    for (f in dqs[["covariate_missingness_mar"]]$fractions) {
       scenario_grid <- rbind(scenario_grid, data.frame(
         scenario = "cov_miss_mar", level = as.character(f),
         stringsAsFactors = FALSE))
     }
   }
 
-  if (!is.null(dqs$covariate_missingness_mnar)) {
-    for (f in dqs$covariate_missingness_mnar$fractions) {
+  if (!is.null(dqs[["covariate_missingness_mnar"]])) {
+    for (f in dqs[["covariate_missingness_mnar"]]$fractions) {
       scenario_grid <- rbind(scenario_grid, data.frame(
         scenario = "cov_miss_mnar", level = as.character(f),
         stringsAsFactors = FALSE))
     }
   }
 
-  if (!is.null(dqs$treatment_misclass)) {
-    sens_t <- dqs$treatment_misclass$sensitivity
-    spec_t <- dqs$treatment_misclass$specificity
-    rates_t <- dqs$treatment_misclass$rates
+  if (!is.null(dqs[["treatment_misclass"]])) {
+    sens_t <- dqs[["treatment_misclass"]]$sensitivity
+    spec_t <- dqs[["treatment_misclass"]]$specificity
+    rates_t <- dqs[["treatment_misclass"]]$rates
     if (!is.null(sens_t) || !is.null(spec_t)) {
       ns <- max(length(sens_t), length(spec_t))
       if (is.null(sens_t)) sens_t <- rep(1, ns)
@@ -790,13 +790,13 @@ run_plasmode_dq_stress <- function(lock,
     }
   }
 
-  if (!is.null(dqs$outcome_misclass)) {
-    sens <- dqs$outcome_misclass$sensitivity
-    spec <- dqs$outcome_misclass$specificity
-    sens_a1 <- dqs$outcome_misclass$sens_a1
-    sens_a0 <- dqs$outcome_misclass$sens_a0
-    spec_a1 <- dqs$outcome_misclass$spec_a1
-    spec_a0 <- dqs$outcome_misclass$spec_a0
+  if (!is.null(dqs[["outcome_misclass"]])) {
+    sens <- dqs[["outcome_misclass"]]$sensitivity
+    spec <- dqs[["outcome_misclass"]]$specificity
+    sens_a1 <- dqs[["outcome_misclass"]]$sens_a1
+    sens_a0 <- dqs[["outcome_misclass"]]$sens_a0
+    spec_a1 <- dqs[["outcome_misclass"]]$spec_a1
+    spec_a0 <- dqs[["outcome_misclass"]]$spec_a0
     has_marginal <- !is.null(sens) || !is.null(spec)
     has_perarm   <- !is.null(sens_a1) || !is.null(spec_a1) ||
                     !is.null(sens_a0) || !is.null(spec_a0)
@@ -826,9 +826,9 @@ run_plasmode_dq_stress <- function(lock,
     }
   }
 
-  if (!is.null(dqs$unmeasured_confounding)) {
-    u_trt <- dqs$unmeasured_confounding$U_treatment_OR
-    u_out <- dqs$unmeasured_confounding$U_outcome_OR
+  if (!is.null(dqs[["unmeasured_confounding"]])) {
+    u_trt <- dqs[["unmeasured_confounding"]]$U_treatment_OR
+    u_out <- dqs[["unmeasured_confounding"]]$U_outcome_OR
     for (i in seq_along(u_trt)) {
       scenario_grid <- rbind(scenario_grid, data.frame(
         scenario = "unmeasured_U",
@@ -841,8 +841,8 @@ run_plasmode_dq_stress <- function(lock,
   # amplified so a subgroup approaches deterministic treatment and the estimated
   # propensity score reaches the boundary. The `slopes` are multipliers (> 1) on
   # the centred log-odds of the lock-data propensity model.
-  if (!is.null(dqs$near_positivity)) {
-    for (s in dqs$near_positivity$slopes) {
+  if (!is.null(dqs[["near_positivity"]])) {
+    for (s in dqs[["near_positivity"]]$slopes) {
       scenario_grid <- rbind(scenario_grid, data.frame(
         scenario = "near_positivity",
         level = sprintf("slope_x%.1f", s),
@@ -959,7 +959,7 @@ run_plasmode_dq_stress <- function(lock,
         p0_sim <- p_base[idx]
 
         if (sc_name == "unmeasured_U") {
-          u_prev <- dqs$unmeasured_confounding$U_prevalence
+          u_prev <- dqs[["unmeasured_confounding"]]$U_prevalence
           U <- stats::rbinom(n, 1, u_prev)
 
           # Use the *real* propensity model fitted on lock data as the
@@ -1026,14 +1026,14 @@ run_plasmode_dq_stress <- function(lock,
         W_fit <- data_rep
         if (sc_name == "cov_miss") {
           frac <- as.numeric(sc_level)
-          miss_vars <- dqs$covariate_missingness$variables
+          miss_vars <- dqs[["covariate_missingness"]]$variables
           if (is.null(miss_vars)) miss_vars <- covariates
           W_fit <- .degrade_missingness(data_rep, miss_vars, frac)
         }
         # Covariate missingness (MAR; treatment-dependent + median impute).
         if (sc_name == "cov_miss_mar") {
           frac <- as.numeric(sc_level)
-          spec <- dqs$covariate_missingness_mar
+          spec <- dqs[["covariate_missingness_mar"]]
           miss_vars <- spec$variables
           if (is.null(miss_vars)) miss_vars <- covariates
           or_a <- spec$treatment_OR %||% 3
@@ -1043,7 +1043,7 @@ run_plasmode_dq_stress <- function(lock,
         # Covariate missingness (MNAR; value-dependent + median impute).
         if (sc_name == "cov_miss_mnar") {
           frac <- as.numeric(sc_level)
-          spec <- dqs$covariate_missingness_mnar
+          spec <- dqs[["covariate_missingness_mnar"]]
           miss_vars <- spec$variables
           if (is.null(miss_vars)) miss_vars <- covariates
           strength <- spec$strength %||% 1.5
