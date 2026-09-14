@@ -61,7 +61,7 @@ fit_ps <- function(lock, method = c("superlearner", "glm", "external"),
 #'   Conover MM, Schuemie MJ et al. (2025) J Am Med Inform Assoc: objective
 #'   study validity diagnostics computed while estimates stay blinded, with
 #'   failed analyses labelled inestimable.
-#' @export
+#' @keywords internal
 support_thresholds <- function(band = c(0.05, 0.95),
                                flag_pct_outside = 1,
                                flag_max_weight = 30,
@@ -232,15 +232,27 @@ print.support_thresholds <- function(x, ...) {
 #' }
 #' @export
 assess_support <- function(ps_fit,
-                           thresholds = support_thresholds(),
+                           thresholds = NULL,
+                           balance = TRUE,
                            tree_search = TRUE,
                            tree_max_depth = 3L,
                            tree_min_n = 50L) {
   if (!inherits(ps_fit, "ps_fit"))
-    stop("`ps_fit` must be a ps_fit object (fit_ps(), fit_ps_superlearner(), ",
-         "fit_ps_glm(), or wrap_ps_fit()).", call. = FALSE)
-  if (!inherits(thresholds, "support_thresholds"))
-    stop("`thresholds` must come from support_thresholds().", call. = FALSE)
+    stop("`ps_fit` must be a ps_fit object from fit_ps().", call. = FALSE)
+  # `thresholds` is a plain named list overriding the documented defaults
+  # (band, flag/severe/fail_pct_outside, flag/severe/fail_max_weight,
+  # nd_min_stratum, nd_min_treated, nd_extreme_p).
+  if (is.null(thresholds)) {
+    thresholds <- support_thresholds()
+  } else if (!inherits(thresholds, "support_thresholds")) {
+    if (!is.list(thresholds) || is.null(names(thresholds)))
+      stop("`thresholds` must be a named list of overrides.", call. = FALSE)
+    bad <- setdiff(names(thresholds), names(formals(support_thresholds)))
+    if (length(bad))
+      stop("Unknown threshold name(s): ", paste(bad, collapse = ", "),
+           call. = FALSE)
+    thresholds <- do.call(support_thresholds, thresholds)
+  }
 
   data <- ps_fit$data
   A <- as.integer(data[[ps_fit$treatment]])
@@ -296,6 +308,28 @@ assess_support <- function(ps_fit,
     escalated <- TRUE
   }
 
+  # Balance: unweighted and IPTW-weighted standardised mean differences,
+  # the table love_plot() reads (absorbed from compute_ps_diagnostics()).
+  bal <- NULL
+  if (isTRUE(balance)) {
+    smd_rows <- lapply(ps_fit$covariates, function(v) {
+      xv <- data[[v]]
+      if (!is.numeric(xv)) xv <- as.numeric(as.factor(xv)) - 1
+      if (anyNA(xv)) xv[is.na(xv)] <- stats::median(xv, na.rm = TRUE)
+      m1 <- mean(xv[A == 1]); m0 <- mean(xv[A == 0])
+      sp <- sqrt((stats::var(xv[A == 1]) + stats::var(xv[A == 0])) / 2)
+      m1w <- stats::weighted.mean(xv[A == 1], w[A == 1])
+      m0w <- stats::weighted.mean(xv[A == 0], w[A == 0])
+      data.frame(variable = v,
+                 smd_unweighted = round(if (is.finite(sp) && sp > 0)
+                   (m1 - m0) / sp else 0, 4),
+                 smd_weighted = round(if (is.finite(sp) && sp > 0)
+                   (m1w - m0w) / sp else 0, 4),
+                 stringsAsFactors = FALSE)
+    })
+    bal <- do.call(rbind, smd_rows)
+  }
+
   out <- list(
     summary = cbind(smry, verdict = verdict,
                     caveat = unname(.support_caveats[verdict]),
@@ -307,6 +341,7 @@ assess_support <- function(ps_fit,
     c_statistic = c_stat,
     near_deterministic = nd,
     violation_regions = vr,
+    balance = bal,
     thresholds = thresholds,
     band = band,
     g = g,

@@ -6,6 +6,49 @@ case study's protocol contrast, on which the ATE is not estimable while the
 ATT, the overlap-weighted ATO and the trimmed ATE are, is the motivating
 example throughout.
 
+## The API consolidation (breaking)
+
+The public API falls from 149 exports to 54, with a 15-function core
+(docs/revision/api_consolidation_review.md is the full disposition). Three
+kinds of change:
+
+* **Organizational functions leave the API.** The checkpoint, gate-token,
+  audit-log, decision-log and threshold families recorded process rather
+  than computing statistics, and the package's own case study bypassed
+  them at every enforcement point. They remain as internals (reachable via
+  `:::` for legacy scripts) but are no longer exported or documented as
+  the workflow; the design log on the lock, the verdicts carried on
+  result objects, and the cleanroomGov companion carry what they carried.
+
+* **Families become arguments.** `fit_ps(method = )` absorbs the four
+  propensity entry points. `estimate_effect(estimand = , estimator = ,
+  missing = )` absorbs the nine estimator entry points, with
+  `return_steps = TRUE` exposing the modular four-step TMLE pieces.
+  `create_analysis_lock(negative_controls = , mask = , enforce = )`
+  absorbs the lock constructors and control registration.
+  `assess_support(thresholds = <named list>, balance = TRUE)` absorbs the
+  threshold constructor and the balance diagnostics (love_plot() reads
+  it). `estimand_feasibility(profile_vars = )` absorbs the unsupported
+  profile. `simulate_support(surface = <named list>, design =
+  "parametric_bootstrap")` absorbs the surface constructor and the
+  Petersen check. `declare_estimand_ladder(candidate = )` absorbs the
+  candidate lock-in. `run_plasmode_dq_stress(data_quality_scenarios =
+  "<preset name>")` absorbs the scenario constructor; `summary()` on its
+  result is the degradation table. `love_plot(matched = )` absorbs the
+  three-way variant; `plot(tmle_fit, type = "ic"/"clever")` absorbs the
+  two diagnostic plots. `design_report(protocol = )` carries the TARGET
+  emulation table; `run_delta_sensitivity()` carries the tipping value;
+  `estimate_design_precision()` carries the event-support table;
+  `build_sl_library(y = )` computes the effective sample size itself.
+
+* **The archive.** update_treatment/update_outcome/update_censoring,
+  re_estimate, compare_fits and hr_data were removed outright in an
+  earlier 0.2.0 commit; identify_missing, expit and logit are internal.
+
+The three manuscripts and the rendered vignette HTML describe the 0.1.x
+API and do not re-render until their rewrite; the in-repo driver scripts
+were patched.
+
 ## The plasmode design is fixed (breaking for simulation results)
 
 * **`run_plasmode_feasibility()` and `run_plasmode_dq_stress()` now default

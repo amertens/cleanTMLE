@@ -18,7 +18,7 @@ NULL
 #' @return A data.frame with columns \code{stage}, \code{metric},
 #'   \code{value}, \code{decision}, \code{rationale}, \code{timestamp}.
 #'
-#' @export
+#' @keywords internal
 init_decision_log <- function() {
   .superseded("init_decision_log", "the design log on the lock (lock$design_log)")
   data.frame(
@@ -45,7 +45,7 @@ init_decision_log <- function() {
 #'
 #' @return The updated decision-log data.frame.
 #'
-#' @export
+#' @keywords internal
 log_decision_entry <- function(log, stage, metric, value,
                                decision = NA_character_,
                                rationale = "") {
@@ -77,7 +77,7 @@ log_decision_entry <- function(log, stage, metric, value,
 #'
 #' @return Invisibly returns \code{path}.
 #'
-#' @export
+#' @keywords internal
 save_decision_log <- function(log, path = "inst/decision_logs/decision_log.csv",
                               append = FALSE) {
   .superseded("save_decision_log", "the design log on the lock (lock$design_log)")
@@ -99,21 +99,34 @@ save_decision_log <- function(log, path = "inst/decision_logs/decision_log.csv",
 #' Love Plot: Weighted vs Unweighted SMDs
 #'
 #' Produces a dot-plot showing standardised mean differences before and
-#' after IPW weighting.  Requires a \code{ps_diagnostics} object from
-#' \code{\link{compute_ps_diagnostics}}.
+#' after IPW weighting, from a [assess_support()] result (its `$balance`
+#' table) or a legacy `ps_diagnostics` object. When a matched cohort's SMDs
+#' are supplied via `matched`, a third series is drawn (the former
+#' three-way love plot).
 #'
-#' @param ps_diag A \code{ps_diagnostics} object.
+#' @param ps_diag A `support_assessment` from [assess_support()] or a
+#'   `ps_diagnostics` object.
 #' @param threshold Numeric; dashed reference line for the balance
 #'   threshold. Default: 0.10.
+#' @param matched Optional data.frame with columns `variable` and `smd`
+#'   (matched-cohort SMDs, e.g. from an internal matched fit), drawn as a
+#'   third series.
 #'
 #' @return A \code{ggplot2} object.
 #'
 #' @export
-love_plot <- function(ps_diag, threshold = 0.10) {
-  if (!inherits(ps_diag, "ps_diagnostics"))
-    stop("`ps_diag` must be a ps_diagnostics object.", call. = FALSE)
-
-  smds <- ps_diag$smds
+love_plot <- function(ps_diag, threshold = 0.10, matched = NULL) {
+  smds <- if (inherits(ps_diag, "support_assessment")) {
+    if (is.null(ps_diag$balance))
+      stop("assess_support() was run with balance = FALSE; rerun with the ",
+           "default to feed love_plot().", call. = FALSE)
+    ps_diag$balance
+  } else if (inherits(ps_diag, "ps_diagnostics")) {
+    ps_diag$smds
+  } else {
+    stop("`ps_diag` must come from assess_support() or ",
+         "compute_ps_diagnostics().", call. = FALSE)
+  }
 
   plot_df <- data.frame(
     variable = rep(smds$variable, 2L),
@@ -121,6 +134,13 @@ love_plot <- function(ps_diag, threshold = 0.10) {
     smd      = c(abs(smds$smd_unweighted), abs(smds$smd_weighted)),
     stringsAsFactors = FALSE
   )
+  if (!is.null(matched)) {
+    if (!all(c("variable", "smd") %in% names(matched)))
+      stop("`matched` needs columns variable and smd.", call. = FALSE)
+    plot_df <- rbind(plot_df, data.frame(
+      variable = matched$variable, type = "Matched",
+      smd = abs(matched$smd), stringsAsFactors = FALSE))
+  }
 
   ggplot2::ggplot(
     plot_df,
@@ -157,7 +177,7 @@ love_plot <- function(ps_diag, threshold = 0.10) {
 #'
 #' @return A \code{ggplot2} object.
 #'
-#' @export
+#' @keywords internal
 ic_histogram <- function(tmle_result, bins = 30L) {
   ic <- tmle_result$influence_curve
   if (is.null(ic))

@@ -42,3 +42,4 @@ otherwise the outcome is not read.
 \seealso{
 \code{\link[=run_clean_tmle_preoutcome]{run_clean_tmle_preoutcome()}}, \code{\link[=authorize_outcome_analysis]{authorize_outcome_analysis()}}
 }
+\keyword{internal}

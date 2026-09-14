@@ -61,7 +61,7 @@ test_that("validate_analysis_lock passes for valid lock", {
     outcome = "event_24", covariates = c("age", "sex"),
     seed = 83L
   )
-  expect_message(validate_analysis_lock(lock), "validated successfully")
+  expect_message(cleanTMLE:::validate_analysis_lock(lock), "validated successfully")
 })
 
 test_that("validate_analysis_lock detects tampered hash", {
@@ -72,7 +72,7 @@ test_that("validate_analysis_lock detects tampered hash", {
     seed = 84L
   )
   lock$lock_hash <- "000000000"   # tamper
-  expect_error(validate_analysis_lock(lock), "hash mismatch")
+  expect_error(cleanTMLE:::validate_analysis_lock(lock), "hash mismatch")
 })
 
 test_that("print.cleanroom_lock works", {
@@ -100,7 +100,7 @@ test_that("fit_ps_superlearner errors without SuperLearner package", {
     outcome = "event_24", covariates = c("age", "sex"),
     seed = 86L
   )
-  expect_error(fit_ps_superlearner(lock), "SuperLearner")
+  expect_error(cleanTMLE:::fit_ps_superlearner(lock), "SuperLearner")
 })
 
 test_that("fit_ps_superlearner works when SuperLearner is available", {
@@ -113,7 +113,7 @@ test_that("fit_ps_superlearner works when SuperLearner is available", {
     sl_library = c("SL.glm", "SL.mean"),
     seed = 87L
   )
-  ps_fit <- fit_ps_superlearner(lock)
+  ps_fit <- cleanTMLE:::fit_ps_superlearner(lock)
 
   expect_s3_class(ps_fit, "ps_fit")
   expect_equal(length(ps_fit$ps), 200L)
@@ -142,7 +142,7 @@ test_that("compute_ps_diagnostics works with mock ps_fit", {
   )
   class(mock_ps_fit) <- c("ps_fit", "cr_result")
 
-  diag <- compute_ps_diagnostics(mock_ps_fit)
+  diag <- cleanTMLE:::compute_ps_diagnostics(mock_ps_fit)
 
   expect_s3_class(diag, "ps_diagnostics")
   expect_true(is.data.frame(diag$ess))
@@ -320,7 +320,7 @@ test_that("run_match_workflow returns match_result", {
                   covariates = c("age", "sex", "biomarker"), data = dat)
   class(mock_ps) <- c("ps_fit", "cr_result")
 
-  m_fit <- run_match_workflow(lock, mock_ps, allow_outcome_access = TRUE)
+  m_fit <- cleanTMLE:::run_match_workflow(lock, mock_ps, allow_outcome_access = TRUE)
 
   expect_s3_class(m_fit, "match_result")
   expect_true(!is.na(m_fit$estimate))
@@ -348,7 +348,7 @@ test_that("run_iptw_workflow returns iptw_result", {
                   covariates = c("age", "sex", "biomarker"), data = dat)
   class(mock_ps) <- c("ps_fit", "cr_result")
 
-  i_fit <- run_iptw_workflow(lock, mock_ps, allow_outcome_access = TRUE)
+  i_fit <- cleanTMLE:::run_iptw_workflow(lock, mock_ps, allow_outcome_access = TRUE)
 
   expect_s3_class(i_fit, "iptw_result")
   expect_true(!is.na(i_fit$estimate))
@@ -371,7 +371,7 @@ test_that("run_iptw_workflow with trimming", {
                   covariates = c("age", "sex"), data = dat)
   class(mock_ps) <- c("ps_fit", "cr_result")
 
-  i_fit <- run_iptw_workflow(lock, mock_ps, trim = 0.01,
+  i_fit <- cleanTMLE:::run_iptw_workflow(lock, mock_ps, trim = 0.01,
                              allow_outcome_access = TRUE)
   expect_s3_class(i_fit, "iptw_result")
 })
@@ -394,7 +394,7 @@ test_that("fit_tmle_treatment_mechanism uses existing ps_fit", {
                   covariates = c("age", "sex"), data = dat)
   class(mock_ps) <- c("ps_fit", "cr_result")
 
-  g_fit <- fit_tmle_treatment_mechanism(lock, ps_fit = mock_ps)
+  g_fit <- cleanTMLE:::fit_tmle_treatment_mechanism(lock, ps_fit = mock_ps)
 
   expect_s3_class(g_fit, "tmle_mechanism")
   expect_equal(g_fit$type, "treatment")
@@ -416,8 +416,8 @@ test_that("fit_tmle_outcome_mechanism returns outcome mechanism", {
                   covariates = c("age", "sex"), data = dat)
   class(mock_ps) <- c("ps_fit", "cr_result")
 
-  g_fit <- fit_tmle_treatment_mechanism(lock, ps_fit = mock_ps)
-  Q_fit <- fit_tmle_outcome_mechanism(lock, g_fit, allow_outcome_access = TRUE)
+  g_fit <- cleanTMLE:::fit_tmle_treatment_mechanism(lock, ps_fit = mock_ps)
+  Q_fit <- cleanTMLE:::fit_tmle_outcome_mechanism(lock, g_fit, allow_outcome_access = TRUE)
 
   expect_s3_class(Q_fit, "tmle_mechanism")
   expect_equal(Q_fit$type, "outcome")
@@ -442,16 +442,16 @@ test_that("run_tmle_targeting_step and extract_tmle_estimate work", {
                   covariates = c("age", "sex", "biomarker"), data = dat)
   class(mock_ps) <- c("ps_fit", "cr_result")
 
-  g_fit    <- fit_tmle_treatment_mechanism(lock, ps_fit = mock_ps)
-  Q_fit    <- fit_tmle_outcome_mechanism(lock, g_fit,
+  g_fit    <- cleanTMLE:::fit_tmle_treatment_mechanism(lock, ps_fit = mock_ps)
+  Q_fit    <- cleanTMLE:::fit_tmle_outcome_mechanism(lock, g_fit,
                                          allow_outcome_access = TRUE)
-  tmle_upd <- run_tmle_targeting_step(g_fit, Q_fit)
+  tmle_upd <- cleanTMLE:::run_tmle_targeting_step(g_fit, Q_fit)
 
   expect_s3_class(tmle_upd, "tmle_update")
   expect_true(!is.na(tmle_upd$psi))
   expect_equal(length(tmle_upd$eic), 300L)
 
-  tmle_est <- extract_tmle_estimate(tmle_upd)
+  tmle_est <- cleanTMLE:::extract_tmle_estimate(tmle_upd)
 
   expect_s3_class(tmle_est, "tmle_fit")
   expect_true("ATE" %in% names(tmle_est$estimates))
@@ -494,7 +494,7 @@ test_that("summarize_cleanroom_results creates comparison table", {
   )
   class(mock_tmle) <- c("tmle_fit", "cr_result")
 
-  tbl <- summarize_cleanroom_results(list(mock_match, mock_iptw, mock_tmle))
+  tbl <- cleanTMLE:::summarize_cleanroom_results(list(mock_match, mock_iptw, mock_tmle))
 
   expect_true(is.data.frame(tbl))
   expect_equal(nrow(tbl), 3L)
@@ -516,7 +516,7 @@ test_that("summarize_cleanroom_results uses list names when provided", {
   )
   class(mock_iptw) <- c("iptw_result", "cr_result")
 
-  tbl <- summarize_cleanroom_results(list(
+  tbl <- cleanTMLE:::summarize_cleanroom_results(list(
     "My Match" = mock_match, "My IPTW" = mock_iptw
   ))
   expect_equal(tbl$method, c("My Match", "My IPTW"))
@@ -533,7 +533,7 @@ test_that("summarize_cleanroom_results warns on unsupported class", {
   class(bad_obj) <- "unknown_class"
 
   expect_warning(
-    tbl <- summarize_cleanroom_results(list(mock_match, bad_obj)),
+    tbl <- cleanTMLE:::summarize_cleanroom_results(list(mock_match, bad_obj)),
     "Unsupported"
   )
   expect_equal(nrow(tbl), 1L)
@@ -549,7 +549,7 @@ test_that("fit_ps_glm returns a ps_fit with method = 'glm'", {
     outcome = "event_24", covariates = c("age", "sex", "biomarker"),
     seed = 91L
   )
-  ps <- fit_ps_glm(lock)
+  ps <- cleanTMLE:::fit_ps_glm(lock)
 
   expect_s3_class(ps, "ps_fit")
   expect_equal(ps$method, "glm")
@@ -570,7 +570,7 @@ test_that("summarize_plasmode_results prints and returns invisibly", {
   )
   sim_res <- run_plasmode_feasibility(lock, effect_sizes = c(0.05), reps = 5L)
   expect_output(
-    result <- summarize_plasmode_results(sim_res),
+    result <- cleanTMLE:::summarize_plasmode_results(sim_res),
     "Plasmode"
   )
   expect_s3_class(result, "plasmode_results")
@@ -587,8 +587,8 @@ test_that("fit_final_workflows runs all three workflows", {
     seed = 93L
   )
   lock$.outcome_authorized <- TRUE  # authorised lock -> all inner workflows run
-  ps_fit <- fit_ps_glm(lock)
-  result <- fit_final_workflows(lock, ps_fit)
+  ps_fit <- cleanTMLE:::fit_ps_glm(lock)
+  result <- cleanTMLE:::fit_final_workflows(lock, ps_fit)
 
   expect_true(is.list(result))
   expect_true("match" %in% names(result))
@@ -615,7 +615,7 @@ test_that("fit_tmle_candidate_set returns results with candidate specs", {
     tmle_candidate("glm_t01", g_library = "SL.glm", truncation = 0.01),
     tmle_candidate("glm_t05", g_library = "SL.glm", truncation = 0.05)
   )
-  cands <- fit_tmle_candidate_set(lock, candidates = candidates)
+  cands <- cleanTMLE:::fit_tmle_candidate_set(lock, candidates = candidates)
 
   expect_true(is.list(cands))
   expect_true(length(cands) > 0L)

@@ -115,7 +115,7 @@ test_that("summarize_dq_degradation produces a sensible relative table", {
     ),
     verbose = FALSE
   )
-  deg <- summarize_dq_degradation(res)
+  deg <- cleanTMLE:::summarize_dq_degradation(res)
   expect_true(is.data.frame(deg))
   expect_true(nrow(deg) >= 1L)
   expect_true(all(c("scenario", "level", "rmse_ratio", "cov_drop")

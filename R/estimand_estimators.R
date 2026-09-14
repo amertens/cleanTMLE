@@ -116,7 +116,7 @@
 #' @param a_obs Treatment indicator for the same rows.
 #' @param family `"binomial"` or anything else (treated as continuous).
 #' @return A list with `crude_diff`, `implausible`, `implausible_reason`.
-#' @export
+#' @keywords internal
 implausibility_check <- function(est, y_obs, a_obs, family = "gaussian") {
   none <- list(crude_diff = NA_real_, implausible = FALSE,
                implausible_reason = NA_character_)
@@ -182,7 +182,7 @@ implausibility_check <- function(est, y_obs, a_obs, family = "gaussian") {
 #' @return An object of class `att_fit` (inherits `cr_result`): the ATT with
 #'   SE, CI and p-value, the same-fit ATE, the named estimand, n, and the
 #'   implausibility flags.
-#' @export
+#' @keywords internal
 run_att_tmle <- function(lock,
                          family = "binomial",
                          sl_library = NULL,
@@ -298,7 +298,7 @@ print.att_fit <- function(x, ...) {
 #'   implausibility flags.
 #' @references Li F, Morgan KL, Zaslavsky AM (2018) JASA 113:390-400.
 #'   Mao H, Li L, Greene T (2019) Stat Methods Med Res 28:2439-2454.
-#' @export
+#' @keywords internal
 estimate_ato <- function(lock, ps_fit,
                          sl_library = NULL,
                          family = "binomial",
@@ -470,7 +470,7 @@ print.ato_fit <- function(x, ...) {
 #'   record of levels tried.
 #' @references Crump RK, Hotz VJ, Imbens GW, Mitnik OA (2009) Biometrika
 #'   96:187-199.
-#' @export
+#' @keywords internal
 run_trimmed_tmle <- function(lock, ps_fit,
                              levels = c(0.05, 0.10),
                              rule = c("fixed", "crump"),

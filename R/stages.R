@@ -40,7 +40,7 @@
 #' @return An object of class \code{cleantmle_checkpoint}.
 #'
 #' @keywords internal
-#' @export
+#' @keywords internal
 new_checkpoint <- function(stage, decision, metrics, thresholds,
                            rationale = "", lock_hash = NA_character_) {
   decision <- match.arg(decision, c("GO", "FLAG", "STOP"))
@@ -119,7 +119,7 @@ as.data.frame.cleantmle_checkpoint <- function(x, ...) {
 #' cp1 <- checkpoint_cohort_adequacy(lock)
 #' print(cp1)
 #'
-#' @export
+#' @keywords internal
 checkpoint_cohort_adequacy <- function(lock,
                                        min_n_per_arm  = 50L,
                                        min_events     = 20L,
@@ -252,7 +252,7 @@ checkpoint_cohort_adequacy <- function(lock,
 #' cp2  <- checkpoint_balance(diag, lock_hash = lock$lock_hash)
 #' print(cp2)
 #'
-#' @export
+#' @keywords internal
 checkpoint_balance <- function(ps_diag,
                                max_smd     = 0.10,
                                min_ess_pct = 50,
@@ -346,7 +346,7 @@ checkpoint_balance <- function(ps_diag,
 #'   description = "Outcome known to be unrelated to treatment",
 #'   domain = "confounding_by_indication")
 #'
-#' @export
+#' @keywords internal
 define_negative_control <- function(lock, variable, type = "outcome",
                                     description = NULL, domain = NULL) {
   if (!inherits(lock, "cleanroom_lock"))
@@ -401,7 +401,7 @@ define_negative_control <- function(lock, variable, type = "outcome",
 #' nc_result <- run_negative_control(lock, "nc_outcome", ps)
 #' print(nc_result)
 #'
-#' @export
+#' @keywords internal
 run_negative_control <- function(lock, variable, ps_fit) {
   .superseded("run_negative_control", "run_negative_control_tmle()")
   if (!inherits(lock, "cleanroom_lock"))
@@ -515,7 +515,7 @@ print.cleantmle_nc_result <- function(x, ...) {
 #' cp3  <- checkpoint_residual_bias(nc, lock_hash = lock$lock_hash)
 #' print(cp3)
 #'
-#' @export
+#' @keywords internal
 checkpoint_residual_bias <- function(nc_results,
                                      alpha           = 0.05,
                                      max_nc_estimate = Inf,
@@ -607,7 +607,7 @@ checkpoint_residual_bias <- function(nc_results,
 #'
 #' @return An object of class \code{cleantmle_audit}.
 #'
-#' @export
+#' @keywords internal
 create_audit_log <- function(lock) {
   .superseded("create_audit_log", "the lock's design log and the cleanroomGov reporting helpers")
   if (!inherits(lock, "cleanroom_lock"))
@@ -637,7 +637,7 @@ create_audit_log <- function(lock) {
 #'
 #' @return Modified \code{cleantmle_audit}.
 #'
-#' @export
+#' @keywords internal
 record_stage <- function(audit, stage, action, decision = NA_character_,
                          details = "") {
   .superseded("record_stage", "the lock's design log and the cleanroomGov reporting helpers")
@@ -667,7 +667,7 @@ record_stage <- function(audit, stage, action, decision = NA_character_,
 #'
 #' @return Modified \code{cleantmle_audit}.
 #'
-#' @export
+#' @keywords internal
 record_checkpoint <- function(audit, checkpoint) {
   .superseded("record_checkpoint", "the lock's design log and the cleanroomGov reporting helpers")
   if (!inherits(checkpoint, "cleantmle_checkpoint"))
@@ -699,7 +699,7 @@ record_checkpoint <- function(audit, checkpoint) {
 #' audit <- record_stage(audit, "Stage 1a", "Analysis lock created")
 #' export_audit_trail(audit)
 #'
-#' @export
+#' @keywords internal
 export_audit_trail <- function(audit) {
   .superseded("export_audit_trail", "the lock's design log and cleanroomGov::build_stage_manifest()")
   if (!inherits(audit, "cleantmle_audit"))
@@ -768,7 +768,7 @@ print.cleantmle_audit <- function(x, ...) {
 #' @return A data.frame with columns \code{truncation}, \code{estimate},
 #'   \code{se}, \code{ci_lower}, \code{ci_upper}.
 #'
-#' @export
+#' @keywords internal
 sensitivity_truncation <- function(lock,
                                    thresholds = c(0.01, 0.025, 0.05, 0.10),
                                    override_clean_room = FALSE) {
@@ -876,7 +876,7 @@ compute_evalue <- function(rr, ci_bound = NULL) {
 #' lock <- lock_primary_tmle_spec(lock, spec)
 #' get_primary_tmle_spec(lock)
 #'
-#' @export
+#' @keywords internal
 lock_primary_tmle_spec <- function(lock, selected) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
@@ -899,7 +899,7 @@ lock_primary_tmle_spec <- function(lock, selected) {
 #' @return A \code{tmle_candidate_spec} or \code{tmle_selected_spec},
 #'   or \code{NULL}.
 #'
-#' @export
+#' @keywords internal
 get_primary_tmle_spec <- function(lock) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
@@ -999,6 +999,11 @@ estimate_design_precision <- function(lock, target_mdd = NULL) {
     result$mdd_feasible <- mdd_80 <= target_mdd
   }
 
+  # The marginal event-support table (formerly summarize_event_support())
+  # rides on the precision object.
+  result$event_support <- tryCatch(summarize_event_support(lock),
+                                   error = function(e) NULL)
+
   class(result) <- "design_precision"
   result
 }
@@ -1056,7 +1061,7 @@ print.design_precision <- function(x, ...) {
 #'                              c("age", "sex", "biomarker"), seed = 1)
 #' summarize_event_support(lock)
 #'
-#' @export
+#' @keywords internal
 summarize_event_support <- function(lock) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
@@ -1155,7 +1160,7 @@ summarize_event_support <- function(lock) {
 #' stage3 <- run_residual_confounding_stage(lock, ps)
 #' print(stage3)
 #'
-#' @export
+#' @keywords internal
 run_residual_confounding_stage <- function(lock,
                                            ps_fit,
                                            variables        = NULL,
@@ -1367,7 +1372,7 @@ print.residual_confounding_stage <- function(x, ...) {
 #' gate  <- authorize_outcome_analysis(audit)
 #' print(gate)
 #'
-#' @export
+#' @keywords internal
 authorize_outcome_analysis <- function(audit = NULL,
                                        required_stages = NULL,
                                        allow_flag      = TRUE,
@@ -1589,7 +1594,7 @@ authorize_outcome_analysis <- function(audit = NULL,
 #' audit <- record_checkpoint(audit, cp3)
 #' assert_outcome_authorized(audit)
 #'
-#' @export
+#' @keywords internal
 assert_outcome_authorized <- function(audit, lock = NULL,
                                       allow_unauthorized = FALSE, ...) {
   .superseded("assert_outcome_authorized", "the opt-in two-pass path (run_clean_tmle_preoutcome()); plain locks no longer require authorisation")
@@ -1641,7 +1646,7 @@ assert_outcome_authorized <- function(audit, lock = NULL,
 #'   rationale = "Pre-specified in SAP"
 #' )
 #'
-#' @export
+#' @keywords internal
 record_decision_log_entry <- function(audit,
                                       stage,
                                       decision_type,
@@ -1688,7 +1693,7 @@ record_decision_log_entry <- function(audit,
 #'                                    "Logistic PS model selected")
 #' export_decision_log(audit)
 #'
-#' @export
+#' @keywords internal
 export_decision_log <- function(audit) {
   .superseded("export_decision_log", "the design log on the lock (lock$design_log)")
   if (!inherits(audit, "cleantmle_audit"))

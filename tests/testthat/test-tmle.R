@@ -9,7 +9,7 @@ test_that("estimate_tmle_risk_point errors without tmle package", {
   dat$event_24 <- as.integer(dat$event == 1 & dat$time <= 24)
 
   expect_error(
-    estimate_tmle_risk_point(
+    cleanTMLE:::estimate_tmle_risk_point(
       data = dat,
       treatment = "treatment",
       outcome = "event_24",
@@ -26,7 +26,7 @@ test_that("estimate_tmle_risk_point works with tmle package", {
   dat <- sim_func1(n = 200, seed = 71)
   dat$event_24 <- as.integer(dat$event == 1 & dat$time <= 24)
 
-  fit <- estimate_tmle_risk_point(
+  fit <- cleanTMLE:::estimate_tmle_risk_point(
     data = dat,
     treatment = "treatment",
     outcome = "event_24",

@@ -14,19 +14,19 @@
 }
 
 test_that("support_surfaces validates and prints", {
-  s <- support_surfaces()
+  s <- cleanTMLE:::support_surfaces()
   expect_s3_class(s, "support_surfaces")
-  expect_error(support_surfaces(base_rate = 2), "base_rate")
+  expect_error(cleanTMLE:::support_surfaces(base_rate = 2), "base_rate")
   expect_output(print(s), "confounding strengths")
 })
 
 test_that("simulate_support returns per-estimand metrics with known truths", {
   dat  <- .make_support_data(300)
-  lock <- create_simple_lock(dat, "treatment", "outcome", c("x1", "x2"),
+  lock <- create_analysis_lock(dat, "treatment", "outcome", c("x1", "x2"),
                              seed = 7L)
   sim <- simulate_support(
     lock,
-    surface = support_surfaces(confounding = c(0, 2), modification = c(0, 1),
+    surface = cleanTMLE:::support_surfaces(confounding = c(0, 2), modification = c(0, 1),
                                effect = 0.10, base_rate = 0.15),
     reps = 40, verbose = FALSE)
 
@@ -62,11 +62,11 @@ test_that("simulate_support returns per-estimand metrics with known truths", {
 
 test_that("the sample-treatment design warns and is recorded", {
   dat  <- .make_support_data(200)
-  lock <- create_simple_lock(dat, "treatment", "outcome", c("x1", "x2"),
+  lock <- create_analysis_lock(dat, "treatment", "outcome", c("x1", "x2"),
                              seed = 3L)
   expect_warning(
     sim <- simulate_support(
-      lock, surface = support_surfaces(confounding = 0, modification = 0),
+      lock, surface = cleanTMLE:::support_surfaces(confounding = 0, modification = 0),
       reps = 5, design = "sample_treatment", verbose = FALSE),
     "Shaw")
   expect_identical(sim$design, "sample_treatment")
@@ -74,14 +74,14 @@ test_that("the sample-treatment design warns and is recorded", {
 
 test_that("q0 sources are enforced: primary outcome needs explicit authorisation", {
   dat  <- .make_support_data(200)
-  lock <- create_simple_lock(dat, "treatment", "outcome", c("x1", "x2"),
+  lock <- create_analysis_lock(dat, "treatment", "outcome", c("x1", "x2"),
                              seed = 3L)
   expect_error(
     simulate_support(lock, reps = 5, q0_source = "primary_outcome",
                      verbose = FALSE),
     "not outcome-blind")
   sim <- simulate_support(
-    lock, surface = support_surfaces(confounding = 0, modification = 0),
+    lock, surface = cleanTMLE:::support_surfaces(confounding = 0, modification = 0),
     reps = 5, q0_source = "heldout", verbose = FALSE)
   expect_gt(length(sim$q0$heldout_rows), 0)
 })
@@ -93,9 +93,9 @@ test_that("the generate-treatment design beats the Shaw et al. artifact", {
   # on the same cohort, at the same replicate count. Deterministic given the
   # lock seed.
   dat  <- .make_support_data(250, seed = 21)
-  lock <- create_simple_lock(dat, "treatment", "outcome", c("x1", "x2"),
+  lock <- create_analysis_lock(dat, "treatment", "outcome", c("x1", "x2"),
                              seed = 13L)
-  surf <- support_surfaces(confounding = 2, modification = 0,
+  surf <- cleanTMLE:::support_surfaces(confounding = 2, modification = 0,
                            effect = 0.10, base_rate = 0.15)
   gen <- simulate_support(lock, surface = surf, reps = 80, verbose = FALSE)
   smp <- suppressWarnings(simulate_support(lock, surface = surf, reps = 80,
@@ -114,7 +114,7 @@ test_that("the generate-treatment design beats the Shaw et al. artifact", {
 
 test_that("run_plasmode_feasibility exposes and records the design", {
   dat  <- .make_support_data(200)
-  lock <- create_simple_lock(dat, "treatment", "outcome", c("x1", "x2"),
+  lock <- create_analysis_lock(dat, "treatment", "outcome", c("x1", "x2"),
                              plasmode_reps = 5L, seed = 5L)
   cands <- list(tmle_candidate("glm_t01", g_library = "SL.glm",
                                q_library = "SL.glm", truncation = 0.01))
@@ -131,7 +131,7 @@ test_that("run_plasmode_feasibility exposes and records the design", {
 
 test_that("run_plasmode_dq_stress exposes and records the design", {
   dat  <- .make_support_data(200)
-  lock <- create_simple_lock(dat, "treatment", "outcome", c("x1", "x2"),
+  lock <- create_analysis_lock(dat, "treatment", "outcome", c("x1", "x2"),
                              seed = 5L)
   cands <- list(tmle_candidate("glm_t01", g_library = "SL.glm",
                                q_library = "SL.glm", truncation = 0.01))
@@ -146,9 +146,9 @@ test_that("run_plasmode_dq_stress exposes and records the design", {
 
 test_that("check_locked_estimator runs and labels itself optimistic", {
   dat  <- .make_support_data(250)
-  lock <- create_simple_lock(dat, "treatment", "outcome", c("x1", "x2"),
+  lock <- create_analysis_lock(dat, "treatment", "outcome", c("x1", "x2"),
                              seed = 9L)
-  chk <- check_locked_estimator(lock, reps = 30)
+  chk <- cleanTMLE:::check_locked_estimator(lock, reps = 30)
   expect_true(isTRUE(chk$optimistic))
   expect_lt(abs(chk$bias), 0.05)
   expect_gt(chk$coverage, 0.8)

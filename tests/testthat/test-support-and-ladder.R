@@ -1,6 +1,6 @@
-# assess_support(), estimand_feasibility(), who_is_unsupported(),
+# assess_support(), estimand_feasibility(), cleanTMLE:::who_is_unsupported(),
 # declare_estimand_ladder(), run_estimand_ladder(), and the estimators
-# run_att_tmle(), estimate_ato(), run_trimmed_tmle(), implausibility_check().
+# cleanTMLE:::run_att_tmle(), cleanTMLE:::estimate_ato(), cleanTMLE:::run_trimmed_tmle(), cleanTMLE:::implausibility_check().
 
 # A cohort with GOOD overlap and a known constant additive effect.
 .good_cohort <- function(n = 400, seed = 31, effect = 0.15) {
@@ -34,8 +34,8 @@ test_that("assess_support grades a known score vector exactly", {
   # 15 scores below 0.05 (3% outside) and a max of 0.90: FLAG by the
   # percent rule, not the weight rule.
   scores <- c(rep(0.02, 15), runif(n - 16, 0.10, 0.85), 0.90)
-  lock <- create_simple_lock(dat, "treatment", "outcome", "x1")
-  psf  <- wrap_ps_fit(lock, ps_scores = scores)
+  lock <- create_analysis_lock(dat, "treatment", "outcome", "x1")
+  psf  <- fit_ps(lock, "external", scores = scores, truncate = NULL)
   sup  <- assess_support(psf, tree_search = FALSE)
   expect_equal(sup$summary$pct_outside_band, 3)
   expect_equal(sup$summary$n_below_band, 15)
@@ -46,14 +46,14 @@ test_that("assess_support grades a known score vector exactly", {
 
 test_that("assess_support: PASS on good overlap, SEVERE on separation", {
   good <- .good_cohort()
-  lock_g <- create_simple_lock(good, "treatment", "outcome", c("x1", "x2"))
+  lock_g <- create_analysis_lock(good, "treatment", "outcome", c("x1", "x2"))
   sup_g <- assess_support(fit_ps(lock_g, "glm"), tree_search = FALSE)
   expect_identical(sup_g$verdict, "PASS")
   expect_gt(sup_g$c_statistic, 0.5)
   expect_lt(sup_g$c_statistic, 0.75)
 
   sev <- .severe_cohort()
-  lock_s <- create_simple_lock(sev, "treatment", "outcome", c("x1", "x2"))
+  lock_s <- create_analysis_lock(sev, "treatment", "outcome", c("x1", "x2"))
   sup_s <- assess_support(fit_ps(lock_s, "glm"), tree_search = FALSE)
   expect_true(sup_s$verdict %in% c("SEVERE", "FAIL"))
   expect_gt(sup_s$summary$max_iptw_weight,
@@ -73,7 +73,7 @@ test_that("near-deterministic strata escalate PASS to SEVERE, never to FAIL", {
   A[1:60] <- c(rep(1, 3), rep(0, 57))
   y <- stats::rbinom(n, 1, 0.2)
   dat <- data.frame(x1 = x1, x_flag = x_flag, treatment = A, outcome = y)
-  lock <- create_simple_lock(dat, "treatment", "outcome",
+  lock <- create_analysis_lock(dat, "treatment", "outcome",
                              c("x1", "x_flag"))
   sup <- assess_support(fit_ps(lock, "glm"), tree_search = FALSE)
   expect_true(isTRUE(sup$escalated))
@@ -92,7 +92,7 @@ test_that("the tree search names a multivariate violation region", {
   A <- stats::rbinom(n, 1, g)
   dat <- data.frame(x1 = x1, x2 = x2, treatment = A,
                     outcome = stats::rbinom(n, 1, 0.2))
-  lock <- create_simple_lock(dat, "treatment", "outcome", c("x1", "x2"))
+  lock <- create_analysis_lock(dat, "treatment", "outcome", c("x1", "x2"))
   sup <- assess_support(fit_ps(lock, "glm"), tree_min_n = 40L)
   expect_false(is.null(sup$violation_regions))
   expect_true(any(sup$violation_regions$p_treated < 0.10))
@@ -100,7 +100,7 @@ test_that("the tree search names a multivariate violation region", {
 
 test_that("estimand_feasibility separates the ATE from ATT and ATO on a severe cohort", {
   sev <- .severe_cohort()
-  lock <- create_simple_lock(sev, "treatment", "outcome", c("x1", "x2"))
+  lock <- create_analysis_lock(sev, "treatment", "outcome", c("x1", "x2"))
   psf <- fit_ps(lock, "glm")
   fea <- estimand_feasibility(psf)
   tab <- fea$table
@@ -129,9 +129,9 @@ test_that("who_is_unsupported profiles the removed patients", {
                     outcome = stats::rbinom(n, 1, 0.2))
   # Push exactly the high-x1 patients outside the band.
   scores <- ifelse(x1 > stats::quantile(x1, 0.9), 0.97, 0.5)
-  lock <- create_simple_lock(dat, "treatment", "outcome", "x1")
-  psf  <- wrap_ps_fit(lock, ps_scores = scores)
-  prof <- who_is_unsupported(psf, vars = "x1")
+  lock <- create_analysis_lock(dat, "treatment", "outcome", "x1")
+  psf  <- fit_ps(lock, "external", scores = scores, truncate = NULL)
+  prof <- cleanTMLE:::who_is_unsupported(psf, vars = "x1")
   expect_true(all(c("all") %in% prof$population))
   sm <- prof$smd[prof$population == "all" & prof$variable == "x1"]
   expect_gt(sm, 1)   # the removed are far higher on x1 by construction
@@ -139,7 +139,7 @@ test_that("who_is_unsupported profiles the removed patients", {
 
 test_that("declare_estimand_ladder records the rule on the lock", {
   dat <- .good_cohort(200)
-  lock <- create_simple_lock(dat, "treatment", "outcome", c("x1", "x2"))
+  lock <- create_analysis_lock(dat, "treatment", "outcome", c("x1", "x2"))
   lock <- declare_estimand_ladder(lock, primary = "ATE",
                                   fallbacks = c("trimmed_ATE", "ATT", "ATO"),
                                   trigger = "SEVERE",
@@ -158,28 +158,28 @@ test_that("implausibility_check flags the documented failure modes", {
   crude <- mean(y[a == 1]) - mean(y[a == 0])
   expect_lt(crude, 0)
   # Sign flip.
-  g1 <- implausibility_check(0.20, y, a, family = "binomial")
+  g1 <- cleanTMLE:::implausibility_check(0.20, y, a, family = "binomial")
   expect_true(g1$implausible)
   expect_match(g1$implausible_reason, "sign differs")
   # Exceeds the largest arm rate.
-  g2 <- implausibility_check(-0.90, y, a, family = "binomial")
+  g2 <- cleanTMLE:::implausibility_check(-0.90, y, a, family = "binomial")
   expect_true(g2$implausible)
   expect_match(g2$implausible_reason, "largest arm rate")
   # A sane estimate passes.
-  g3 <- implausibility_check(crude, y, a, family = "binomial")
+  g3 <- cleanTMLE:::implausibility_check(crude, y, a, family = "binomial")
   expect_false(g3$implausible)
   # Continuous: exceeds observed range.
   yc <- stats::rnorm(400)
-  g4 <- implausibility_check(50, yc, a, family = "gaussian")
+  g4 <- cleanTMLE:::implausibility_check(50, yc, a, family = "gaussian")
   expect_true(g4$implausible)
 })
 
 test_that("run_att_tmle recovers a known effect and reuses the ATE's g spec", {
   skip_if_not_installed("tmle")
   dat <- .good_cohort(500, seed = 51, effect = 0.15)
-  lock <- create_simple_lock(dat, "treatment", "outcome", c("x1", "x2"),
+  lock <- create_analysis_lock(dat, "treatment", "outcome", c("x1", "x2"),
                              sl_library = "SL.glm", seed = 17L)
-  att <- run_att_tmle(lock, sl_library = "SL.glm")
+  att <- cleanTMLE:::run_att_tmle(lock, sl_library = "SL.glm")
   # Constant additive effect: ATT truth = ATE truth = 0.15. A single seed
   # carries binomial noise of about 0.045 SE, so recovery is judged against
   # the fit's own uncertainty.
@@ -200,17 +200,17 @@ test_that("run_att_tmle recovers a known effect and reuses the ATE's g spec", {
 
 test_that("estimate_ato is unbiased under randomization and balances exactly", {
   dat <- .good_cohort(800, seed = 61, effect = 0.15)
-  lock <- create_simple_lock(dat, "treatment", "outcome", c("x1", "x2"),
+  lock <- create_analysis_lock(dat, "treatment", "outcome", c("x1", "x2"),
                              sl_library = "SL.glm", seed = 19L)
   # Under a constant g = 0.5 the ATO equals the ATE and the augmented
   # estimator reduces to a covariate-adjusted difference in means.
-  psf <- wrap_ps_fit(lock, ps_scores = rep(0.5, nrow(dat)))
-  ato <- estimate_ato(lock, psf, sl_library = "SL.glm")
+  psf <- fit_ps(lock, "external", truncate = NULL, scores = rep(0.5, nrow(dat)))
+  ato <- cleanTMLE:::estimate_ato(lock, psf, sl_library = "SL.glm")
   expect_lt(abs(ato$estimate - 0.15), 0.07)
   expect_lt(ato$ci_lower, 0.15); expect_gt(ato$ci_upper, 0.15)
   # With a fitted logistic g the overlap weights balance the covariates.
   psf2 <- fit_ps(lock, "glm")
-  ato2 <- estimate_ato(lock, psf2, sl_library = "SL.glm")
+  ato2 <- cleanTMLE:::estimate_ato(lock, psf2, sl_library = "SL.glm")
   expect_lt(ato2$max_abs_weighted_smd, 0.05)
   expect_lt(abs(ato2$estimate - ato2$hajek_estimate), 0.05)
   expect_output(print(ato2), "overlap")
@@ -219,10 +219,10 @@ test_that("estimate_ato is unbiased under randomization and balances exactly", {
 test_that("run_trimmed_tmle trims, refits, and records the dropped", {
   skip_if_not_installed("tmle")
   sev <- .severe_cohort(700, seed = 71, effect = 0.10)
-  lock <- create_simple_lock(sev, "treatment", "outcome", c("x1", "x2"),
+  lock <- create_analysis_lock(sev, "treatment", "outcome", c("x1", "x2"),
                              sl_library = "SL.glm", seed = 23L)
   psf <- fit_ps(lock, "glm")
-  trm <- run_trimmed_tmle(lock, psf, levels = c(0.05, 0.10),
+  trm <- cleanTMLE:::run_trimmed_tmle(lock, psf, levels = c(0.05, 0.10),
                           sl_library = "SL.glm", verbose = FALSE)
   expect_s3_class(trm, "trimmed_tmle_fit")
   expect_gt(trm$n_dropped_treated + trm$n_dropped_control, 0)
@@ -232,7 +232,7 @@ test_that("run_trimmed_tmle trims, refits, and records the dropped", {
   # The Crump rule returns a sensible level: higher under separation than
   # under good overlap.
   g_sev <- psf$ps_raw
-  g_good <- fit_ps(create_simple_lock(.good_cohort(400), "treatment",
+  g_good <- fit_ps(create_analysis_lock(.good_cohort(400), "treatment",
                                       "outcome", c("x1", "x2")), "glm")$ps_raw
   expect_gte(cleanTMLE:::.crump_alpha(g_sev),
              cleanTMLE:::.crump_alpha(g_good))
@@ -241,7 +241,7 @@ test_that("run_trimmed_tmle trims, refits, and records the dropped", {
 test_that("run_estimand_ladder switches off an infeasible primary and logs it", {
   skip_if_not_installed("tmle")
   sev <- .severe_cohort(700, seed = 81, effect = 0.10)
-  lock <- create_simple_lock(sev, "treatment", "outcome", c("x1", "x2"),
+  lock <- create_analysis_lock(sev, "treatment", "outcome", c("x1", "x2"),
                              sl_library = "SL.glm", seed = 29L)
   lock <- declare_estimand_ladder(lock, primary = "ATE",
                                   fallbacks = c("trimmed_ATE", "ATT", "ATO"))
@@ -270,7 +270,7 @@ test_that("run_estimand_ladder switches off an infeasible primary and logs it", 
 test_that("run_estimand_ladder keeps a feasible primary first", {
   skip_if_not_installed("tmle")
   good <- .good_cohort(400, seed = 91)
-  lock <- create_simple_lock(good, "treatment", "outcome", c("x1", "x2"),
+  lock <- create_analysis_lock(good, "treatment", "outcome", c("x1", "x2"),
                              sl_library = "SL.glm", seed = 37L)
   lock <- declare_estimand_ladder(lock, primary = "ATE",
                                   fallbacks = c("ATT", "ATO"))
@@ -283,4 +283,57 @@ test_that("run_estimand_ladder keeps a feasible primary first", {
   # Under good overlap and a constant effect the rungs agree.
   ests <- res$table$estimate
   expect_lt(diff(range(ests)), 0.1)
+})
+
+test_that("estimate_effect is the one front door and matches its workers", {
+  skip_if_not_installed("tmle")
+  dat <- .good_cohort(400, seed = 101, effect = 0.15)
+  lock <- create_analysis_lock(dat, "treatment", "outcome", c("x1", "x2"),
+                               sl_library = "SL.glm", seed = 43L)
+  psf <- fit_ps(lock, "glm")
+  att1 <- estimate_effect(lock, psf, estimand = "ATT",
+                          sl_library = "SL.glm")
+  att2 <- cleanTMLE:::run_att_tmle(lock, sl_library = "SL.glm")
+  expect_equal(att1$estimate, att2$estimate, tolerance = 1e-10)
+  ato <- estimate_effect(lock, psf, estimand = "ATO", sl_library = "SL.glm")
+  expect_match(ato$estimand, "overlap")
+  crude <- estimate_effect(lock, estimand = "ATE", estimator = "crude")
+  expect_true(is.finite(crude$estimate))
+  # The ATT ignores an ipcw request with a warning: complete case by design.
+  dat2 <- dat; dat2$outcome[1:60] <- NA
+  lock2 <- create_analysis_lock(dat2, "treatment", "outcome",
+                                c("x1", "x2"), sl_library = "SL.glm",
+                                seed = 43L)
+  expect_warning(estimate_effect(lock2, psf, estimand = "ATT",
+                                 missing = "ipcw", sl_library = "SL.glm"),
+                 "complete case")
+  # Missing ps_fit is refused where it is needed.
+  expect_error(estimate_effect(lock, estimand = "ATO"), "needs a ps_fit")
+})
+
+test_that("merged arguments work: thresholds list, surface list, profile_vars", {
+  sev <- .severe_cohort(500, seed = 51)
+  lock <- create_analysis_lock(sev, "treatment", "outcome", c("x1", "x2"))
+  psf <- fit_ps(lock, "glm")
+  sup <- assess_support(psf, thresholds = list(flag_max_weight = 5),
+                        tree_search = FALSE)
+  expect_true(sup$summary$max_iptw_weight > 5)   # stricter threshold binds
+  expect_false(is.null(sup$balance))
+  expect_true(all(c("smd_unweighted", "smd_weighted") %in%
+                    names(sup$balance)))
+  p <- love_plot(sup)
+  expect_s3_class(p, "ggplot")
+  expect_error(assess_support(psf, thresholds = list(nope = 1)), "Unknown")
+  fea <- estimand_feasibility(psf, profile_vars = c("x1", "x2"))
+  expect_false(is.null(fea$unsupported))
+  sim <- simulate_support(lock, psf,
+                          surface = list(confounding = 0, modification = 0,
+                                         effect = 0.1, base_rate = 0.15),
+                          reps = 5, verbose = FALSE)
+  expect_s3_class(sim, "support_simulation")
+  expect_error(simulate_support(lock, psf, surface = list(bogus = 1),
+                                reps = 5, verbose = FALSE), "Unknown")
+  pb <- simulate_support(lock, psf, design = "parametric_bootstrap",
+                         reps = 10)
+  expect_true(isTRUE(pb$optimistic))
 })

@@ -80,3 +80,4 @@ then \code{\link[=run_clean_tmle_primary]{run_clean_tmle_primary()}} to read the
 \seealso{
 \code{\link[=run_clean_tmle_primary]{run_clean_tmle_primary()}}, \code{\link[=authorize_outcome_analysis]{authorize_outcome_analysis()}}
 }
+\keyword{internal}

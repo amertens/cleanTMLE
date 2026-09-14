@@ -54,3 +54,4 @@ Conover MM, Schuemie MJ et al. (2025) J Am Med Inform Assoc: objective
 study validity diagnostics computed while estimates stay blinded, with
 failed analyses labelled inestimable.
 }
+\keyword{internal}

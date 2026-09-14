@@ -34,7 +34,7 @@
 #' @references Phillips RV, et al. (2023) Practical considerations
 #'   for specifying a super learner. *Statistics in Medicine*.
 #'
-#' @export
+#' @keywords internal
 compute_n_eff <- function(y, family = "binomial") {
   n <- length(y)
   if (!identical(family, "binomial")) return(as.integer(n))
@@ -63,7 +63,7 @@ compute_n_eff <- function(y, family = "binomial") {
 #' @examples
 #' recommend_cv_V(compute_n_eff(rbinom(200, 1, 0.1)))
 #'
-#' @export
+#' @keywords internal
 recommend_cv_V <- function(n_eff) {
   if (n_eff < 30L)    return(max(n_eff - 1L, 2L))
   if (n_eff < 500L)   return(20L)
@@ -125,13 +125,24 @@ recommend_cv_V <- function(n_eff) {
 #'
 #' @export
 build_sl_library <- function(role = c("Q", "g", "Delta"),
-                             n_eff,
+                             n_eff = NULL,
+                             y = NULL,
                              p = NULL,
                              preset = c("auto", "small_n", "default",
                                         "rich", "very_rich", "rwe_wide"),
                              include_screeners = FALSE) {
   role   <- match.arg(role)
   preset <- match.arg(preset)
+  # The effective sample size can be computed here from the outcome (or the
+  # treatment, for role g) instead of being supplied: n_eff = min(n, 5 n_rare)
+  # for a binary vector (Phillips et al. 2023).
+  if (is.null(n_eff)) {
+    if (is.null(y))
+      stop("Supply `n_eff` or `y` (the vector the model predicts).",
+           call. = FALSE)
+    n_eff <- compute_n_eff(y, family = if (length(unique(stats::na.omit(y)))
+                                           <= 2L) "binomial" else "gaussian")
+  }
   if (preset == "auto") {
     preset <- if (n_eff < 200L) "small_n"
               else if (n_eff < 2000L) "default" else "rich"
@@ -259,7 +270,7 @@ resolve_truncation_rule <- function(rule, n = NULL) {
 #'
 #' @references Gruber S, van der Laan MJ (2009); Gruber S et al. (2023) RWE.
 #'
-#' @export
+#' @keywords internal
 run_positivity_diagnostics <- function(ps_fit, truncation = NULL) {
   .superseded("run_positivity_diagnostics",
               "assess_support(), which carries the c-statistic, the graded verdict, and the stratum checks in one object")
@@ -333,7 +344,7 @@ run_positivity_diagnostics <- function(ps_fit, truncation = NULL) {
 #' @references Gruber S, et al. (2023) *Evaluating and improving RWE
 #'   with Targeted Learning*.
 #'
-#' @export
+#' @keywords internal
 compute_G_value <- function(estimate, se = NULL,
                              ci_lower = NULL, ci_upper = NULL,
                              null = 0) {
@@ -399,6 +410,11 @@ run_delta_sensitivity <- function(estimate, se, delta_grid = NULL) {
     stringsAsFactors = FALSE
   )
   out$crosses_null <- out$ci_lower < 0 & out$ci_upper > 0
+  # The tipping value (the additive bias that moves the confidence bound to
+  # the null) rides on the result; formerly compute_G_value().
+  gv <- compute_G_value(estimate, se = se)
+  attr(out, "g_value") <- gv$g_value
+  attr(out, "g_direction") <- gv$direction
   class(out) <- c("cleantmle_delta_sensitivity", class(out))
   out
 }
@@ -423,7 +439,7 @@ run_delta_sensitivity <- function(estimate, se, delta_grid = NULL) {
 #'
 #' @return A list with `estimate`, `se`, `ci_lower`, `ci_upper`.
 #'
-#' @export
+#' @keywords internal
 compute_aipw <- function(g_fit, Q_fit) {
   stopifnot(inherits(g_fit, "tmle_mechanism"),
             inherits(Q_fit, "tmle_mechanism"))

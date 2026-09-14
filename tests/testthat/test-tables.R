@@ -50,7 +50,7 @@ test_that("make_wt_summary_table works", {
     identify_treatment(treatment, formula = ~ age + sex)
 
   fit <- estimate_ipwrisk(spec, risk_time = c(12))
-  tbl <- make_wt_summary_table(fit)
+  tbl <- cleanTMLE:::make_wt_summary_table(fit)
 
   expect_true(is.data.frame(tbl))
   expect_true("mean" %in% names(tbl))
@@ -65,7 +65,7 @@ test_that("extreme_weights returns top-k", {
     identify_treatment(treatment, formula = ~ age + sex + biomarker)
 
   fit <- estimate_ipwrisk(spec, risk_time = c(12))
-  ew <- extreme_weights(fit, k = 5)
+  ew <- cleanTMLE:::extreme_weights(fit, k = 5)
 
   expect_true(is.data.frame(ew))
   expect_equal(nrow(ew), 5)
@@ -80,7 +80,7 @@ test_that("inspect_ipw_weights extracts weights", {
 
   fit <- estimate_ipwrisk(spec, risk_time = c(12))
 
-  w <- inspect_ipw_weights(fit, type = "iptw")
+  w <- cleanTMLE:::inspect_ipw_weights(fit, type = "iptw")
   expect_true(is.numeric(w))
   expect_length(w, 100)
 })

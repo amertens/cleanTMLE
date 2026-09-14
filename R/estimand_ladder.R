@@ -51,11 +51,15 @@
 #' @export
 estimand_feasibility <- function(ps_fit,
                                  estimands = .ladder_estimands,
-                                 thresholds = support_thresholds(),
+                                 thresholds = NULL,
                                  trim_levels = c(0.05, 0.10),
-                                 caliper_sd = 0.2) {
+                                 caliper_sd = 0.2,
+                                 profile_vars = NULL) {
   if (!inherits(ps_fit, "ps_fit"))
     stop("`ps_fit` must be a ps_fit object.", call. = FALSE)
+  if (is.null(thresholds)) thresholds <- support_thresholds()
+  else if (!inherits(thresholds, "support_thresholds"))
+    thresholds <- do.call(support_thresholds, thresholds)
   estimands <- match.arg(estimands, .ladder_estimands, several.ok = TRUE)
   g <- pmin(pmax(as.numeric(ps_fit$ps_raw %||% ps_fit$ps), 1e-6), 1 - 1e-6)
   A <- as.integer(ps_fit$data[[ps_fit$treatment]])
@@ -133,7 +137,12 @@ estimand_feasibility <- function(ps_fit,
   }
   tab <- do.call(rbind, rows)
   tab$feasible <- !tab$verdict %in% c("SEVERE", "FAIL")
+  # The removed-versus-kept profile (who a trimmed analysis is no longer
+  # about), attached when interpretable variables are named.
+  unsupported <- if (!is.null(profile_vars))
+    who_is_unsupported(ps_fit, vars = profile_vars, band = band) else NULL
   out <- list(table = tab, thresholds = thresholds, band = band,
+              unsupported = unsupported,
               n = length(A), call = match.call())
   class(out) <- "estimand_feasibility"
   out
@@ -175,7 +184,7 @@ print.estimand_feasibility <- function(x, ...) {
 #'   skipped. Default 10.
 #' @return A data.frame with columns population (all, treated, control),
 #'   variable, n_removed, n_kept, mean_removed, mean_kept, smd.
-#' @export
+#' @keywords internal
 who_is_unsupported <- function(ps_fit, vars = NULL, band = c(0.05, 0.95),
                                min_group = 10L) {
   if (!inherits(ps_fit, "ps_fit"))
@@ -249,10 +258,15 @@ declare_estimand_ladder <- function(lock,
                                                   "ATO"),
                                     trigger = c("SEVERE", "FAIL", "FLAG"),
                                     evalue_floor = NULL,
-                                    bias_to_null_floor = NULL) {
+                                    bias_to_null_floor = NULL,
+                                    candidate = NULL) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
   trigger <- match.arg(trigger)
+  # A selected TMLE candidate (from select_tmle_candidate()) rides on the
+  # ladder declaration, so downstream estimation honours its truncation and
+  # nuisance library.
+  if (!is.null(candidate)) lock <- lock_primary_tmle_spec(lock, candidate)
   primary <- match.arg(primary, .ladder_estimands)
   fallbacks <- vapply(fallbacks, function(f)
     match.arg(f, .ladder_estimands), character(1), USE.NAMES = FALSE)

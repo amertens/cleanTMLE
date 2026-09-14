@@ -6,7 +6,7 @@ test_that("define_negative_control registers variable", {
   dat  <- sim_func1(n = 100, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex"), seed = 1)
-  lock <- define_negative_control(lock, "nc_outcome", description = "test")
+  lock <- cleanTMLE:::define_negative_control(lock, "nc_outcome", description = "test")
   expect_true("nc_outcome" %in% names(lock$negative_controls))
   expect_equal(lock$negative_controls$nc_outcome$type, "outcome")
 })
@@ -16,7 +16,7 @@ test_that("define_negative_control errors on missing variable", {
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex"), seed = 1)
   expect_error(
-    define_negative_control(lock, "nonexistent"),
+    cleanTMLE:::define_negative_control(lock, "nonexistent"),
     "not found"
   )
 })
@@ -25,7 +25,7 @@ test_that("checkpoint_cohort_adequacy returns GO for adequate data", {
   dat  <- sim_func1(n = 500, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex", "biomarker"), seed = 1)
-  cp <- checkpoint_cohort_adequacy(lock)
+  cp <- cleanTMLE:::checkpoint_cohort_adequacy(lock)
   expect_s3_class(cp, "cleantmle_checkpoint")
   expect_equal(cp$stage, "Check Point 1: Cohort Adequacy")
   expect_true(cp$decision %in% c("GO", "FLAG", "STOP"))
@@ -35,7 +35,7 @@ test_that("checkpoint_cohort_adequacy returns STOP for tiny data", {
   dat  <- sim_func1(n = 30, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex"), seed = 1)
-  cp <- checkpoint_cohort_adequacy(lock, min_n_per_arm = 50, min_events = 100)
+  cp <- cleanTMLE:::checkpoint_cohort_adequacy(lock, min_n_per_arm = 50, min_events = 100)
   expect_equal(cp$decision, "STOP")
 })
 
@@ -43,9 +43,9 @@ test_that("checkpoint_balance works with ps_diagnostics", {
   dat  <- sim_func1(n = 300, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex", "biomarker"), seed = 1)
-  ps   <- fit_ps_glm(lock)
-  diag <- compute_ps_diagnostics(ps)
-  cp   <- checkpoint_balance(diag, lock_hash = lock$lock_hash)
+  ps   <- cleanTMLE:::fit_ps_glm(lock)
+  diag <- cleanTMLE:::compute_ps_diagnostics(ps)
+  cp   <- cleanTMLE:::checkpoint_balance(diag, lock_hash = lock$lock_hash)
   expect_s3_class(cp, "cleantmle_checkpoint")
   expect_true(cp$decision %in% c("GO", "FLAG", "STOP"))
   expect_equal(cp$lock_hash, lock$lock_hash)
@@ -55,9 +55,9 @@ test_that("run_negative_control returns structured result", {
   dat  <- sim_func1(n = 300, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex", "biomarker"), seed = 1)
-  lock <- define_negative_control(lock, "nc_outcome")
-  ps   <- fit_ps_glm(lock)
-  nc   <- run_negative_control(lock, "nc_outcome", ps)
+  lock <- cleanTMLE:::define_negative_control(lock, "nc_outcome")
+  ps   <- cleanTMLE:::fit_ps_glm(lock)
+  nc   <- cleanTMLE:::run_negative_control(lock, "nc_outcome", ps)
   expect_s3_class(nc, "cleantmle_nc_result")
   expect_true(is.numeric(nc$estimate))
   expect_true(is.numeric(nc$p_value))
@@ -68,16 +68,16 @@ test_that("checkpoint_residual_bias handles single and multiple NC results", {
   dat  <- sim_func1(n = 300, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex", "biomarker"), seed = 1)
-  lock <- define_negative_control(lock, "nc_outcome")
-  ps   <- fit_ps_glm(lock)
-  nc   <- run_negative_control(lock, "nc_outcome", ps)
+  lock <- cleanTMLE:::define_negative_control(lock, "nc_outcome")
+  ps   <- cleanTMLE:::fit_ps_glm(lock)
+  nc   <- cleanTMLE:::run_negative_control(lock, "nc_outcome", ps)
 
   # Single result
-  cp <- checkpoint_residual_bias(nc)
+  cp <- cleanTMLE:::checkpoint_residual_bias(nc)
   expect_s3_class(cp, "cleantmle_checkpoint")
 
   # List of results
-  cp2 <- checkpoint_residual_bias(list(nc))
+  cp2 <- cleanTMLE:::checkpoint_residual_bias(list(nc))
   expect_s3_class(cp2, "cleantmle_checkpoint")
 })
 
@@ -85,15 +85,15 @@ test_that("audit log records and exports correctly", {
   dat  <- sim_func1(n = 100, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex"), seed = 1)
-  audit <- create_audit_log(lock)
+  audit <- cleanTMLE:::create_audit_log(lock)
   expect_s3_class(audit, "cleantmle_audit")
   expect_equal(audit$lock_hash, lock$lock_hash)
   expect_length(audit$entries, 0)
 
-  audit <- record_stage(audit, "Stage 1a", "Lock created")
+  audit <- cleanTMLE:::record_stage(audit, "Stage 1a", "Lock created")
   expect_length(audit$entries, 1)
 
-  trail <- export_audit_trail(audit)
+  trail <- cleanTMLE:::export_audit_trail(audit)
   expect_true(is.data.frame(trail))
   expect_equal(nrow(trail), 1)
   expect_true("stage" %in% names(trail))
@@ -103,9 +103,9 @@ test_that("record_checkpoint adds checkpoint to audit", {
   dat  <- sim_func1(n = 300, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex", "biomarker"), seed = 1)
-  audit <- create_audit_log(lock)
-  cp1   <- checkpoint_cohort_adequacy(lock)
-  audit <- record_checkpoint(audit, cp1)
+  audit <- cleanTMLE:::create_audit_log(lock)
+  cp1   <- cleanTMLE:::checkpoint_cohort_adequacy(lock)
+  audit <- cleanTMLE:::record_checkpoint(audit, cp1)
   expect_length(audit$entries, 1)
   expect_equal(audit$entries[[1]]$decision, cp1$decision)
 })
@@ -116,7 +116,7 @@ test_that("as.data.frame.cleantmle_checkpoint works", {
   dat  <- sim_func1(n = 300, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex", "biomarker"), seed = 1)
-  cp <- checkpoint_cohort_adequacy(lock)
+  cp <- cleanTMLE:::checkpoint_cohort_adequacy(lock)
   df <- as.data.frame(cp)
   expect_true(is.data.frame(df))
   expect_equal(nrow(df), 1)
@@ -128,7 +128,7 @@ test_that("sensitivity_truncation returns data.frame", {
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex", "biomarker"), seed = 1)
   lock$.outcome_authorized <- TRUE  # authorised lock; sensitivity re-estimates
-  sens <- sensitivity_truncation(lock, thresholds = c(0.01, 0.05))
+  sens <- cleanTMLE:::sensitivity_truncation(lock, thresholds = c(0.01, 0.05))
   expect_true(is.data.frame(sens))
   expect_equal(nrow(sens), 2)
   expect_true("truncation" %in% names(sens))
@@ -158,15 +158,15 @@ test_that("print methods do not error", {
   dat  <- sim_func1(n = 200, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex", "biomarker"), seed = 1)
-  lock <- define_negative_control(lock, "nc_outcome")
+  lock <- cleanTMLE:::define_negative_control(lock, "nc_outcome")
 
   expect_output(print(lock), "Negative Controls")
 
-  cp <- checkpoint_cohort_adequacy(lock)
+  cp <- cleanTMLE:::checkpoint_cohort_adequacy(lock)
   expect_output(print(cp), "Check Point 1")
 
-  audit <- create_audit_log(lock)
-  audit <- record_stage(audit, "Stage 1", "Test")
+  audit <- cleanTMLE:::create_audit_log(lock)
+  audit <- cleanTMLE:::record_stage(audit, "Stage 1", "Test")
   expect_output(print(audit), "Audit Log")
 })
 
@@ -187,7 +187,7 @@ test_that("validate_tmle_candidates rejects non-specs", {
     tmle_candidate("a", g_library = "SL.glm"),
     list(not_a_spec = TRUE)
   )
-  expect_error(validate_tmle_candidates(cands), "not a tmle_candidate_spec")
+  expect_error(cleanTMLE:::validate_tmle_candidates(cands), "not a tmle_candidate_spec")
 })
 
 test_that("validate_tmle_candidates rejects duplicates", {
@@ -195,11 +195,11 @@ test_that("validate_tmle_candidates rejects duplicates", {
     tmle_candidate("dup_id", g_library = "SL.glm"),
     tmle_candidate("dup_id", g_library = "SL.glm", truncation = 0.05)
   )
-  expect_error(validate_tmle_candidates(cands), "Duplicate")
+  expect_error(cleanTMLE:::validate_tmle_candidates(cands), "Duplicate")
 })
 
 test_that("expand_tmle_candidate_grid creates grid", {
-  grid <- expand_tmle_candidate_grid(
+  grid <- cleanTMLE:::expand_tmle_candidate_grid(
     libraries   = list(glm = "SL.glm"),
     truncations = c(0.01, 0.05)
   )
@@ -213,12 +213,12 @@ test_that("lock_primary_tmle_spec and get_primary_tmle_spec work", {
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex"), seed = 1)
 
-  expect_null(get_primary_tmle_spec(lock))
+  expect_null(cleanTMLE:::get_primary_tmle_spec(lock))
 
   cand <- tmle_candidate("test_lock", g_library = "SL.glm", truncation = 0.02)
-  lock <- lock_primary_tmle_spec(lock, cand)
+  lock <- cleanTMLE:::lock_primary_tmle_spec(lock, cand)
 
-  spec <- get_primary_tmle_spec(lock)
+  spec <- cleanTMLE:::get_primary_tmle_spec(lock)
   expect_s3_class(spec, "tmle_candidate_spec")
   expect_equal(spec$candidate_id, "test_lock")
   expect_equal(spec$truncation, 0.02)
@@ -230,7 +230,7 @@ test_that("print.cleanroom_lock shows primary TMLE spec", {
                                c("age", "sex"), seed = 1)
   cand <- tmle_candidate("show_spec", "Display Spec",
                          g_library = "SL.glm", truncation = 0.03)
-  lock <- lock_primary_tmle_spec(lock, cand)
+  lock <- cleanTMLE:::lock_primary_tmle_spec(lock, cand)
 
   expect_output(print(lock), "Primary TMLE Specification")
   expect_output(print(lock), "show_spec")
@@ -267,7 +267,7 @@ test_that("summarize_event_support returns data.frame", {
   dat  <- sim_func1(n = 300, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex", "biomarker"), seed = 1)
-  es <- summarize_event_support(lock)
+  es <- cleanTMLE:::summarize_event_support(lock)
   expect_true(is.data.frame(es))
   expect_equal(nrow(es), 3)
   expect_true(all(c("arm", "n", "events", "event_rate") %in% names(es)))
@@ -281,9 +281,9 @@ test_that("run_residual_confounding_stage works", {
   dat  <- sim_func1(n = 300, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex", "biomarker"), seed = 1)
-  lock <- define_negative_control(lock, "nc_outcome")
-  ps   <- fit_ps_glm(lock)
-  stage3 <- run_residual_confounding_stage(lock, ps)
+  lock <- cleanTMLE:::define_negative_control(lock, "nc_outcome")
+  ps   <- cleanTMLE:::fit_ps_glm(lock)
+  stage3 <- cleanTMLE:::run_residual_confounding_stage(lock, ps)
   expect_s3_class(stage3, "residual_confounding_stage")
   expect_true(is.data.frame(stage3$summary_table))
   expect_s3_class(stage3$checkpoint, "cleantmle_checkpoint")
@@ -295,8 +295,8 @@ test_that("run_residual_confounding_stage errors without NCs", {
   dat  <- sim_func1(n = 100, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex"), seed = 1)
-  ps <- fit_ps_glm(lock)
-  expect_error(run_residual_confounding_stage(lock, ps),
+  ps <- cleanTMLE:::fit_ps_glm(lock)
+  expect_error(cleanTMLE:::run_residual_confounding_stage(lock, ps),
                "No negative controls")
 })
 
@@ -307,22 +307,22 @@ test_that("authorize_outcome_analysis returns GO when all checkpoints pass", {
   dat  <- sim_func1(n = 300, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex", "biomarker"), seed = 1)
-  lock <- define_negative_control(lock, "nc_outcome")
-  audit <- create_audit_log(lock)
+  lock <- cleanTMLE:::define_negative_control(lock, "nc_outcome")
+  audit <- cleanTMLE:::create_audit_log(lock)
 
-  cp1 <- checkpoint_cohort_adequacy(lock)
-  audit <- record_checkpoint(audit, cp1)
+  cp1 <- cleanTMLE:::checkpoint_cohort_adequacy(lock)
+  audit <- cleanTMLE:::record_checkpoint(audit, cp1)
 
-  ps   <- fit_ps_glm(lock)
-  diag <- compute_ps_diagnostics(ps)
-  cp2  <- checkpoint_balance(diag, lock_hash = lock$lock_hash)
-  audit <- record_checkpoint(audit, cp2)
+  ps   <- cleanTMLE:::fit_ps_glm(lock)
+  diag <- cleanTMLE:::compute_ps_diagnostics(ps)
+  cp2  <- cleanTMLE:::checkpoint_balance(diag, lock_hash = lock$lock_hash)
+  audit <- cleanTMLE:::record_checkpoint(audit, cp2)
 
-  nc  <- run_negative_control(lock, "nc_outcome", ps)
-  cp3 <- checkpoint_residual_bias(nc, lock_hash = lock$lock_hash)
-  audit <- record_checkpoint(audit, cp3)
+  nc  <- cleanTMLE:::run_negative_control(lock, "nc_outcome", ps)
+  cp3 <- cleanTMLE:::checkpoint_residual_bias(nc, lock_hash = lock$lock_hash)
+  audit <- cleanTMLE:::record_checkpoint(audit, cp3)
 
-  gate <- authorize_outcome_analysis(audit)
+  gate <- cleanTMLE:::authorize_outcome_analysis(audit)
   expect_s3_class(gate, "pre_outcome_gate")
   expect_s3_class(gate, "cleantmle_checkpoint")
   expect_true(gate$authorized)
@@ -333,9 +333,9 @@ test_that("authorize_outcome_analysis returns STOP when checkpoints missing", {
   dat  <- sim_func1(n = 100, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex"), seed = 1)
-  audit <- create_audit_log(lock)
+  audit <- cleanTMLE:::create_audit_log(lock)
   # No checkpoints recorded
-  gate <- authorize_outcome_analysis(audit)
+  gate <- cleanTMLE:::authorize_outcome_analysis(audit)
   expect_false(gate$authorized)
   expect_equal(gate$decision, "STOP")
 })
@@ -344,8 +344,8 @@ test_that("assert_outcome_authorized errors when not authorized", {
   dat  <- sim_func1(n = 100, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex"), seed = 1)
-  audit <- create_audit_log(lock)
-  expect_error(assert_outcome_authorized(audit), "NOT authorised")
+  audit <- cleanTMLE:::create_audit_log(lock)
+  expect_error(cleanTMLE:::assert_outcome_authorized(audit), "NOT authorised")
 })
 
 test_that("unmask_outcome is a plain reversal since 0.2.0; the two-pass path stays strict", {
@@ -375,7 +375,7 @@ test_that("unmask_outcome errors on a non-authorising gate unless forced (hard)"
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex"), seed = 7)
   masked <- mask_outcome(lock)
-  audit  <- create_audit_log(lock)          # no checkpoints -> gate STOP
+  audit  <- cleanTMLE:::create_audit_log(lock)          # no checkpoints -> gate STOP
   expect_error(unmask_outcome(masked, lock, audit = audit), "did NOT authorise")
   expect_warning(
     un <- unmask_outcome(masked, lock, audit = audit, allow_unauthorized = TRUE),
@@ -387,17 +387,17 @@ test_that("unmask_outcome authorises through a passing gate (hard)", {
   dat  <- sim_func1(n = 300, seed = 9)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex", "biomarker"), seed = 9)
-  lock <- define_negative_control(lock, "nc_outcome")
+  lock <- cleanTMLE:::define_negative_control(lock, "nc_outcome")
   masked <- mask_outcome(lock)
-  audit  <- create_audit_log(lock)
-  audit  <- record_checkpoint(audit, checkpoint_cohort_adequacy(lock))
-  ps     <- fit_ps_glm(lock)
-  diag   <- compute_ps_diagnostics(ps)
-  audit  <- record_checkpoint(audit,
-              checkpoint_balance(diag, lock_hash = lock$lock_hash))
-  nc     <- run_negative_control(lock, "nc_outcome", ps)
-  audit  <- record_checkpoint(audit,
-              checkpoint_residual_bias(nc, lock_hash = lock$lock_hash))
+  audit  <- cleanTMLE:::create_audit_log(lock)
+  audit  <- cleanTMLE:::record_checkpoint(audit, cleanTMLE:::checkpoint_cohort_adequacy(lock))
+  ps     <- cleanTMLE:::fit_ps_glm(lock)
+  diag   <- cleanTMLE:::compute_ps_diagnostics(ps)
+  audit  <- cleanTMLE:::record_checkpoint(audit,
+              cleanTMLE:::checkpoint_balance(diag, lock_hash = lock$lock_hash))
+  nc     <- cleanTMLE:::run_negative_control(lock, "nc_outcome", ps)
+  audit  <- cleanTMLE:::record_checkpoint(audit,
+              cleanTMLE:::checkpoint_residual_bias(nc, lock_hash = lock$lock_hash))
 
   un <- unmask_outcome(masked, lock, audit = audit)   # gate GO -> no error
   expect_true(isTRUE(un$.outcome_authorized))
@@ -422,7 +422,7 @@ test_that(".check_outcome_access: masking always enforced, authorization opt-in 
   expect_silent(.check_outcome_access(strict, allow_outcome_access = TRUE,
                                       caller = "test"))
   # A plain (cleanroom_enabled = FALSE) lock is exempt from everything.
-  simple <- create_simple_lock(dat, "treatment", "event_24",
+  simple <- cleanTMLE:::create_simple_lock(dat, "treatment", "event_24",
                                c("age", "sex"), seed = 8)
   expect_silent(.check_outcome_access(simple, caller = "test"))
 })
@@ -434,17 +434,17 @@ test_that("record_decision_log_entry and export_decision_log work", {
   dat  <- sim_func1(n = 100, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex"), seed = 1)
-  audit <- create_audit_log(lock)
-  audit <- record_decision_log_entry(
+  audit <- cleanTMLE:::create_audit_log(lock)
+  audit <- cleanTMLE:::record_decision_log_entry(
     audit, "Stage 2", "model_specification",
     "Selected GLM PS model",
     rationale = "Pre-specified in SAP"
   )
-  audit <- record_decision_log_entry(
+  audit <- cleanTMLE:::record_decision_log_entry(
     audit, "Stage 2b", "override",
     "Accepted FLAG for ESS"
   )
-  dl <- export_decision_log(audit)
+  dl <- cleanTMLE:::export_decision_log(audit)
   expect_true(is.data.frame(dl))
   expect_equal(nrow(dl), 2)
   expect_true(all(c("stage", "decision_type", "description") %in% names(dl)))
@@ -454,8 +454,8 @@ test_that("export_decision_log returns empty df when no entries", {
   dat  <- sim_func1(n = 100, seed = 1)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex"), seed = 1)
-  audit <- create_audit_log(lock)
-  dl <- export_decision_log(audit)
+  audit <- cleanTMLE:::create_audit_log(lock)
+  dl <- cleanTMLE:::export_decision_log(audit)
   expect_true(is.data.frame(dl))
   expect_equal(nrow(dl), 0)
 })
@@ -492,7 +492,7 @@ test_that("Stage 4 functions reject masked outcome", {
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex"), seed = 1)
   masked <- mask_outcome(lock)
-  expect_error(run_crude_workflow(masked), "Outcome is masked")
+  expect_error(cleanTMLE:::run_crude_workflow(masked), "Outcome is masked")
 })
 
 test_that("Stage 4 functions allow override_clean_room", {
@@ -500,6 +500,6 @@ test_that("Stage 4 functions allow override_clean_room", {
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex"), seed = 1)
   # A non-masked but unauthorised cleanroom lock now requires the override.
-  result <- run_crude_workflow(lock, allow_outcome_access = TRUE)
+  result <- cleanTMLE:::run_crude_workflow(lock, allow_outcome_access = TRUE)
   expect_true(is.numeric(result$estimate))
 })

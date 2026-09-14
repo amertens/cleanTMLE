@@ -130,9 +130,18 @@ NULL
 #' @param plasmode_reps Integer; number of plasmode replicates for Stage 2b
 #'   feasibility evaluation. Default: 100.
 #' @param seed Integer; random seed for reproducibility. Default: 42.
-#' @param cleanroom_enabled Logical; if `TRUE` (default) the lock enforces
-#'   the staged clean-room machinery (outcome guard, gate authorisation,
-#'   audit requirement). [create_simple_lock()] sets this to `FALSE`.
+#' @param cleanroom_enabled Logical; if `TRUE` (default) the outcome-masking
+#'   guard applies to this lock. Since 0.2.0 this is the only default
+#'   enforcement; see `enforce`.
+#' @param negative_controls Optional character vector of negative-control
+#'   columns to register on the lock at creation (before any downstream
+#'   filtering can touch them).
+#' @param mask Logical; if `TRUE`, the outcome column is masked (physically
+#'   blanked) in the returned lock. Keep the original data to unmask later
+#'   with [unmask_outcome()]. Default `FALSE`.
+#' @param enforce Logical; if `TRUE`, the lock additionally requires a
+#'   recorded pre-outcome authorisation before Stage 4 estimators run (the
+#'   software-enforced two-pass contract). Default `FALSE`.
 #'
 #' @return An object of class `cleanroom_lock` containing all specified
 #'   analysis parameters plus a reproducibility fingerprint (`lock_hash`).
@@ -153,7 +162,10 @@ create_analysis_lock <- function(data, treatment, outcome, covariates,
                                   sl_library        = c("SL.glm", "SL.mean"),
                                   plasmode_reps     = 100L,
                                   seed              = 42L,
-                                  cleanroom_enabled = TRUE) {
+                                  cleanroom_enabled = TRUE,
+                                  negative_controls = NULL,
+                                  mask              = FALSE,
+                                  enforce           = FALSE) {
   if (!is.data.frame(data))
     stop("`data` must be a data.frame.", call. = FALSE)
   if (!is.character(treatment) || length(treatment) != 1L)
@@ -195,6 +207,10 @@ create_analysis_lock <- function(data, treatment, outcome, covariates,
     lock_hash         = lock_hash
   )
   class(lock) <- "cleanroom_lock"
+  if (isTRUE(enforce)) lock$require_authorization <- TRUE
+  if (!is.null(negative_controls))
+    for (nc in negative_controls) lock <- define_negative_control(lock, nc)
+  if (isTRUE(mask)) lock <- mask_outcome(lock)
   lock
 }
 
@@ -233,7 +249,7 @@ create_analysis_lock <- function(data, treatment, outcome, covariates,
 #' )
 #' isFALSE(lock$cleanroom_enabled)
 #'
-#' @export
+#' @keywords internal
 create_simple_lock <- function(data, treatment, outcome, covariates,
                                 sl_library    = c("SL.glm", "SL.mean"),
                                 plasmode_reps = 100L,
@@ -290,7 +306,7 @@ create_simple_lock <- function(data, treatment, outcome, covariates,
 #' dt <- decision_thresholds(dq_max_abs_bias = 0.02, nco_rule = "equivalence",
 #'                           nco_null_band = 0.02)
 #' dt_dq(dt)
-#' @export
+#' @keywords internal
 decision_thresholds <- function(
     cohort_min_n_per_arm   = 50L,
     cohort_min_events      = 20L,
@@ -367,17 +383,17 @@ print.cleantmle_thresholds <- function(x, ...) {
 #' @param dt A \code{cleantmle_thresholds} object.
 #' @return A named list of arguments for the corresponding function.
 #' @name dt_extractors
-#' @export
+#' @keywords internal
 dt_cohort <- function(dt) {
   stopifnot(inherits(dt, "cleantmle_thresholds")); dt$cohort
 }
 #' @rdname dt_extractors
-#' @export
+#' @keywords internal
 dt_balance <- function(dt) {
   stopifnot(inherits(dt, "cleantmle_thresholds")); dt$balance
 }
 #' @rdname dt_extractors
-#' @export
+#' @keywords internal
 dt_plasmode <- function(dt) {
   stopifnot(inherits(dt, "cleantmle_thresholds"))
   list(max_abs_bias = dt$plasmode$max_abs_bias,
@@ -385,12 +401,12 @@ dt_plasmode <- function(dt) {
        se_sd_window = dt$plasmode$se_sd_window)
 }
 #' @rdname dt_extractors
-#' @export
+#' @keywords internal
 dt_dq <- function(dt) {
   stopifnot(inherits(dt, "cleantmle_thresholds")); dt$dq
 }
 #' @rdname dt_extractors
-#' @export
+#' @keywords internal
 dt_nco <- function(dt) {
   stopifnot(inherits(dt, "cleantmle_thresholds")); dt$nco
 }
@@ -413,7 +429,7 @@ dt_nco <- function(dt) {
 #'                              c("age", "sex", "biomarker"), seed = 1)
 #' lock <- attach_decision_thresholds(lock, decision_thresholds())
 #' lock$thresholds_hash
-#' @export
+#' @keywords internal
 attach_decision_thresholds <- function(lock,
                                        thresholds = decision_thresholds()) {
   .superseded("attach_decision_thresholds", "support_thresholds(), passed to assess_support() and estimand_feasibility()")
@@ -461,7 +477,7 @@ attach_decision_thresholds <- function(lock,
 #' )
 #' validate_analysis_lock(lock)
 #'
-#' @export
+#' @keywords internal
 validate_analysis_lock <- function(lock) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
@@ -613,7 +629,7 @@ print.cleanroom_lock <- function(x, ...) {
 #' ps_fit <- fit_ps_superlearner(lock)
 #' }
 #'
-#' @export
+#' @keywords internal
 fit_ps_superlearner <- function(lock, truncate = 0.01,
                                  cv_folds = 10L,
                                  cluster = NULL,
@@ -737,7 +753,7 @@ print.ps_fit <- function(x, ...) {
 #' ps_fit <- fit_ps_glm(lock)
 #' print(ps_fit)
 #'
-#' @export
+#' @keywords internal
 fit_ps_glm <- function(lock, truncate = 0.01) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
@@ -790,7 +806,7 @@ fit_ps_glm <- function(lock, truncate = 0.01) {
 #' plot(diag)
 #' }
 #'
-#' @export
+#' @keywords internal
 compute_ps_diagnostics <- function(ps_fit, ...) {
   if (!inherits(ps_fit, "ps_fit"))
     stop("`ps_fit` must be a ps_fit object from fit_ps_superlearner().",
@@ -1055,7 +1071,7 @@ print.tmle_candidate_spec <- function(x, ...) {
 #'
 #' @return Invisibly returns \code{candidates} if valid; errors otherwise.
 #'
-#' @export
+#' @keywords internal
 validate_tmle_candidates <- function(candidates) {
   if (!is.list(candidates) || length(candidates) == 0L)
     stop("`candidates` must be a non-empty list.", call. = FALSE)
@@ -1106,7 +1122,7 @@ validate_tmle_candidates <- function(candidates) {
 #' length(grid)
 #' grid[[1]]
 #'
-#' @export
+#' @keywords internal
 expand_tmle_candidate_grid <- function(
     truncations = c(0.01, 0.05),
     libraries   = list(
@@ -1863,7 +1879,7 @@ as.character.tmle_selected_spec <- function(x, ...) {
 #' Abadie, A. and Imbens, G. W. (2016). Matching on the estimated propensity
 #' score. \emph{Econometrica}, 84(2), 781--807.
 #'
-#' @export
+#' @keywords internal
 run_match_workflow <- function(lock, ps_fit, caliper = NULL,
                                allow_outcome_access = FALSE,
                                override_clean_room = NULL) {
@@ -1998,7 +2014,7 @@ print.match_result <- function(x, ...) {
 #' @return An object of class `iptw_result` containing the estimated risk
 #'   difference, SE, 95% CI, p-value, and IPTW weights.
 #'
-#' @export
+#' @keywords internal
 run_iptw_workflow <- function(lock, ps_fit, trim = NULL,
                               allow_outcome_access = FALSE,
                               override_clean_room = NULL) {
@@ -2126,7 +2142,7 @@ run_iptw_workflow <- function(lock, ps_fit, trim = NULL,
 #' print(ipcw_fit)
 #' }
 #'
-#' @export
+#' @keywords internal
 run_ipcw_tmle <- function(lock, ps_fit = NULL,
                           censoring_library = NULL,
                           weight_truncation = 0.99,
@@ -2320,7 +2336,7 @@ print.iptw_result <- function(x, ...) {
 #' @param fold_vec Optional integer vector assigning each observation
 #'   to a fold.  Overrides \code{n_folds}.
 #'
-#' @export
+#' @keywords internal
 fit_tmle_treatment_mechanism <- function(lock, ps_fit = NULL,
                                           truncation = NULL,
                                           n_folds = 1L,
@@ -2439,7 +2455,7 @@ fit_tmle_treatment_mechanism <- function(lock, ps_fit = NULL,
 #' @return An object of class `tmle_mechanism` with `type = "outcome"`
 #'   containing initial outcome predictions `Q_a1`, `Q_a0`, and `Q_aw`.
 #'
-#' @export
+#' @keywords internal
 fit_tmle_outcome_mechanism <- function(lock, g_fit, sl_library = NULL,
                                        allow_outcome_access = FALSE,
                                        override_clean_room = NULL) {
@@ -2600,7 +2616,7 @@ fit_tmle_outcome_mechanism <- function(lock, g_fit, sl_library = NULL,
 #'   the fluctuation parameter, the efficient influence curve, and the
 #'   initial point estimate.
 #'
-#' @export
+#' @keywords internal
 run_tmle_targeting_step <- function(g_fit, Q_fit) {
   if (!inherits(g_fit, "tmle_mechanism") || g_fit$type != "treatment")
     stop("`g_fit` must be a tmle_mechanism of type 'treatment'.",
@@ -2700,7 +2716,7 @@ run_tmle_targeting_step <- function(g_fit, Q_fit) {
 #'   ATE). Report arm risks from these fields rather than reconstructing them
 #'   from crude means and the ATE.
 #'
-#' @export
+#' @keywords internal
 extract_tmle_estimate <- function(tmle_upd) {
   if (!inherits(tmle_upd, "tmle_update"))
     stop("`tmle_upd` must be a tmle_update object from ",
@@ -2777,7 +2793,7 @@ extract_tmle_estimate <- function(tmle_upd) {
 #' @return A data.frame with one row per workflow containing columns
 #'   `method`, `estimate`, `se`, `ci_lower`, `ci_upper`, and `p_value`.
 #'
-#' @export
+#' @keywords internal
 summarize_cleanroom_results <- function(fits, ...) {
   if (!is.list(fits))
     stop("`fits` must be a list of fitted workflow objects.", call. = FALSE)
@@ -2846,7 +2862,7 @@ summarize_cleanroom_results <- function(fits, ...) {
 #'
 #' @return Invisibly returns `x`.
 #'
-#' @export
+#' @keywords internal
 summarize_plasmode_results <- function(x, ...) {
   if (!inherits(x, "plasmode_results"))
     stop("`x` must be a plasmode_results object.", call. = FALSE)
@@ -2872,7 +2888,7 @@ summarize_plasmode_results <- function(x, ...) {
 #'
 #' @return A named list with elements named by the requested workflows.
 #'
-#' @export
+#' @keywords internal
 fit_final_workflows <- function(lock, ps_fit,
                                  workflows = c("match", "iptw", "tmle"),
                                  allow_outcome_access = FALSE,
@@ -2947,7 +2963,7 @@ fit_final_workflows <- function(lock, ps_fit,
 #'
 #' @section Clean-room stage: Stage 4 (accesses the real outcome).
 #'
-#' @export
+#' @keywords internal
 fit_tmle_candidate_set <- function(lock, candidates = NULL, ps_fit = NULL,
                                     allow_outcome_access = FALSE,
                                     override_clean_room = NULL) {
@@ -3074,7 +3090,7 @@ fit_tmle_candidate_set <- function(lock, candidates = NULL, ps_fit = NULL,
 #' )
 #' gate_check(metrics, "Example", targets, method = "glm_t01")
 #'
-#' @export
+#' @keywords internal
 gate_check <- function(metrics, scenario_name = "plasmode", targets = NULL,
                        method = "TMLE",
                        rmse_threshold = NULL,
@@ -3198,7 +3214,7 @@ gate_check <- function(metrics, scenario_name = "plasmode", targets = NULL,
 #' )
 #' run_crude_workflow(lock)
 #'
-#' @export
+#' @keywords internal
 run_crude_workflow <- function(lock, allow_outcome_access = FALSE,
                                override_clean_room = NULL) {
   if (!is.null(override_clean_room)) {

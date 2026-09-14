@@ -53,8 +53,8 @@ test_that("the negative-control ladder finds where restriction removes the assoc
   dat <- .multiarm_data(2400, seed = 111)
   sub <- dat[dat$mode %in% c("rescueco", "other_amb"), ]
   sub$A <- as.integer(sub$mode == "rescueco")
-  lock <- create_simple_lock(sub, "A", "outcome", c("x1", "transfer"))
-  lock <- define_negative_control(lock, "urban")
+  lock <- create_analysis_lock(sub, "A", "outcome", c("x1", "transfer"))
+  lock <- cleanTMLE:::define_negative_control(lock, "urban")
   lad <- run_negative_control_ladder(
     lock,
     restrictions = list(`transfers excluded` = sub$transfer == 0),
@@ -76,9 +76,9 @@ test_that("the negative-control ladder's TMLE method runs per rung", {
   dat <- .multiarm_data(600, seed = 121)
   sub <- dat[dat$mode %in% c("rescueco", "other_amb"), ]
   sub$A <- as.integer(sub$mode == "rescueco")
-  lock <- create_simple_lock(sub, "A", "outcome", c("x1",  "transfer"),
+  lock <- create_analysis_lock(sub, "A", "outcome", c("x1",  "transfer"),
                              sl_library = "SL.glm")
-  lock <- define_negative_control(lock, "urban")
+  lock <- cleanTMLE:::define_negative_control(lock, "urban")
   lad <- run_negative_control_ladder(
     lock, restrictions = list(`transfers excluded` = sub$transfer == 0),
     method = "tmle", ps_method = "glm", verbose = FALSE)
@@ -96,7 +96,7 @@ test_that("check_process_indicators flags what treatment predicts", {
   y <- stats::rbinom(n, 1, 0.2)
   dat <- data.frame(x1 = x1, A = A, vitals_missing = vitals_missing,
                     noise_ind = noise_ind, outcome = y)
-  lock <- create_simple_lock(dat, "A", "outcome",
+  lock <- create_analysis_lock(dat, "A", "outcome",
                              c("x1", "vitals_missing", "noise_ind"))
   chk <- check_process_indicators(lock,
                                   indicators = c("vitals_missing",

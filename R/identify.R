@@ -172,7 +172,7 @@ identify_interval <- function(spec, start, stop) {
 }
 
 #' @rdname identify
-#' @export
+#' @keywords internal
 identify_missing <- function(spec, ...) {
   rlang::warn(
     "identify_missing() is experimental and outside the tested v0.1 scope.",

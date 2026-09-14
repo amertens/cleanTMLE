@@ -66,7 +66,7 @@ NULL
 #' @param fold_vec Optional integer vector of length \code{nrow(data)}
 #'   assigning each observation to a fold. Overrides \code{n_folds}.
 #'
-#' @export
+#' @keywords internal
 estimate_tmle_risk_point <- function(data, treatment = NULL, outcome = NULL,
                                      covariates = NULL, family = "binomial",
                                      sl_library = c("SL.glm", "SL.mean"),
@@ -850,7 +850,12 @@ print.tmle_fit <- function(x, ...) {
 
 
 #' @export
-plot.tmle_fit <- function(x, ...) {
+plot.tmle_fit <- function(x, type = c("summary", "ic", "clever"), ...) {
+  type <- match.arg(type)
+  # type = "ic" and type = "clever" absorb the former ic_histogram() and
+  # clever_covariate_plot() exports.
+  if (type == "ic") return(ic_histogram(x, ...))
+  if (type == "clever") return(clever_covariate_plot(x, ...))
   if (x$type == "surv_tmle" || x$type == "surv_tmle_fallback") {
     # Plot risk differences over time
     est_df <- data.frame(

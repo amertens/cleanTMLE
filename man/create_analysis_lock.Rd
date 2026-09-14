@@ -12,7 +12,10 @@ create_analysis_lock(
   sl_library = c("SL.glm", "SL.mean"),
   plasmode_reps = 100L,
   seed = 42L,
-  cleanroom_enabled = TRUE
+  cleanroom_enabled = TRUE,
+  negative_controls = NULL,
+  mask = FALSE,
+  enforce = FALSE
 )
 }
 \arguments{
@@ -32,9 +35,21 @@ feasibility evaluation. Default: 100.}
 
 \item{seed}{Integer; random seed for reproducibility. Default: 42.}
 
-\item{cleanroom_enabled}{Logical; if \code{TRUE} (default) the lock enforces
-the staged clean-room machinery (outcome guard, gate authorisation,
-audit requirement). \code{\link[=create_simple_lock]{create_simple_lock()}} sets this to \code{FALSE}.}
+\item{cleanroom_enabled}{Logical; if \code{TRUE} (default) the outcome-masking
+guard applies to this lock. Since 0.2.0 this is the only default
+enforcement; see \code{enforce}.}
+
+\item{negative_controls}{Optional character vector of negative-control
+columns to register on the lock at creation (before any downstream
+filtering can touch them).}
+
+\item{mask}{Logical; if \code{TRUE}, the outcome column is masked (physically
+blanked) in the returned lock. Keep the original data to unmask later
+with \code{\link[=unmask_outcome]{unmask_outcome()}}. Default \code{FALSE}.}
+
+\item{enforce}{Logical; if \code{TRUE}, the lock additionally requires a
+recorded pre-outcome authorisation before Stage 4 estimators run (the
+software-enforced two-pass contract). Default \code{FALSE}.}
 }
 \value{
 An object of class \code{cleanroom_lock} containing all specified

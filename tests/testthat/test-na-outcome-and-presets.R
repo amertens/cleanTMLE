@@ -1,6 +1,6 @@
 # Regression tests for cleanTMLE 0.1.1 — outcome NA handling, preset
 # scenarios, attrition_table polymorphism, make_table1 lock method,
-# print_locked_spec, and authorize_outcome_analysis(checkpoints = ...).
+# print_locked_spec, and cleanTMLE:::authorize_outcome_analysis(checkpoints = ...).
 
 test_that("run_plasmode_feasibility tolerates 25% outcome NA", {
   set.seed(1)
@@ -23,7 +23,7 @@ test_that("run_plasmode_dq_stress tolerates 25% outcome NA", {
                                c("age", "sex", "biomarker", "comorbidity"),
                                seed = 2L)
   res <- run_plasmode_dq_stress(lock, reps = 2L, effect_sizes = 0.05,
-                                 data_quality_scenarios = default_dq_scenarios("exploratory"),
+                                 data_quality_scenarios = cleanTMLE:::default_dq_scenarios("exploratory"),
                                  verbose = FALSE)
   expect_s3_class(res, "plasmode_dq_results")
   expect_gt(nrow(res$metrics), 0L)
@@ -43,7 +43,7 @@ test_that("plasmode functions error clearly on a fully-masked lock", {
 
 test_that("default_dq_scenarios returns valid configs for each preset", {
   for (p in c("regulatory_standard", "exploratory", "stress")) {
-    cfg <- default_dq_scenarios(p)
+    cfg <- cleanTMLE:::default_dq_scenarios(p)
     expect_named(cfg, c("covariate_missingness", "treatment_misclass",
                         "outcome_misclass", "unmeasured_confounding",
                         "near_positivity"))
@@ -54,7 +54,7 @@ test_that("default_dq_scenarios returns valid configs for each preset", {
 
 test_that("default_dq_scenarios carries five threats including near_positivity", {
   for (p in c("regulatory_standard", "exploratory", "stress")) {
-    cfg <- default_dq_scenarios(p)
+    cfg <- cleanTMLE:::default_dq_scenarios(p)
     expect_length(cfg, 5L)
     expect_true("near_positivity" %in% names(cfg))
     expect_true(!is.null(cfg$near_positivity$slopes))
@@ -84,18 +84,18 @@ test_that("print_locked_spec returns NULL when nothing locked", {
   dat  <- sim_func1(n = 200, seed = 6)
   lock <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex", "biomarker"), seed = 6L)
-  out <- capture.output(spec <- print_locked_spec(lock))
+  out <- capture.output(spec <- cleanTMLE:::print_locked_spec(lock))
   expect_null(spec)
 })
 
 test_that("authorize_outcome_analysis accepts checkpoints =", {
-  mk <- function(s, d) new_checkpoint(stage = s, decision = d,
+  mk <- function(s, d) cleanTMLE:::new_checkpoint(stage = s, decision = d,
                                        metrics = data.frame(),
                                        thresholds = list())
   cp1 <- mk("Check Point 1", "GO")
   cp2 <- mk("Check Point 2", "FLAG")
   cp3 <- mk("Check Point 3", "GO")
-  gate <- authorize_outcome_analysis(checkpoints = list(cp1, cp2, cp3),
+  gate <- cleanTMLE:::authorize_outcome_analysis(checkpoints = list(cp1, cp2, cp3),
                                       allow_flag = TRUE)
   expect_true(isTRUE(gate$authorized))
 })
@@ -115,7 +115,7 @@ test_that("gate_check accepts ergonomic short form on plasmode_results", {
   res <- list(metrics = m, effect_sizes = 0.05, reps = 5L,
               tmle_candidates = list(cand_a, cand_b))
   class(res) <- "plasmode_results"
-  out <- gate_check(res, rmse_threshold = 0.06,
+  out <- cleanTMLE:::gate_check(res, rmse_threshold = 0.06,
                     coverage_threshold = 0.90, method = "a")
   expect_true(out$decision %in% c("GO", "FLAG", "STOP"))
 })

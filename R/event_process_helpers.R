@@ -221,7 +221,7 @@ print.cleantmle_weight_diag <- function(x, ...) {
 #'                          ess_floor = 0.4 * n)
 #' print(cp)
 #'
-#' @export
+#' @keywords internal
 checkpoint_weights <- function(weights, treatment = NULL,
                                 weight_type = "treatment",
                                 max_weight_threshold = 10,

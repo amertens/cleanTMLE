@@ -87,7 +87,7 @@ A  <- rbinom(n, 1, g)
 y  <- rbinom(n, 1, plogis(-2 + 0.5 * x1 + 0.4 * A))
 dat <- data.frame(x1 = x1, x2 = x2, treatment = A, outcome = y)
 
-lock <- create_simple_lock(dat, "treatment", "outcome", c("x1", "x2"),
+lock <- create_analysis_lock(dat, "treatment", "outcome", c("x1", "x2"),
                            sl_library = "SL.glm", seed = 7L)
 lock <- declare_estimand_ladder(lock, primary = "ATE",
                                 fallbacks = c("trimmed_ATE", "ATT", "ATO"))
@@ -104,9 +104,9 @@ ATE's weights explode where the ATT's control weights stay bounded by
 `max g / (1 - g)` and the ATO's weights are bounded by one by construction.
 
 ```{r feasibility-020}
-fea <- estimand_feasibility(ps)
+fea <- estimand_feasibility(ps, profile_vars = c("x1", "x2"))
 fea
-head(who_is_unsupported(ps, vars = c("x1", "x2")))
+head(fea$unsupported)
 ```
 
 The outcome-blind support simulation asks the same question dynamically:
@@ -154,25 +154,17 @@ kept for continuity.
 
 | Stage | Function | Outcome? | Purpose |
 |-------|----------|:--------:|---------|
-| Design | `fit_ps()` | No | One front door for propensity fitting (SuperLearner, GLM, external scores) |
-| Design | `assess_support()` | No | Graded overlap verdict (PASS/FLAG/SEVERE/FAIL), near-deterministic strata, tree search, mirrored plot |
-| Design | `support_thresholds()` | No | Prespecified thresholds for the verdict |
-| Design | `estimand_feasibility()` | No | Per-estimand weights, ESS, removals, target population, verdict |
-| Design | `who_is_unsupported()` | No | Profile of patients outside the support band |
-| Design | `declare_estimand_ladder()` | No | Pre-register primary, fallbacks, trigger, sensitivity floors |
-| Design | `support_surfaces()` | No | Prespecify the synthetic outcome-surface family |
-| Design | `simulate_support()` | Synthetic | Outcome-blind support map (generate-treatment plasmode, per-estimand truths) |
-| Design | `check_locked_estimator()` | Primary | Petersen parametric bootstrap on the locked estimator (labelled optimistic) |
-| Design | `design_report()` | No | The pre-outcome bundle a review team reads, with a recommendation |
-| Design | `emulation_table()` | No | TARGET protocol-versus-emulation table from the lock |
+| Design | `fit_ps()` | No | One front door for propensity fitting: `method = "superlearner"`, `"glm"`, or `"external"` with `scores` |
+| Design | `assess_support()` | No | Graded overlap verdict (PASS/FLAG/SEVERE/FAIL), balance table, near-deterministic strata, tree search, mirrored plot; `thresholds =` a named list of overrides |
+| Design | `estimand_feasibility()` | No | Per-estimand weights, ESS, removals, target population, verdict; `profile_vars =` adds the removed-versus-kept profile as `$unsupported` |
+| Design | `declare_estimand_ladder()` | No | Pre-register primary, fallbacks, trigger, sensitivity floors; `candidate =` binds the selected TMLE specification |
+| Design | `simulate_support()` | Synthetic | Outcome-blind support map (generate-treatment plasmode, per-estimand truths); `surface =` a named list; `design = "parametric_bootstrap"` gives the Petersen check, labelled optimistic |
+| Design | `design_report()` | No | The pre-outcome bundle a review team reads, with a recommendation and the TARGET emulation table (`$emulation`, `protocol =`) |
 | Design | `create_contrast_locks()` | No | One lock per contrast from a multi-level treatment, shared covariates and controls |
 | Design | `run_negative_control_ladder()` | NC | Registered controls on nested cohorts; names what turns null after restriction |
 | Design | `check_process_indicators()` | No | Care-process collider check conditional on severity |
+| 4 | `estimate_effect()` | Primary | The one estimation front door: `estimand = "ATE"/"trimmed_ATE"/"ATT"/"ATO"/"matched_ATT"`, `estimator = "tmle"/"iptw"/"match"/"crude"`, `missing = "auto"/"ipcw"/"complete_case"`; the implausibility guard rides on every result |
 | 4 | `run_estimand_ladder()` | Primary | Estimate the declared primary when feasible plus every feasible fallback, logged |
-| 4 | `run_att_tmle()` | Primary | Complete-case ATT, never through Delta, same-g spec enforced |
-| 4 | `estimate_ato()` | Primary | Augmented overlap-weighted ATO with IF variance and exact-balance check |
-| 4 | `run_trimmed_tmle()` | Primary | Trimmed ATE with propensity refit; fixed bands or the Crump rule |
-| 4 | `implausibility_check()` | Primary | Flags estimates the observed data cannot support |
 | Util | `SL.glm.pca()`, `SL.glm.pca5()`, `SL.glm.pca10()` | n/a | PCA-GLM SuperLearner learners (rotation fitted per fold) |
 | Util | `SL.glmnet.ridge()`, `SL.glmnet.enet()` | n/a | Ridge and elastic-net glmnet learners |
 | Util | `expit()`, `logit()` | n/a | Inverse-logit / logit transforms |

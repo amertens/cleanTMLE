@@ -41,7 +41,7 @@ NULL
 #' diag   <- compute_ps_diagnostics(ps_fit)
 #' }
 #'
-#' @export
+#' @keywords internal
 wrap_ps_fit <- function(lock, ps_scores, method = "external",
                         truncate = NULL) {
   if (!inherits(lock, "cleanroom_lock"))
@@ -99,7 +99,7 @@ wrap_ps_fit <- function(lock, ps_scores, method = "external",
 #' parallel::stopCluster(cl)
 #' }
 #'
-#' @export
+#' @keywords internal
 fit_ps_parallel <- function(lock, cluster = NULL, truncate = NULL, ...) {
   .superseded("fit_ps_parallel", "fit_ps(method = 'superlearner', cluster = )")
   if (!inherits(lock, "cleanroom_lock"))
@@ -220,7 +220,7 @@ load_lock <- function(path, validate = TRUE) {
 #'
 #' @return Invisibly returns \code{path}.
 #'
-#' @export
+#' @keywords internal
 save_audit <- function(audit, path) {
   if (!inherits(audit, "cleantmle_audit"))
     stop("`audit` must be a cleantmle_audit object.", call. = FALSE)
@@ -239,7 +239,7 @@ save_audit <- function(audit, path) {
 #'
 #' @return A \code{cleantmle_audit} object.
 #'
-#' @export
+#' @keywords internal
 load_audit <- function(path) {
   if (!file.exists(path))
     stop("Audit file not found: ", path, call. = FALSE)
@@ -270,7 +270,7 @@ load_audit <- function(path) {
 #'
 #' @return A list of class \code{cleantmle_nc_result} with \code{method = "tmle"}.
 #'
-#' @export
+#' @keywords internal
 run_negative_control_tmle <- function(lock, variable, ps_fit,
                                       sl_library = NULL) {
   if (!inherits(lock, "cleanroom_lock"))
@@ -399,7 +399,7 @@ run_negative_control_tmle <- function(lock, variable, ps_fit,
 #'
 #' @return An object of class \code{tmle_fit} estimated on the subset.
 #'
-#' @export
+#' @keywords internal
 run_matched_tmle <- function(lock, ps_fit, subset_idx,
                              sl_library = NULL,
                              override_clean_room = FALSE) {
@@ -673,7 +673,7 @@ sanitize_covariates <- function(data, covariates = NULL, verbose = FALSE) {
 #' seed: 42
 #' }
 #'
-#' @export
+#' @keywords internal
 create_analysis_lock_from_yaml <- function(config_path, data,
                                            section = NULL) {
   .superseded("create_analysis_lock_from_yaml", "create_analysis_lock()")
@@ -754,7 +754,7 @@ create_analysis_lock_from_yaml <- function(config_path, data,
 #'
 #' @return A \code{ggplot2} object.
 #'
-#' @export
+#' @keywords internal
 clever_covariate_plot <- function(tmle_update = NULL, ps_fit = NULL,
                                   lock = NULL, bin_extreme = FALSE,
                                   extreme_quantile = 0.99) {
@@ -818,7 +818,7 @@ clever_covariate_plot <- function(tmle_update = NULL, ps_fit = NULL,
 #'
 #' @return A named numeric vector of absolute SMDs, one per covariate.
 #'
-#' @export
+#' @keywords internal
 compute_matched_smds <- function(data, treatment, covariates,
                                  subset_idx = NULL) {
   if (!is.null(subset_idx)) data <- data[subset_idx, , drop = FALSE]
@@ -853,7 +853,7 @@ compute_matched_smds <- function(data, treatment, covariates,
 #'
 #' @return A \code{ggplot2} object.
 #'
-#' @export
+#' @keywords internal
 love_plot_threeway <- function(ps_diag, matched_smds, threshold = 0.10) {
   if (!inherits(ps_diag, "ps_diagnostics"))
     stop("`ps_diag` must be a ps_diagnostics object.", call. = FALSE)
@@ -938,7 +938,7 @@ love_plot_threeway <- function(ps_diag, matched_smds, threshold = 0.10) {
 #'
 #' @return A \code{cleantmle_checkpoint} with the composite decision.
 #'
-#' @export
+#' @keywords internal
 gate_all <- function(..., allow_flag = TRUE) {
   .superseded("gate_all", "the verdicts carried on assess_support(), simulate_support() and estimand_feasibility() results")
   checkpoints <- list(...)
@@ -1165,7 +1165,7 @@ print.cleantmle_attrition <- function(x, ...) {
 #'
 #' @return A data.frame.
 #'
-#' @export
+#' @keywords internal
 get_final_cohort <- function(attrition) {
   if (!inherits(attrition, "cleantmle_attrition"))
     stop("`attrition` must be a cleantmle_attrition object.", call. = FALSE)
@@ -1208,7 +1208,7 @@ get_final_cohort <- function(attrition) {
 #'       after refinement.}
 #'   }
 #'
-#' @export
+#' @keywords internal
 refine_ps_after_nco <- function(lock, ps_fit, additional_covariates,
                                 nc_variables, audit = NULL,
                                 rationale = "NCO suggested residual confounding") {

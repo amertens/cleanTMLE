@@ -40,7 +40,7 @@ test_that("design_report reads the ladder against support and feasibility", {
   A <- stats::rbinom(n, 1, g)
   y <- stats::rbinom(n, 1, 0.2)
   dat <- data.frame(x1 = x1, treatment = A, outcome = y)
-  lock <- create_simple_lock(dat, "treatment", "outcome", "x1")
+  lock <- create_analysis_lock(dat, "treatment", "outcome", "x1")
   lock <- declare_estimand_ladder(lock, primary = "ATE",
                                   fallbacks = c("trimmed_ATE", "ATT", "ATO"))
   psf <- fit_ps(lock, "glm")
@@ -59,7 +59,7 @@ test_that("design_report reads the ladder against support and feasibility", {
   g2 <- stats::plogis(0.3 * x1)
   A2 <- stats::rbinom(n, 1, g2)
   dat2 <- data.frame(x1 = x1, treatment = A2, outcome = y)
-  lock2 <- create_simple_lock(dat2, "treatment", "outcome", "x1")
+  lock2 <- create_analysis_lock(dat2, "treatment", "outcome", "x1")
   lock2 <- declare_estimand_ladder(lock2, primary = "ATE")
   psf2 <- fit_ps(lock2, "glm")
   rep2 <- design_report(lock2, assess_support(psf2, tree_search = FALSE),
@@ -71,10 +71,10 @@ test_that("design_report reads the ladder against support and feasibility", {
 test_that("emulation_table renders the TARGET two-column table from the lock", {
   dat <- data.frame(x1 = rnorm(200), treatment = rbinom(200, 1, 0.5),
                     outcome = rbinom(200, 1, 0.2))
-  lock <- create_simple_lock(dat, "treatment", "outcome", "x1")
+  lock <- create_analysis_lock(dat, "treatment", "outcome", "x1")
   lock <- declare_estimand_ladder(lock, primary = "ATE",
                                   fallbacks = c("ATT", "ATO"))
-  tab <- emulation_table(lock,
+  tab <- cleanTMLE:::emulation_table(lock,
                          protocol = c(eligibility = "adults with trauma"))
   expect_s3_class(tab, "data.frame")
   expect_identical(names(tab), c("component", "target_trial", "emulation"))

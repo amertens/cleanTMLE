@@ -55,7 +55,7 @@ test_that("point TMLE recovers the marginal risk difference and agrees with tmle
   truth <- mean(pY(1)) - mean(pY(0))   # g-formula truth on this sample
   dat <- data.frame(A = A, Y = Y, W1 = W1, W2 = W2)
 
-  ct <- estimate_tmle_risk_point(
+  ct <- cleanTMLE:::estimate_tmle_risk_point(
     data = dat, treatment = "A", outcome = "Y",
     covariates = c("W1", "W2"),
     sl_library = c("SL.glm"), n_folds = 2L)

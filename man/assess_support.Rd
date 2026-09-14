@@ -6,7 +6,8 @@
 \usage{
 assess_support(
   ps_fit,
-  thresholds = support_thresholds(),
+  thresholds = NULL,
+  balance = TRUE,
   tree_search = TRUE,
   tree_max_depth = 3L,
   tree_min_n = 50L

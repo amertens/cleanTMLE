@@ -6,85 +6,45 @@ template:
 reference:
   - title: The workflow
     desc: >
-      Lock the specification, fit the propensity, assess support, map which
-      estimands the design can deliver, simulate outcome-blind, estimate the
-      declared ladder, and assemble the design report.
+      Lock the specification, declare the estimand ladder, fit the
+      propensity, assess support, map which estimands the design can
+      deliver, simulate outcome-blind, estimate, report.
     contents:
       - create_analysis_lock
-      - create_simple_lock
+      - declare_estimand_ladder
       - fit_ps
       - assess_support
-      - support_thresholds
       - estimand_feasibility
-      - who_is_unsupported
-      - declare_estimand_ladder
-      - support_surfaces
       - simulate_support
-      - check_locked_estimator
+      - estimate_effect
       - run_estimand_ladder
-      - design_report
-
-  - title: Estimators
-    desc: The estimands the ladder lands on, and the guard on every estimate.
-    contents:
       - run_clean_tmle
-      - run_ipcw_tmle
-      - run_att_tmle
-      - estimate_ato
-      - run_trimmed_tmle
-      - run_matched_tmle
-      - run_iptw_workflow
-      - run_match_workflow
-      - run_crude_workflow
-      - fit_tmle_treatment_mechanism
-      - fit_tmle_outcome_mechanism
-      - run_tmle_targeting_step
-      - extract_tmle_estimate
-      - fit_final_workflows
-      - summarize_cleanroom_results
-      - implausibility_check
-      - bootstrap_rd_variance
-      - select_variance_method
-      - estimate_tmle_risk_point
-      - compute_aipw
-
-  - title: Outcome-blind simulation and candidate selection
-    contents:
-      - run_plasmode_feasibility
-      - run_plasmode_dq_stress
-      - default_dq_scenarios
-      - summarize_dq_degradation
-      - summarize_plasmode_results
-      - assess_dgp_fidelity
-      - tmle_candidate
-      - expand_tmle_candidate_grid
-      - fit_tmle_candidate_set
-      - select_tmle_candidate
-      - validate_tmle_candidates
-
-  - title: Design-stage tools
-    desc: Multi-contrast locks, negative controls, sensitivity, precision.
-    contents:
+      - design_report
       - create_contrast_locks
-      - define_negative_control
-      - run_negative_control_tmle
+
+  - title: Design checks
+    contents:
       - run_negative_control_ladder
       - check_process_indicators
-      - compute_evalue
-      - compute_G_value
-      - run_delta_sensitivity
       - estimate_design_precision
-      - summarize_event_support
+
+  - title: Outcome-blind candidate selection
+    contents:
+      - tmle_candidate
+      - run_plasmode_feasibility
+      - run_plasmode_dq_stress
+      - select_tmle_candidate
+      - select_variance_method
+
+  - title: Sensitivity
+    contents:
+      - compute_evalue
+      - run_delta_sensitivity
 
   - title: Nuisance models and learners
     contents:
       - build_sl_library
-      - compute_n_eff
-      - recommend_cv_V
       - resolve_truncation_rule
-      - fit_ps_glm
-      - fit_ps_superlearner
-      - wrap_ps_fit
       - sanitize_covariates
       - SL.glmnet.bounded
       - SL.glm.pca
@@ -96,16 +56,10 @@ reference:
   - title: Plots and tables
     contents:
       - love_plot
-      - love_plot_threeway
       - forest_plot
-      - clever_covariate_plot
-      - ic_histogram
       - clean_weight_diagnostics
-      - compute_ps_diagnostics
-      - compute_matched_smds
       - make_table1
       - make_table2
-      - make_wt_summary_table
       - attrition_table
 
   - title: Cumulative-risk grammar
@@ -118,7 +72,6 @@ reference:
       - identify_competing_risk
       - identify_subject
       - identify_interval
-      - identify_missing
       - estimate_ipwrisk
       - estimate_gcomprisk
       - estimate_aipwrisk
@@ -126,73 +79,10 @@ reference:
       - estimate_surv_tmle
       - estimate_lmtp
 
-  - title: Locks, masking and persistence
+  - title: Locks, masking, persistence, data
     contents:
       - mask_outcome
       - unmask_outcome
       - save_lock
       - load_lock
-      - validate_analysis_lock
-      - get_final_cohort
       - sim_func1
-      - expit
-      - logit
-
-  - title: Enforced two-pass entry (optional)
-    desc: >
-      The software-enforced path. Locks from run_clean_tmle_preoutcome()
-      require a recorded authorisation before Stage 4; plain locks do not.
-    contents:
-      - run_clean_tmle_preoutcome
-      - run_clean_tmle_primary
-      - build_dossier
-      - lock_primary_tmle_spec
-      - get_primary_tmle_spec
-
-  - title: Superseded in 0.2.0
-    desc: >
-      The 0.1.x checkpoint, gate, audit and decision-log layer. Everything
-      keeps working and emits a once-per-session pointer to its replacement;
-      recording lives in the lock's design log and in the cleanroomGov
-      companion package.
-    contents:
-      - checkpoint_cohort_adequacy
-      - checkpoint_balance
-      - checkpoint_residual_bias
-      - checkpoint_weights
-      - new_checkpoint
-      - record_checkpoint
-      - create_audit_log
-      - record_stage
-      - export_audit_trail
-      - save_audit
-      - load_audit
-      - authorize_outcome_analysis
-      - assert_outcome_authorized
-      - gate_all
-      - gate_check
-      - gate_dq
-      - decision_thresholds
-      - attach_decision_thresholds
-      - dt_cohort
-      - dt_balance
-      - dt_plasmode
-      - dt_dq
-      - dt_nco
-      - init_decision_log
-      - log_decision_entry
-      - save_decision_log
-      - record_decision_log_entry
-      - export_decision_log
-      - run_residual_confounding_stage
-      - run_negative_control
-      - refine_ps_after_nco
-      - sensitivity_truncation
-      - tipping_point_sensitivity
-      - run_positivity_diagnostics
-      - print_locked_spec
-      - create_analysis_lock_from_yaml
-      - fit_ps_parallel
-      - validate_superlearner_spec
-      - extreme_weights
-      - inspect_ipw_weights

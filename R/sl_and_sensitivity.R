@@ -45,7 +45,7 @@
 #' validate_superlearner_spec(n = 200, n_events = 25,
 #'                            library = c("SL.glm"))
 #'
-#' @export
+#' @keywords internal
 validate_superlearner_spec <- function(n, n_events = NULL,
                                         library = NULL) {
   if (!is.numeric(n) || length(n) != 1L || n < 1)
@@ -123,7 +123,7 @@ validate_superlearner_spec <- function(n, n_events = NULL,
 #' # rescueCo full-cohort TMLE: RD = 0.031, 95% CI (-0.001, 0.063)
 #' tipping_point_sensitivity(0.0311, -0.0007, 0.0629)
 #'
-#' @export
+#' @keywords internal
 tipping_point_sensitivity <- function(estimate, ci_lower, ci_upper,
                                        null_value = 0) {
   if (any(is.na(c(estimate, ci_lower, ci_upper))))

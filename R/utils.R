@@ -21,7 +21,7 @@ NULL
 #' expit(-Inf) # 0
 #'
 #' @seealso [logit()] for the inverse operation.
-#' @export
+#' @keywords internal
 expit <- function(x) {
   1 / (1 + exp(-x))
 }
@@ -41,7 +41,7 @@ expit <- function(x) {
 #' logit(0.9)  # ~2.20
 #'
 #' @seealso [expit()] for the inverse operation.
-#' @export
+#' @keywords internal
 logit <- function(p) {
   log(p / (1 - p))
 }

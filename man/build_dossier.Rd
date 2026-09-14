@@ -39,3 +39,4 @@ propensity-score balance, outcome-blind candidate selection and DQ
 degradation, negative-control estimates, and the pre-outcome decision with
 its audit trail. No comparative treatment-outcome estimate is included.
 }
+\keyword{internal}

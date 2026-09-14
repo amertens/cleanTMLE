@@ -35,7 +35,7 @@ NULL
 #' @examples
 #' default_dq_scenarios()
 #' default_dq_scenarios("exploratory")
-#' @export
+#' @keywords internal
 default_dq_scenarios <- function(preset = c("regulatory_standard",
                                              "exploratory", "stress")) {
   preset <- match.arg(preset)
@@ -89,7 +89,7 @@ default_dq_scenarios <- function(preset = c("regulatory_standard",
 #' \dontrun{
 #' print_locked_spec(lock)
 #' }
-#' @export
+#' @keywords internal
 print_locked_spec <- function(lock) {
   .superseded("print_locked_spec", "declare_estimand_ladder(), which records the selected specification on the lock")
   if (!inherits(lock, "cleanroom_lock"))
@@ -643,6 +643,11 @@ run_plasmode_dq_stress <- function(lock,
       "design = 'generate_treatment' unless you are reproducing legacy runs."),
       .frequency = "once", .frequency_id = "plasmode_sample_treatment_dq")
   }
+  # A preset name is accepted directly: "regulatory_standard" (the default
+  # five threats), "exploratory", or "stress".
+  if (is.character(data_quality_scenarios) &&
+      length(data_quality_scenarios) == 1L)
+    data_quality_scenarios <- default_dq_scenarios(data_quality_scenarios)
 
   if (is.null(tmle_candidates))
     tmle_candidates <- expand_tmle_candidate_grid()
@@ -1203,7 +1208,7 @@ plot.plasmode_dq_results <- function(x, metric = c("rmse", "bias", "coverage"),
 #' audit <- record_checkpoint(audit, cp_dq)
 #' gate  <- gate_all(cp1, cp2, cp_dq, cp3, allow_flag = TRUE)
 #' }
-#' @export
+#' @keywords internal
 gate_dq <- function(dq_results,
                     candidate      = NULL,
                     max_abs_bias   = 0.02,
@@ -1304,16 +1309,22 @@ gate_dq <- function(dq_results,
 }
 
 
+#' @export
+summary.plasmode_dq_results <- function(object, ...) {
+  summarize_dq_degradation(object)
+}
+
 #' Summarise DQ Stress Test as a Degradation Table
 #'
 #' Computes the relative change in bias, RMSE, and coverage versus the
 #' baseline (no degradation) for each DQ scenario, level, and candidate.
+#' Reached as `summary()` on a `plasmode_dq_results` object.
 #'
 #' @param dq_results A \code{plasmode_dq_results} object.
 #'
 #' @return A data.frame with relative degradation metrics.
 #'
-#' @export
+#' @keywords internal
 summarize_dq_degradation <- function(dq_results) {
   if (!inherits(dq_results, "plasmode_dq_results"))
     stop("`dq_results` must be a plasmode_dq_results object.", call. = FALSE)
@@ -1382,7 +1393,7 @@ summarize_dq_degradation <- function(dq_results) {
 #'   covariates = c("age", "sex", "biomarker"), treatment = "treatment")
 #' print(fid)
 #' }
-#' @export
+#' @keywords internal
 assess_dgp_fidelity <- function(real_data, synth_data, covariates,
                                 treatment = NULL,
                                 smd_threshold = 0.10,

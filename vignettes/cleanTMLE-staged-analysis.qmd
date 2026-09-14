@@ -75,10 +75,8 @@ Two more terms come up in the second half of the vignette: **plasmode simulation
 Before introducing any governance machinery, we run the full estimator menu on the clinical anchor and compare them on a single figure. This is the workflow you can lift straight into a methods-development analysis.
 
 ```{r plain-workflow}
-# 1. Create a "simple" lock that disables the staged-analysis machinery
-#    (no outcome guard, no gate, no required audit). The fingerprint
-#    and design diagnostics remain available.
-plain_lock <- create_simple_lock(
+# 1. Lock the specification: data, variable roles, learner library, seed.
+plain_lock <- create_analysis_lock(
   data       = dat,
   treatment  = "treatment",
   outcome    = "event_24",
@@ -87,21 +85,26 @@ plain_lock <- create_simple_lock(
   seed       = 2026
 )
 
-# 2. Propensity-score model + overlap and balance diagnostics
-ps      <- fit_ps_superlearner(plain_lock)
-ps_diag <- compute_ps_diagnostics(ps)
-print(ps_diag)
+# 2. Propensity score, then the support assessment: overlap verdict,
+#    weight diagnostics, ESS, c-statistic, and the balance table.
+ps  <- fit_ps(plain_lock)
+sup <- assess_support(ps)
+sup
 ```
 
-```{r plain-overlap, fig.cap = "Propensity-score overlap by treatment arm. Both arms should have density across the same range; gaps signal positivity strain."}
-plot(ps_diag)
+```{r plain-overlap, fig.cap = "Mirrored propensity histogram by treatment arm, reference band shaded. Both arms should inhabit the same range; a one-sided pile-up signals positivity strain."}
+plot(sup)
 ```
 
-The overlap plot is the first thing a reviewer should see. If the two density curves do not cover the same range, adjustment cannot recover a marginal contrast for the full eligible cohort and you will need to consider matching or trimming.
+The support plot is the first thing a reviewer should see. If the two arms
+do not cover the same propensity range, adjustment cannot recover a
+marginal contrast for the full eligible cohort, and the estimand question
+of the second half of this vignette is live. `love_plot(sup)` draws the
+balance view of the same object.
 
 ```{r plain-estimators, results = "hide"}
-# 3. Attach a primary TMLE specification to the lock so the four-step
-#    TMLE knows which library and truncation level to use.
+# 3. Bind the analysis choice to the lock: the estimand plan plus the
+#    TMLE specification the plasmode selector would normally pick.
 primary_spec <- tmle_candidate(
   candidate_id = "plain_tmle",
   label        = "TMLE for the plain workflow",
@@ -109,18 +112,22 @@ primary_spec <- tmle_candidate(
   g_library    = c("SL.glm", "SL.glmnet"),
   truncation   = 0.01
 )
-plain_lock <- lock_primary_tmle_spec(plain_lock, primary_spec)
+plain_lock <- declare_estimand_ladder(plain_lock, primary = "ATE",
+                                      candidate = primary_spec)
 
-# 4. Run four estimators on the same lock and same PS
-crude  <- run_crude_workflow(plain_lock)
-match  <- run_match_workflow(plain_lock, ps_fit = ps)
-iptw   <- run_iptw_workflow(plain_lock, ps_fit = ps)
+# 4. Four estimators through the one front door, same lock, same PS.
+crude <- estimate_effect(plain_lock, estimand = "ATE", estimator = "crude")
+match <- estimate_effect(plain_lock, ps, estimand = "ATE",
+                         estimator = "match")
+iptw  <- estimate_effect(plain_lock, ps, estimand = "ATE",
+                         estimator = "iptw")
 
-# 5. TMLE via the four-step modular API
-g_fit    <- fit_tmle_treatment_mechanism(plain_lock, ps)
-Q_fit    <- fit_tmle_outcome_mechanism(plain_lock, g_fit)
-tmle_upd <- run_tmle_targeting_step(g_fit, Q_fit)
-tmle     <- extract_tmle_estimate(tmle_upd)
+# 5. TMLE, with the four modular steps returned for inspection: the
+#    treatment mechanism, the outcome mechanism, the targeting step, and
+#    the extracted estimate (the clever covariate lives in $steps).
+tmle <- estimate_effect(plain_lock, ps, estimand = "ATE",
+                        estimator = "tmle", missing = "complete_case",
+                        return_steps = TRUE)
 ```
 
 ```{r plain-summary}
@@ -205,7 +212,7 @@ A  <- rbinom(n, 1, plogis(-2.2 + 3.2 * x1 + 0.5 * x2))
 y  <- rbinom(n, 1, plogis(-2 + 0.5 * x1 + 0.4 * A))
 sev <- data.frame(x1 = x1, x2 = x2, treatment = A, outcome = y)
 
-lock_s <- create_simple_lock(sev, "treatment", "outcome", c("x1", "x2"),
+lock_s <- create_analysis_lock(sev, "treatment", "outcome", c("x1", "x2"),
                              sl_library = "SL.glm", seed = 11L)
 lock_s <- declare_estimand_ladder(lock_s, primary = "ATE",
                                   fallbacks = c("trimmed_ATE", "ATT", "ATO"),
@@ -232,9 +239,10 @@ one, so both remain estimable where the ATE is not.
 estimand_feasibility(ps_s)
 ```
 
-`who_is_unsupported(ps_s, vars = ...)` profiles the patients outside the
-band, which is what trimming would remove; trimming changes the estimand and
-the profile is what makes the change concrete. `simulate_support()` asks the
+`estimand_feasibility(ps_s, profile_vars = ...)` also profiles the patients
+outside the band (its `$unsupported` table), which is what trimming would
+remove; trimming changes the estimand and the profile is what makes the
+change concrete. `simulate_support()` asks the
 dynamic version of the question, generating synthetic outcomes over a
 prespecified family of surfaces and reporting, per estimand, where its
 estimator stays within a bias tolerance at near-nominal coverage. Estimation

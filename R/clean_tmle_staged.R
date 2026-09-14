@@ -54,7 +54,7 @@
 #'   the `audit`, the `gate` token, the `dossier`, and the design diagnostics.
 #'
 #' @seealso [run_clean_tmle_primary()], [authorize_outcome_analysis()]
-#' @export
+#' @keywords internal
 run_clean_tmle_preoutcome <- function(data, Avar, Yvar, covariates = NULL,
                                       learner_lib,
                                       tmle_candidates      = NULL,
@@ -197,7 +197,7 @@ run_clean_tmle_preoutcome <- function(data, Avar, Yvar, covariates = NULL,
 #'   `risk_difference`, the CI, the (now authorised) `lock`, and the `dossier`.
 #'
 #' @seealso [run_clean_tmle_preoutcome()], [authorize_outcome_analysis()]
-#' @export
+#' @keywords internal
 run_clean_tmle_primary <- function(pre, authorization = NULL,
                                    allow_outcome_access = FALSE,
                                    truncate = 0.01, verbose = TRUE) {
@@ -291,7 +291,7 @@ run_clean_tmle_primary <- function(pre, authorization = NULL,
 #' @param gate Optional `pre_outcome_gate`.
 #'
 #' @return A `clean_tmle_dossier` object.
-#' @export
+#' @keywords internal
 build_dossier <- function(lock, audit, ps_diagnostics = NULL,
                           plasmode_results = NULL, dq_results = NULL,
                           selected = NULL, nc_results = NULL, gate = NULL) {

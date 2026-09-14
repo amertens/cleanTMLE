@@ -156,7 +156,7 @@
 #' Abadie, A. and Imbens, G. W. (2016). Matching on the estimated propensity
 #' score. *Econometrica*, 84(2), 781--807.
 #'
-#' @export
+#' @keywords internal
 bootstrap_rd_variance <- function(data, treatment, outcome, covariates,
                                   estimator = c("tmle", "iptw", "match_tmle"),
                                   R = 1000L, sl_library = c("SL.glm"),

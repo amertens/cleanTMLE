@@ -31,6 +31,7 @@
 #' @export
 design_report <- function(lock, support, feasibility,
                           simulation = NULL, nc_ladder = NULL,
+                          protocol = NULL,
                           extra = NULL) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
@@ -97,6 +98,7 @@ design_report <- function(lock, support, feasibility,
     feasible_estimands = feasible_estimands,
     primary_supported = primary_ok,
     recommendation = recommendation,
+    emulation = emulation_table(lock, protocol = protocol),
     created_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
     extra = extra
   )
@@ -126,7 +128,7 @@ design_report <- function(lock, support, feasibility,
 #' @references Cashin AG, Hansford HJ, Hernan MA, et al. (2025). Guidance
 #'   for reporting target trial emulation studies (TARGET). JAMA
 #'   334(12):1084-1093.
-#' @export
+#' @keywords internal
 emulation_table <- function(lock, protocol = NULL) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)

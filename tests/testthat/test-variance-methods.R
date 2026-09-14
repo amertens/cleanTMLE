@@ -13,7 +13,7 @@ make_conf_data <- function(n = 1500, seed = 1) {
 
 test_that("bootstrap_rd_variance returns a valid SE and interval (IPTW)", {
   d <- make_conf_data()
-  bs <- bootstrap_rd_variance(d$data, "A", "Y", c("W1", "W2"),
+  bs <- cleanTMLE:::bootstrap_rd_variance(d$data, "A", "Y", c("W1", "W2"),
                               estimator = "iptw", R = 300L, seed = 7L)
   expect_true(is.finite(bs$se) && bs$se > 0)
   expect_length(bs$ci, 2)
@@ -30,7 +30,7 @@ test_that("bootstrap_rd_variance works for TMLE", {
   skip_if_not_installed("tmle")
   skip_if_not_installed("SuperLearner")
   d <- make_conf_data(n = 1000, seed = 3)
-  bs <- bootstrap_rd_variance(d$data, "A", "Y", c("W1", "W2"),
+  bs <- cleanTMLE:::bootstrap_rd_variance(d$data, "A", "Y", c("W1", "W2"),
                               estimator = "tmle", R = 40L,
                               sl_library = "SL.glm", seed = 5L)
   expect_true(is.finite(bs$se) && bs$se > 0)
@@ -41,7 +41,7 @@ test_that("bootstrap_rd_variance works for match_tmle", {
   skip_if_not_installed("tmle")
   skip_if_not_installed("SuperLearner")
   d <- make_conf_data(n = 1200, seed = 7)
-  bs <- bootstrap_rd_variance(d$data, "A", "Y", c("W1", "W2"),
+  bs <- cleanTMLE:::bootstrap_rd_variance(d$data, "A", "Y", c("W1", "W2"),
                               estimator = "match_tmle", R = 30L,
                               sl_library = "SL.glm", seed = 11L)
   expect_true(is.finite(bs$se) && bs$se > 0)

@@ -76,12 +76,12 @@ test_that("Outcome misclassification attenuates the simulated effect toward 0", 
 
 test_that("checkpoint_weights output is gate-compatible", {
   w <- runif(200, 0.7, 1.4)
-  cp <- checkpoint_weights(w, max_weight_threshold = 5,
+  cp <- cleanTMLE:::checkpoint_weights(w, max_weight_threshold = 5,
                            ess_floor = 50,
                            extreme_prop_threshold = 0.05)
   expect_s3_class(cp, "cleantmle_checkpoint")
-  # gate_all() should be able to consume it without error.
-  res <- gate_all(cp, allow_flag = TRUE)
+  # cleanTMLE:::gate_all() should be able to consume it without error.
+  res <- cleanTMLE:::gate_all(cp, allow_flag = TRUE)
   expect_s3_class(res, "cleantmle_checkpoint")
   expect_true(res$decision %in% c("GO", "FLAG", "STOP"))
 })

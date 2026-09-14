@@ -48,7 +48,7 @@
 #' @examples
 #' support_surfaces()
 #' support_surfaces(confounding = c(0, 0.5, 1, 2), modification = c(0, 0.5, 1))
-#' @export
+#' @keywords internal
 support_surfaces <- function(confounding = c(0, 1, 2),
                              modification = c(0, 1),
                              complexity = "linear",
@@ -261,10 +261,11 @@ print.support_surfaces <- function(x, ...) {
 #' @export
 simulate_support <- function(lock,
                              ps_fit = NULL,
-                             surface = support_surfaces(),
+                             surface = NULL,
                              reps = 200L,
                              design = c("generate_treatment",
-                                        "sample_treatment"),
+                                        "sample_treatment",
+                                        "parametric_bootstrap"),
                              band = c(0.05, 0.95),
                              q0_source = c("synthetic", "negative_control",
                                            "auxiliary", "heldout",
@@ -280,8 +281,21 @@ simulate_support <- function(lock,
                              verbose = TRUE) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
-  if (!inherits(surface, "support_surfaces"))
-    stop("`surface` must come from support_surfaces().", call. = FALSE)
+  # `surface` is a plain named list of overrides for the prespecified
+  # outcome-surface family (confounding, modification, complexity, effect,
+  # base_rate); NULL takes the documented defaults.
+  if (is.null(surface)) {
+    surface <- support_surfaces()
+  } else if (!inherits(surface, "support_surfaces")) {
+    if (!is.list(surface) || is.null(names(surface)))
+      stop("`surface` must be a named list (confounding, modification, ",
+           "complexity, effect, base_rate).", call. = FALSE)
+    bad <- setdiff(names(surface), names(formals(support_surfaces)))
+    if (length(bad))
+      stop("Unknown surface field(s): ", paste(bad, collapse = ", "),
+           call. = FALSE)
+    surface <- do.call(support_surfaces, surface)
+  }
   design    <- match.arg(design)
   q0_source <- match.arg(q0_source)
   if (design == "sample_treatment")
@@ -290,6 +304,13 @@ simulate_support <- function(lock,
       "(2025, arXiv:2504.11740) show this induces a positivity violation by",
       "construction. Use the default generate_treatment design."),
       .frequency = "once", .frequency_id = "simulate_support_sample_trt")
+  if (design == "parametric_bootstrap") {
+    # Petersen et al.'s (2012) check on the locked estimator: the fitted
+    # nuisance models generate the truth, so the result is optimistic by
+    # construction and labelled as such.
+    return(check_locked_estimator(lock, ps_fit = ps_fit, reps = reps,
+                                  truncation = truncation))
+  }
   if (q0_source == "primary_outcome" && !isTRUE(allow_outcome_q0))
     stop("Fitting Q0 on the primary outcome is not outcome-blind. ",
          "Pass allow_outcome_q0 = TRUE to authorise it explicitly, or use ",
@@ -611,7 +632,7 @@ plot.support_simulation <- function(x, metric = c("pass", "bias", "coverage"),
 #' @references Petersen ML, Porter KE, Gruber S, Wang Y, van der Laan MJ
 #'   (2012). Diagnosing and responding to violations in the positivity
 #'   assumption. Stat Methods Med Res 21:31-54.
-#' @export
+#' @keywords internal
 check_locked_estimator <- function(lock, ps_fit = NULL, reps = 200L,
                                    truncation = 0.01) {
   if (!inherits(lock, "cleanroom_lock"))

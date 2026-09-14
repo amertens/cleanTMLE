@@ -327,7 +327,7 @@ make_table2.tmle_fit <- function(x, ...) {
 #'
 #' @return A data.frame with weight summaries.
 #'
-#' @export
+#' @keywords internal
 make_wt_summary_table <- function(x, ...) {
   if (!inherits(x, "cr_result")) {
     stop("`x` must be a cleanTMLE result object.", call. = FALSE)
@@ -388,7 +388,7 @@ make_wt_summary_table <- function(x, ...) {
 #'
 #' @return A data.frame with the K most extreme-weighted observations.
 #'
-#' @export
+#' @keywords internal
 extreme_weights <- function(x, k = 10, cols = NULL, ...) {
   if (!inherits(x, "cr_result")) {
     stop("`x` must be a cleanTMLE result object.", call. = FALSE)
@@ -435,7 +435,7 @@ extreme_weights <- function(x, k = 10, cols = NULL, ...) {
 #'
 #' @return A numeric vector of weights.
 #'
-#' @export
+#' @keywords internal
 inspect_ipw_weights <- function(x, type = c("iptw", "ipcw", "combined"), ...) {
   if (!inherits(x, "cr_result")) {
     stop("`x` must be a cleanTMLE result object.", call. = FALSE)
