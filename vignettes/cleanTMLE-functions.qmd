@@ -146,10 +146,35 @@ stage, and what it uses from the outcome side of the data. A few
 rows marked *(cleanroomGov)* are governance helpers that moved to
 the companion **cleanroomGov** package in the estimation/governance
 split; they are documented here for continuity but are exported by
-`cleanroomGov`, not `cleanTMLE`.
+`cleanroomGov`, not `cleanTMLE`. Functions superseded in 0.2.0 (the
+checkpoint, gate-token, audit and decision-log layer) keep working,
+emit a once-per-session pointer to their replacement, and are grouped
+under Superseded on the pkgdown reference index; their rows below are
+kept for continuity.
 
 | Stage | Function | Outcome? | Purpose |
 |-------|----------|:--------:|---------|
+| Design | `fit_ps()` | No | One front door for propensity fitting (SuperLearner, GLM, external scores) |
+| Design | `assess_support()` | No | Graded overlap verdict (PASS/FLAG/SEVERE/FAIL), near-deterministic strata, tree search, mirrored plot |
+| Design | `support_thresholds()` | No | Prespecified thresholds for the verdict |
+| Design | `estimand_feasibility()` | No | Per-estimand weights, ESS, removals, target population, verdict |
+| Design | `who_is_unsupported()` | No | Profile of patients outside the support band |
+| Design | `declare_estimand_ladder()` | No | Pre-register primary, fallbacks, trigger, sensitivity floors |
+| Design | `support_surfaces()` | No | Prespecify the synthetic outcome-surface family |
+| Design | `simulate_support()` | Synthetic | Outcome-blind support map (generate-treatment plasmode, per-estimand truths) |
+| Design | `check_locked_estimator()` | Primary | Petersen parametric bootstrap on the locked estimator (labelled optimistic) |
+| Design | `design_report()` | No | The pre-outcome bundle a review team reads, with a recommendation |
+| Design | `emulation_table()` | No | TARGET protocol-versus-emulation table from the lock |
+| Design | `create_contrast_locks()` | No | One lock per contrast from a multi-level treatment, shared covariates and controls |
+| Design | `run_negative_control_ladder()` | NC | Registered controls on nested cohorts; names what turns null after restriction |
+| Design | `check_process_indicators()` | No | Care-process collider check conditional on severity |
+| 4 | `run_estimand_ladder()` | Primary | Estimate the declared primary when feasible plus every feasible fallback, logged |
+| 4 | `run_att_tmle()` | Primary | Complete-case ATT, never through Delta, same-g spec enforced |
+| 4 | `estimate_ato()` | Primary | Augmented overlap-weighted ATO with IF variance and exact-balance check |
+| 4 | `run_trimmed_tmle()` | Primary | Trimmed ATE with propensity refit; fixed bands or the Crump rule |
+| 4 | `implausibility_check()` | Primary | Flags estimates the observed data cannot support |
+| Util | `SL.glm.pca()`, `SL.glm.pca5()`, `SL.glm.pca10()` | n/a | PCA-GLM SuperLearner learners (rotation fitted per fold) |
+| Util | `SL.glmnet.ridge()`, `SL.glmnet.enet()` | n/a | Ridge and elastic-net glmnet learners |
 | Util | `expit()`, `logit()` | n/a | Inverse-logit / logit transforms |
 | Data | `sim_func1()` | n/a | Simulate causal-inference data |
 | 1a | `create_analysis_lock()` | No | Lock analytic specification |
