@@ -38,6 +38,7 @@ rather than by re-hashing the lock.
 }
 
 \examples{
+\dontrun{
 dat  <- sim_func1(n = 200, seed = 1)
 lock <- create_analysis_lock(dat, "treatment", "event_24",
                              c("age", "sex", "biomarker"), seed = 1)
@@ -46,5 +47,6 @@ spec <- tmle_candidate("glm_t01", "GLM trunc=0.01",
 lock <- lock_primary_tmle_spec(lock, spec)
 get_primary_tmle_spec(lock)
 
+}
 }
 \keyword{internal}

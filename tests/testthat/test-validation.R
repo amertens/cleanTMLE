@@ -39,7 +39,7 @@ test_that("Unweighted SMD matches direct computation on simulated data", {
                ref_bmi, tolerance = 1e-10)
 })
 
-# 3. (Coherence-check validation moved to the cleanroomGov package.)
+# 3. (Coherence-check validation lives in test-governance-notes.R.)
 
 # 4. DQ stress directional check: bias under outcome misclassification
 #    should attenuate a positive risk difference toward 0 -----------------
@@ -72,18 +72,7 @@ test_that("Outcome misclassification attenuates the simulated effect toward 0", 
   expect_lt(abs(rd_misclassified), abs(rd_observed))
 })
 
-# 5. checkpoint_weights returns a valid checkpoint object ------------
+# 5. (The checkpoint_weights validation died with the checkpoint layer
+#    in 0.3.0; clean_weight_diagnostics is validated in sections 1-2.)
 
-test_that("checkpoint_weights output is gate-compatible", {
-  w <- runif(200, 0.7, 1.4)
-  cp <- cleanTMLE:::checkpoint_weights(w, max_weight_threshold = 5,
-                           ess_floor = 50,
-                           extreme_prop_threshold = 0.05)
-  expect_s3_class(cp, "cleantmle_checkpoint")
-  # cleanTMLE:::gate_all() should be able to consume it without error.
-  res <- cleanTMLE:::gate_all(cp, allow_flag = TRUE)
-  expect_s3_class(res, "cleantmle_checkpoint")
-  expect_true(res$decision %in% c("GO", "FLAG", "STOP"))
-})
-
-# 6. (Risk-report-table validation moved to the cleanroomGov package.)
+# 6. (Risk-report-table validation lives in test-governance-notes.R.)

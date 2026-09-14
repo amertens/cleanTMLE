@@ -1,0 +1,131 @@
+---
+title: "Get started with cleanTMLE"
+author: "cleanTMLE Authors"
+date: today
+format:
+  html:
+    toc: true
+    self-contained: true
+vignette: >
+  %\VignetteIndexEntry{Get started with cleanTMLE}
+  %\VignetteEngine{quarto::html}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>",
+                      warning = FALSE, message = FALSE)
+library(cleanTMLE)
+```
+
+cleanTMLE answers a comparative-effectiveness question in two moves:
+first it decides, before the outcome is examined, whether the design
+can support the comparison and with which estimand; then it estimates
+with targeted maximum likelihood. This vignette runs the shortest
+honest path through that workflow, five verbs on a simulated cohort.
+The full staged workflow, with the candidate grid, the data-quality
+stress test, and the negative-control ladder, is in the *Full
+workflow* article.
+
+Read the simulated cohort as a pharmaco-epidemiology study: a new
+medication (`treatment`) started at enrolment versus standard care, a
+binary event at 24 months (`event_24`), and four baseline covariates.
+
+```{r data}
+dat <- sim_func1(n = 1000, seed = 42)
+str(dat[, c("treatment", "event_24", "age", "sex", "biomarker")])
+```
+
+## 1. Lock the specification
+
+`create_analysis_lock()` seals the analytic specification, data,
+variable roles, learner library, and seed, behind a SHA-256
+fingerprint, before any outcome is read. The returned lock is the one
+object every later verb takes. Since 0.3.0 the lock's data frame holds
+design data only; the primary outcome lives in a separate store that
+only the Stage 4 estimators join back.
+
+```{r lock}
+lock <- create_analysis_lock(
+  data       = dat,
+  treatment  = "treatment",
+  outcome    = "event_24",
+  covariates = c("age", "sex", "biomarker", "comorbidity"),
+  seed       = 42)
+print(lock)
+```
+
+Any later change to the design data, the roles, or the declarations
+invalidates the fingerprint, so the review team can verify that what
+was estimated is what was declared.
+
+## 2. Fit the propensity score
+
+`fit_ps()` fits the treatment mechanism on the lock. The
+SuperLearner method is the default in real studies; the plain
+logistic model keeps this vignette fast.
+
+```{r ps}
+ps <- fit_ps(lock, method = "glm")
+print(ps)
+```
+
+## 3. Assess support
+
+`assess_support()` turns the fitted propensity into the design team's
+overlap verdict: the share of patients outside the support band, the
+weight tails, the effective sample size, and a graded reading
+(PASS, FLAG, SEVERE, FAIL). Everything in it is computable without the
+outcome.
+
+```{r support}
+sup <- assess_support(ps)
+print(sup)
+```
+
+## 4. Map the feasible estimands
+
+Poor overlap does not have to end a study; it often means the design
+answers a different question than the one first asked.
+`estimand_feasibility()` walks the estimand ladder, from the ATE
+through trimmed, treated-only, overlap, and matched estimands, and
+reports which of them this design can deliver.
+
+```{r feasibility}
+feas <- estimand_feasibility(ps)
+print(feas)
+```
+
+## 5. Estimate
+
+`estimate_effect()` is the single front door for Stage 4: it joins the
+outcome back from the store, fits the declared estimand with the
+requested estimator, and returns the risk difference with its
+influence-function confidence interval.
+
+```{r estimate}
+fit <- estimate_effect(lock, ps_fit = ps, estimand = "ATE",
+                       estimator = "tmle",
+                       sl_library = c("SL.glm", "SL.mean"))
+print(fit)
+```
+
+## Where to go next
+
+The pre-outcome half of a real study has more to it than these five
+verbs, and each addition is one more verb on the same lock:
+
+- `declare_negative_controls()` and `declare_estimand_ladder()` put
+  the decision rules on the lock, fingerprinted, before outcome
+  access.
+- `define_candidates()`, `stress_test()`, and `select_candidate()`
+  choose the TMLE specification on simulated outcomes and grade it
+  under declared data-quality threats, with a locked GO / FLAG / STOP
+  verdict and tipping points.
+- `negative_control_ladder()` and `check_process_indicators()` screen
+  for residual confounding and collider structure.
+- `design_report()` and `export_design_log()` assemble what the
+  review team reads, and the decision record it releases.
+
+The *Full workflow* article runs all sixteen verbs on this same
+cohort.

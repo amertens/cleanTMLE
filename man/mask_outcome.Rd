@@ -2,7 +2,7 @@
 % Please edit documentation in R/stages.R
 \name{mask_outcome}
 \alias{mask_outcome}
-\title{Mask the Outcome Column in the Lock}
+\title{Mask the Outcome}
 \usage{
 mask_outcome(lock)
 }
@@ -10,13 +10,16 @@ mask_outcome(lock)
 \item{lock}{A \code{cleanroom_lock}.}
 }
 \value{
-A modified \code{cleanroom_lock} with \code{lock$data[[outcome]]}
-set to \code{NA} and \code{lock$.outcome_masked} set to \code{TRUE}.
+A modified \code{cleanroom_lock} with the outcome removed and
+\code{lock$.outcome_masked} set to \code{TRUE}.
 }
 \description{
-Returns a modified copy of the lock in which the outcome column is
-replaced with \code{NA}.  This operationalises the clean-room principle of
-keeping analysts blind to outcome data during the design stage.
+Returns a modified copy of the lock with the outcome physically
+absent: on a store-format lock (0.3.0 and later) the outcome store is
+removed, so no outcome values exist anywhere on the returned object;
+on a legacy lock the outcome column is set to \code{NA}. Keep an
+unmasked lock (or the raw data) to unmask later with
+\code{\link{unmask_outcome}}.
 }
 \section{Clean-room stage}{
  Design stage (pre-outcome blinding).
@@ -27,6 +30,6 @@ dat    <- sim_func1(n = 200, seed = 1)
 lock   <- create_analysis_lock(dat, "treatment", "event_24",
                                c("age", "sex", "biomarker"), seed = 1)
 masked <- mask_outcome(lock)
-all(is.na(masked$data[[masked$outcome]]))  # TRUE
+is.null(masked$outcome_store)  # TRUE: physically outcome-free
 
 }

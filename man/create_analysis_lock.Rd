@@ -19,7 +19,9 @@ create_analysis_lock(
   dgp_mode = c("hybrid", "external_pilot"),
   nc_criteria = NULL,
   dq_thresholds = NULL,
-  roles = NULL
+  roles = NULL,
+  estimand = NULL,
+  sensitivity_plans = NULL
 )
 }
 \arguments{
@@ -47,13 +49,16 @@ enforcement; see \code{enforce}.}
 columns to register on the lock at creation (before any downstream
 filtering can touch them).}
 
-\item{mask}{Logical; if \code{TRUE}, the outcome column is masked (physically
-blanked) in the returned lock. Keep the original data to unmask later
-with \code{\link[=unmask_outcome]{unmask_outcome()}}. Default \code{FALSE}.}
+\item{mask}{Logical; if \code{TRUE}, the outcome store is removed from the
+returned lock, so it is physically outcome-free. Keep an unmasked
+lock (or create one later over the same data) to unmask with
+\code{\link[=unmask_outcome]{unmask_outcome()}}. Default \code{FALSE}.}
 
-\item{enforce}{Logical; if \code{TRUE}, the lock additionally requires a
-recorded pre-outcome authorisation before Stage 4 estimators run (the
-software-enforced two-pass contract). Default \code{FALSE}.}
+\item{enforce}{Logical; if \code{TRUE}, Stage 4 estimators refuse to run
+until the outcome has been unmasked through \code{\link[=unmask_outcome]{unmask_outcome()}} with
+a named \code{approved_by}, which writes the authorisation into the
+design log. This is the single institutional switch. Default
+\code{FALSE}.}
 
 \item{dgp_mode}{Character; the plasmode outcome-generator mode, a
 locked field read by \code{\link[=run_plasmode_feasibility]{run_plasmode_feasibility()}} and
@@ -85,6 +90,20 @@ pure function of these thresholds and the declared threat grid.}
 personnel structure (for example \code{programmer}, \code{analyst},
 \code{analytic_advisor}, \code{review_team}). Recorded and printed in the
 design report header; nothing is enforced.}
+
+\item{estimand}{Optional structured estimand description: a named
+list with any of \code{description}, \code{population},
+\code{treatment_strategies} (length-2 character contrast),
+\code{outcome_label}, \code{followup}, \code{contrast} (default
+\code{"risk_difference"}), and \code{statistical_estimand}; or a single
+character description. Descriptive metadata; not part of the
+fingerprint.}
+
+\item{sensitivity_plans}{Optional named list of sensitivity-analysis
+plans; each element name is the plan label and each element may
+carry \code{description} and \code{settings} (a named list, for example
+\code{list(truncation = c(0.01, 0.05, 0.10))}). Descriptive metadata;
+not part of the fingerprint.}
 }
 \value{
 An object of class \code{cleanroom_lock} containing all specified
@@ -113,42 +132,36 @@ these invalidates the hash.
 
 \section{What does NOT invalidate the lock}{
 
-Audit-log entries, decision-log entries, recorded checkpoint objects, and
-user-supplied notes are kept separately (e.g. in the
-\code{cleantmle_audit}) and do not feed into the lock hash. They are
-recorded for traceability but the lock fingerprint is unchanged.
+Design-log entries and user-supplied notes accumulate on the lock for
+traceability and do not feed into the lock hash; the fingerprint
+covers the specification, not the running record.
 }
 
-\section{Outcome-access taxonomy}{
+\section{The outcome store}{
 
-The workflow distinguishes pre-outcome access (no Y, marginal Y summaries
-used only for design-stage precision, simulated Y from plasmode simulation,
-and negative-control Y) from post-outcome access (primary Y). Stage 4
-functions check \code{lock$.outcome_masked} via the internal outcome guard
-and refuse to run on the primary Y until the gate authorises it or the
-caller passes \code{override_clean_room = TRUE}.
+Since 0.3.0 the lock's data frame holds design data only (covariates,
+treatment, missingness indicators, negative controls); the primary
+outcome column never sits in \code{lock$data}. The outcome lives in
+\code{lock$outcome_store}, a sealed object that only the Stage 4
+estimators join back, after the outcome guard.
+\code{\link{mask_outcome}} removes the store from its copy of the
+lock, so a masked lock is physically outcome-free, and
+\code{\link{unmask_outcome}} restores it from an unmasked original
+with a design-log entry recording the unmasking (on an
+\code{enforce = TRUE} lock, with a named approver).
 }
 
-\section{GO / FLAG / STOP decisions}{
+\section{Verdicts, not tokens}{
 
-Checkpoint functions (\code{\link{checkpoint_cohort_adequacy}},
-\code{\link{checkpoint_balance}}, \code{\link{checkpoint_residual_bias}})
-each return a \code{cleantmle_checkpoint} with a \code{decision} of
-GO, FLAG, or STOP. \code{\link{authorize_outcome_analysis}} and
-\code{\link{gate_all}} combine these: any STOP yields an overall STOP;
-any FLAG yields FLAG when \code{allow_flag = TRUE} (the default,
-interpreted as conditional GO) and is escalated to STOP when
-\code{allow_flag = FALSE}.
-}
-
-\section{Manual overrides}{
-
-An \code{override_clean_room = TRUE} call to a Stage 4 function bypasses
-the outcome guard for that call. The override does not erase the STOP or
-FLAG result recorded in the audit log; it records a documented decision
-to proceed despite that result. Analysts should additionally call
-\code{\link{record_decision_log_entry}} with
-\code{decision_type = "override"} to capture the rationale.
+The design stage records graded verdicts on its result objects: the
+support verdict of \code{\link{assess_support}}, the per-estimand
+verdicts of \code{\link{estimand_feasibility}}, the locked
+data-quality verdict and tipping points of \code{\link{stress_test}},
+and the Check Point 3 reading of \code{\link{negative_control_ladder}}
+under the locked \code{nc_criteria}. \code{\link{design_report}}
+assembles them for the review team; estimand switches and overrides
+are logged design decisions in \code{lock$design_log}, exported with
+\code{\link{export_design_log}}.
 }
 
 \examples{

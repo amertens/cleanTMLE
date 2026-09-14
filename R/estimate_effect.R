@@ -86,8 +86,8 @@ estimate_effect <- function(lock, ps_fit = NULL,
   missing   <- match.arg(missing)
   trim_rule <- match.arg(trim_rule)
   if (is.null(seed)) seed <- lock$seed
-  Y <- lock$data[[lock$outcome]]
-  use_ipcw <- switch(missing, auto = anyNA(Y), ipcw = TRUE,
+  Y <- .outcome_vector(lock)
+  use_ipcw <- switch(missing, auto = isTRUE(anyNA(Y)), ipcw = TRUE,
                      complete_case = FALSE)
   need_ps <- estimand != "ATE" || estimator %in% c("iptw", "match")
   if (need_ps && !inherits(ps_fit, "ps_fit"))
@@ -119,7 +119,7 @@ estimate_effect <- function(lock, ps_fit = NULL,
   if (estimand == "matched_ATT") {
     g <- pmin(pmax(as.numeric(ps_fit$ps_raw %||% ps_fit$ps), 1e-6), 1 - 1e-6)
     A <- as.integer(lock$data[[lock$treatment]])
-    set.seed(seed)
+    withr::local_seed(seed)
     mm <- .greedy_caliper_match(g, A, caliper_sd = caliper_sd)
     if (length(mm$treated) < 10L)
       stop("matched_ATT: fewer than 10 matched pairs.", call. = FALSE)
@@ -162,15 +162,15 @@ estimate_effect <- function(lock, ps_fit = NULL,
     est$estimand <- "ATE (complete case)"
     return(est)
   }
+  .check_outcome_access(lock, allow_outcome_access,
+                        caller = "estimate_effect")
   args <- .tmle_delegate_args(lock, family = family, use_delta = FALSE,
                               sl_library = sl_library, gbound = gbound,
                               cv_folds = cv_folds,
                               prescreen_g = prescreen_g)
-  .check_outcome_access(lock, allow_outcome_access,
-                        caller = "estimate_effect")
   if (!requireNamespace("tmle", quietly = TRUE))
     stop("Package 'tmle' is required.", call. = FALSE)
-  set.seed(seed)
+  withr::local_seed(seed)
   f <- do.call(tmle::tmle, args)
   est <- f$estimates$ATE
   guard <- implausibility_check(unname(est$psi), args$Y, args$A, family)

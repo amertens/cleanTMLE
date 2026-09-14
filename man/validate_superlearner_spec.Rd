@@ -55,9 +55,11 @@ small samples).
 }
 
 \examples{
+\dontrun{
 validate_superlearner_spec(n = 1693)
 validate_superlearner_spec(n = 200, n_events = 25,
                            library = c("SL.glm"))
 
+}
 }
 \keyword{internal}

@@ -17,10 +17,12 @@ Maps a real-valued linear predictor to the probability scale via the
 inverse-logit transformation: \eqn{p = 1 / (1 + e^{-x})}.
 }
 \examples{
+\dontrun{
 expit(0)    # 0.5
 expit(2)    # ~0.88
 expit(-Inf) # 0
 
+}
 }
 \seealso{
 \code{\link[=logit]{logit()}} for the inverse operation.

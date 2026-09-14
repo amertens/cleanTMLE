@@ -19,7 +19,9 @@ Implements the Phillips et al. 2023 rule of thumb:
 5,000 <= n_eff < 10,000; \code{V = 2} above 10,000.
 }
 \examples{
+\dontrun{
 recommend_cv_V(compute_n_eff(rbinom(200, 1, 0.1)))
 
+}
 }
 \keyword{internal}

@@ -23,6 +23,7 @@ for use when \code{SuperLearner} is not installed or for rapid sensitivity
 analyses.
 }
 \examples{
+\dontrun{
 dat  <- sim_func1(n = 200, seed = 1)
 lock <- create_analysis_lock(
   data = dat, treatment = "treatment", outcome = "event_24",
@@ -31,5 +32,6 @@ lock <- create_analysis_lock(
 ps_fit <- fit_ps_glm(lock)
 print(ps_fit)
 
+}
 }
 \keyword{internal}

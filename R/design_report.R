@@ -29,6 +29,9 @@
 #'   the locked-threshold verdict, that verdict enters the
 #'   recommendation (for the locked candidate when one is on the lock,
 #'   else the worst candidate).
+#' @param protocol Optional named character vector with the target
+#'   trial's protocol entries, rendered as the two-column TARGET
+#'   emulation table in the report.
 #' @param extra Optional named list of additional design-stage objects to
 #'   carry (for example a [check_process_indicators()] table).
 #' @return An object of class `design_report` with a `recommendation`

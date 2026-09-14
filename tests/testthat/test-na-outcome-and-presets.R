@@ -1,7 +1,7 @@
-# Regression tests for cleanTMLE 0.1.1 — outcome NA handling, preset
-# scenarios, attrition_table polymorphism, make_table1 lock method,
-# print_locked_spec, and cleanTMLE:::authorize_outcome_analysis(checkpoints = ...).
-
+# Regression tests for outcome NA handling, preset scenarios,
+# attrition_table polymorphism, and the make_table1 lock method.
+# The authorize/gate_check/print_locked_spec tests died with that
+# layer in 0.3.0.
 test_that("run_plasmode_feasibility tolerates 25% outcome NA", {
   set.seed(1)
   dat <- sim_func1(n = 400, seed = 1)
@@ -78,46 +78,6 @@ test_that("make_table1 accepts a cleanroom_lock", {
                                c("age", "sex", "biomarker"), seed = 5L)
   tbl <- make_table1(lock)
   expect_true(is.data.frame(tbl) || is.list(tbl))
-})
-
-test_that("print_locked_spec returns NULL when nothing locked", {
-  dat  <- sim_func1(n = 200, seed = 6)
-  lock <- create_analysis_lock(dat, "treatment", "event_24",
-                               c("age", "sex", "biomarker"), seed = 6L)
-  out <- capture.output(spec <- cleanTMLE:::print_locked_spec(lock))
-  expect_null(spec)
-})
-
-test_that("authorize_outcome_analysis accepts checkpoints =", {
-  mk <- function(s, d) cleanTMLE:::new_checkpoint(stage = s, decision = d,
-                                       metrics = data.frame(),
-                                       thresholds = list())
-  cp1 <- mk("Check Point 1", "GO")
-  cp2 <- mk("Check Point 2", "FLAG")
-  cp3 <- mk("Check Point 3", "GO")
-  gate <- cleanTMLE:::authorize_outcome_analysis(checkpoints = list(cp1, cp2, cp3),
-                                      allow_flag = TRUE)
-  expect_true(isTRUE(gate$authorized))
-})
-
-test_that("gate_check accepts ergonomic short form on plasmode_results", {
-  cand_a <- tmle_candidate("a", g_library = "SL.glm", truncation = 0.01)
-  cand_b <- tmle_candidate("b", g_library = "SL.glm", truncation = 0.05)
-  m <- data.frame(
-    effect_size = c(0.05, 0.05),
-    candidate   = c("a", "b"),
-    bias        = c(0.001, 0.002),
-    rmse        = c(0.04,  0.05),
-    coverage    = c(0.94,  0.93),
-    emp_sd      = c(0.04,  0.04),
-    mean_se     = c(0.04,  0.04),
-    stringsAsFactors = FALSE)
-  res <- list(metrics = m, effect_sizes = 0.05, reps = 5L,
-              tmle_candidates = list(cand_a, cand_b))
-  class(res) <- "plasmode_results"
-  out <- cleanTMLE:::gate_check(res, rmse_threshold = 0.06,
-                    coverage_threshold = 0.90, method = "a")
-  expect_true(out$decision %in% c("GO", "FLAG", "STOP"))
 })
 
 test_that("tmle_candidate accepts deprecated Q_library alias", {

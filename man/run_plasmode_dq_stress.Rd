@@ -14,6 +14,7 @@ run_plasmode_dq_stress(
   design = c("generate_treatment", "sample_treatment"),
   pilot_q0 = NULL,
   fit_timeout = Inf,
+  parallel = FALSE,
   verbose = TRUE
 )
 }
@@ -62,6 +63,15 @@ function of the covariate data frame returning one.}
 \item{fit_timeout}{Numeric seconds; see the out-of-process fit guard
 section below. Default \code{Inf} runs fits in-process.}
 
+\item{parallel}{Logical; when \code{TRUE} and \pkg{furrr} is
+installed, the replicates of each scenario cell run under the
+caller's \code{future::plan()}. Replicate seeds are derived
+deterministically from the lock seed inside each replicate, so
+parallel and sequential runs return identical results. The
+\code{fit_timeout} subprocess guard applies only to sequential
+runs; under \code{parallel = TRUE} fits run in-process on the
+workers.}
+
 \item{verbose}{Logical; print progress messages.}
 }
 \value{
@@ -88,6 +98,9 @@ otherwise.}
 tipping-point table, one row per candidate per threat family,
 giving the first severity level at which the locked bias or
 coverage bound is crossed. \code{NULL} otherwise.}
+\item{tmle_candidates}{the candidate specifications that were
+fitted, so \code{\link[=select_candidate]{select_candidate()}} can apply the locked rule to
+this result directly.}
 \item{lock_hash, dgp_mode}{provenance; the lock itself, its
 data, and the fitted Q0 are deliberately not returned.}
 }
@@ -149,3 +162,4 @@ is protected.}
  Stage 2b (pre-outcome).
 }
 
+\keyword{internal}

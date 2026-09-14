@@ -26,9 +26,11 @@ The effective sample size drives the default V-fold CV choice and
 the SuperLearner library composition used by \code{\link[=build_sl_library]{build_sl_library()}}.
 }
 \examples{
+\dontrun{
 y <- rbinom(500, 1, 0.1)
 compute_n_eff(y, family = "binomial")
 
+}
 }
 \references{
 Phillips RV, et al. (2023) Practical considerations

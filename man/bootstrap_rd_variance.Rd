@@ -72,4 +72,3 @@ matching estimators. \emph{Econometrica}, 76(6), 1537--1557.
 Abadie, A. and Imbens, G. W. (2016). Matching on the estimated propensity
 score. \emph{Econometrica}, 84(2), 781--807.
 }
-\keyword{internal}

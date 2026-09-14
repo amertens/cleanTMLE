@@ -65,3 +65,4 @@ restriction: the confounding it detects is removed by design, not by
 adjustment, and a negative-control step that runs on one cohort cannot
 see that.
 }
+\keyword{internal}

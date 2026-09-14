@@ -2,88 +2,48 @@
 #'
 #' Provides \code{run_clean_tmle()}, a single-call wrapper that orchestrates
 #' the full staged clean-room TMLE pipeline (Stages 1 -> 2a -> 2b -> 3),
-#' along with helper functions for love plots, influence-curve histograms,
-#' and a CSV-based decision log.
+#' along with helper functions for love plots and influence-curve
+#' histograms. The design log on the lock replaced the CSV decision-log
+#' helpers in 0.3.0.
 #'
 #' @name tmle_clean_room_wrapper
 NULL
 
 
-# ── Decision Log Helpers ──────────────────────────────────────────────────
+# ── Decision-log record keeping for run_clean_tmle() ─────────────────────
+# The wrapper's private, in-memory record of the choices it makes on the
+# caller's behalf, returned as result$decision_log. Locks keep their own
+# design log; these helpers serve only the single-call wrapper.
 
-#' Initialise an Empty Decision Log
-#'
-#' Creates a zero-row data.frame with the standard decision-log schema.
-#'
-#' @return A data.frame with columns \code{stage}, \code{metric},
-#'   \code{value}, \code{decision}, \code{rationale}, \code{timestamp}.
-#'
 #' @keywords internal
+#' @noRd
 init_decision_log <- function() {
-  .superseded("init_decision_log", "the design log on the lock (lock$design_log)")
-  data.frame(
-    stage     = character(0),
-    metric    = character(0),
-    value     = character(0),
-    decision  = character(0),
-    rationale = character(0),
-    timestamp = character(0),
-    stringsAsFactors = FALSE
-  )
+  data.frame(stage = character(0), metric = character(0),
+             value = character(0), decision = character(0),
+             rationale = character(0), timestamp = character(0),
+             stringsAsFactors = FALSE)
 }
 
-
-#' Append a Row to a Decision Log
-#'
-#' @param log A decision-log data.frame from \code{\link{init_decision_log}}.
-#' @param stage Character; stage label (e.g. \code{"Stage 1"}).
-#' @param metric Character; name of the metric recorded.
-#' @param value Character (or coercible); metric value.
-#' @param decision Character; one of \code{"GO"}, \code{"FLAG"},
-#'   \code{"STOP"}, or \code{NA}.
-#' @param rationale Character; human-readable justification.
-#'
-#' @return The updated decision-log data.frame.
-#'
 #' @keywords internal
+#' @noRd
 log_decision_entry <- function(log, stage, metric, value,
                                decision = NA_character_,
                                rationale = "") {
-  .superseded("log_decision_entry", "the design log on the lock (lock$design_log)")
-  new_row <- data.frame(
+  rbind(log, data.frame(
     stage     = stage,
     metric    = metric,
     value     = as.character(value),
     decision  = as.character(decision),
     rationale = rationale,
     timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
-    stringsAsFactors = FALSE
-  )
-  rbind(log, new_row)
+    stringsAsFactors = FALSE))
 }
 
-
-#' Save a Decision Log to CSV
-#'
-#' Writes the decision log to the \code{inst/decision_logs/} directory
-#' inside the package source tree, or to a user-specified path.
-#'
-#' @param log A decision-log data.frame.
-#' @param path Character; file path.  Defaults to
-#'   \code{"inst/decision_logs/decision_log.csv"} relative to the current
-#'   working directory.
-#' @param append Logical; if \code{TRUE} and the file already exists,
-#'   append rows without re-writing the header.
-#'
-#' @return Invisibly returns \code{path}.
-#'
 #' @keywords internal
-save_decision_log <- function(log, path = "inst/decision_logs/decision_log.csv",
-                              append = FALSE) {
-  .superseded("save_decision_log", "the design log on the lock (lock$design_log)")
+#' @noRd
+save_decision_log <- function(log, path, append = FALSE) {
   dir_path <- dirname(path)
   if (!dir.exists(dir_path)) dir.create(dir_path, recursive = TRUE)
-
   if (append && file.exists(path)) {
     utils::write.table(log, file = path, sep = ",", row.names = FALSE,
                        col.names = FALSE, append = TRUE, quote = TRUE)
@@ -240,15 +200,14 @@ ic_histogram <- function(tmle_result, bins = 30L) {
 #' @section Enforcement (important):
 #' \code{run_clean_tmle()} is the \strong{unguarded convenience wrapper}. It
 #' builds its lock internally and reads the outcome unconditionally once its
-#' internal Stage-2a/2b checks pass, so it does \emph{not} enforce a
-#' pre-outcome authorisation gate (the lock hash is not known to the caller
-#' until after the call, so no token can be required). The internal lock is
-#' therefore created with \code{cleanroom_enabled = FALSE} to label this
-#' honestly. For the software-enforced clean-room path, where the outcome is
-#' not read until a hash- and audit-bound authorisation is recorded, use the
-#' two-pass split: \code{\link{run_clean_tmle_preoutcome}()} ->
-#' \code{\link{authorize_outcome_analysis}()} ->
-#' \code{\link{run_clean_tmle_primary}()}.
+#' internal Stage-2a/2b checks pass, so nothing restrains outcome access.
+#' The internal lock is therefore created with
+#' \code{cleanroom_enabled = FALSE} to label this honestly. For the staged
+#' workflow, where the outcome stays masked until an explicit, logged
+#' unmasking, create the lock yourself with
+#' \code{\link{create_analysis_lock}(mask = TRUE, enforce = TRUE)} and
+#' estimate through \code{\link{run_estimand_ladder}} or
+#' \code{\link{estimate_effect}}.
 #'
 #' @return A list of class \code{clean_tmle_result} containing:
 #'   \describe{
@@ -313,9 +272,9 @@ run_clean_tmle <- function(data,
 
   if (verbose)
     message("run_clean_tmle(): unguarded convenience path (reads the outcome ",
-            "once internal checks pass). For the enforced clean-room gate, use ",
-            "run_clean_tmle_preoutcome() -> authorize_outcome_analysis() -> ",
-            "run_clean_tmle_primary().")
+            "once internal checks pass). For the staged workflow, create the ",
+            "lock with create_analysis_lock(enforce = TRUE) and estimate ",
+            "through run_estimand_ladder() or estimate_effect().")
 
   # Auto-detect covariates
   if (is.null(covariates)) {
@@ -329,9 +288,8 @@ run_clean_tmle <- function(data,
   trunc_lower <- truncation[1]
 
   # Unguarded path: label the lock honestly as a plain (non-clean-room)
-  # pipeline, since this wrapper reads the outcome without a pre-outcome
-  # authorisation token. Use run_clean_tmle_preoutcome()/_primary() for
-  # the enforced path.
+  # pipeline, since this wrapper reads the outcome directly. The staged
+  # path is create_analysis_lock(enforce = TRUE) plus the workflow verbs.
   lock <- create_analysis_lock(
     data              = data,
     treatment         = Avar,
@@ -474,13 +432,25 @@ run_clean_tmle <- function(data,
         next
       }
       lock <- define_negative_control(lock, nc_var)
-      nc_results[[nc_var]] <- run_negative_control(lock, nc_var, ps_fit)
+      nc_results[[nc_var]] <- tryCatch(
+        run_negative_control_tmle(lock, nc_var, ps_fit),
+        error = function(e) {
+          warning("Negative control '", nc_var, "' failed: ",
+                  conditionMessage(e), call. = FALSE)
+          NULL
+        })
     }
+    nc_results <- Filter(Negate(is.null), nc_results)
 
     if (length(nc_results) > 0L) {
-      cp3 <- checkpoint_residual_bias(nc_results, lock_hash = lock$lock_hash)
-      stage2b_decision <- cp3$decision
-      stage2b_rationale <- cp3$rationale
+      n_flagged <- sum(vapply(nc_results, function(nc)
+        isTRUE(nc$p_value < 0.05), logical(1)))
+      stage2b_decision <- if (n_flagged == 0L) "GO"
+                          else if (n_flagged <= length(nc_results) / 2) "FLAG"
+                          else "STOP"
+      stage2b_rationale <- sprintf(
+        "%d of %d negative control(s) flagged at p < 0.05.",
+        n_flagged, length(nc_results))
 
       for (nc in nc_results) {
         dlog <- log_decision_entry(dlog, "Stage 2b (NC)", nc$variable,

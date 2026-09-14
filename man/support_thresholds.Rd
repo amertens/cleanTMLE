@@ -41,8 +41,8 @@ A \code{support_thresholds} list.
 }
 \description{
 The defaults are the Rescue.Co main pipeline's, calibrated against a sound
-reference fit (g in \link{0.043, 0.937}, max weight 7.5) and a broken one
-(g in \link{0.004, 0.940}, max weight 33.5) that global statistics barely
+reference fit (g in [0.043, 0.937], max weight 7.5) and a broken one
+(g in [0.004, 0.940], max weight 33.5) that global statistics barely
 separated. The verdict vocabulary follows the review-team decisions of
 Muntner et al. (2024): PASS reports plainly, FLAG reports with a caveat,
 SEVERE reports only beside a common-support estimate, FAIL refuses the

@@ -2,74 +2,50 @@
 #' @aliases cleanTMLE-package
 "_PACKAGE"
 
-#' cleanTMLE: Staged Clean-Room Causal Analysis with Propensity Score and TMLE Workflows
+#' cleanTMLE: Staged, Outcome-Blind Targeted Learning
 #'
-#' Provides workflow scaffolding for staged, outcome-blinded observational
-#' causal analyses. The package distinguishes two pre-outcome feasibility paths:
-#' Stage 2a (traditional PS diagnostics using only W and A) and Stage 2b
-#' (plasmode-simulation evaluation of the full estimator pipeline). Treatment
-#' mechanism estimation, outcome mechanism estimation, and the TMLE targeting
-#' step are deliberately separated in the API so each can run at the correct
-#' clean-room stage.
+#' Decides, before outcome access, whether a comparison is estimable and
+#' with which estimand, then estimates with targeted maximum likelihood.
+#' The lock's data frame holds design data only; the primary outcome
+#' lives in a separate store that Stage 4 joins back after the outcome
+#' guard. The workflow surface is sixteen verbs; the estimator layer,
+#' the learners, and the reporting helpers are separate, labelled
+#' groups on the reference index.
 #'
-#' @section Analysis lock and workflow metadata:
-#' Use [create_analysis_lock()] to construct and serialize the complete analytic
-#' specification (estimand, covariates, SuperLearner library, plasmode settings,
-#' candidate set and selection rule). Use [validate_analysis_lock()] to verify
-#' the specification before proceeding.
+#' @section The sixteen workflow verbs:
+#' * [create_analysis_lock()] - seal data, roles, declarations, and the
+#'   fingerprint; [declare_negative_controls()] and
+#'   [declare_estimand_ladder()] add the prespecified decision rules
+#' * [fit_ps()], [assess_support()], [estimand_feasibility()],
+#'   [simulate_support()] - the design-stage estimability answer
+#' * [define_candidates()], [select_candidate()], [stress_test()] - the
+#'   candidate grid, the outcome-blind selection, and the data-quality
+#'   stress test with its locked verdict and tipping points
+#' * [negative_control_ladder()], [check_process_indicators()] - the
+#'   residual-confounding and collider checks
+#' * [design_report()], [export_design_log()] - what the review team
+#'   reads, and the released decision record
+#' * [estimate_effect()], [run_estimand_ladder()] - Stage 4 estimation
+#'   of the declared primary and its feasible fallbacks
 #'
-#' @section Treatment mechanism and propensity-score estimation (Stage 2a / 2b):
-#' * [fit_ps_superlearner()] - SuperLearner-based PS estimation (default)
-#' * [fit_ps_glm()] - logistic-regression PS estimation (conventional option)
-#' * [compute_ps_diagnostics()] - overlap, ESS, covariate balance summaries
+#' @section Estimator layer:
+#' [run_clean_tmle()] is the classic single-call wrapper; the
+#' cumulative-risk grammar ([specify_models()] with the `identify_*()`
+#' verbs and [estimate_ipwrisk()], [estimate_gcomprisk()],
+#' [estimate_aipwrisk()], [estimate_ipwhr()], [estimate_surv_tmle()],
+#' [estimate_lmtp()]) covers time-to-event risks;
+#' [select_variance_method()] and [bootstrap_rd_variance()] select and
+#' supply the variance method. The modular TMLE steps remain internal,
+#' reachable through `estimate_effect(return_steps = TRUE)`.
 #'
-#' @section Conventional workflow estimators (Stage 3):
-#' * [run_crude_workflow()] - unadjusted risk difference (benchmark)
-#' * [run_match_workflow()] - 1:1 nearest-neighbor matching
-#' * [run_iptw_workflow()] - stabilized IPTW with weight diagnostics
+#' @section Reporting and diagnostics:
+#' [make_table1()], [make_table2()], [attrition_table()], [love_plot()],
+#' [forest_plot()], [clean_weight_diagnostics()], [compute_evalue()],
+#' [run_delta_sensitivity()], [event_support_by_arm()], and the verdict
+#' helpers [dq_locked_verdict()], [dq_tipping_points()],
+#' [nc_ladder_verdict()].
 #'
-#' @section Plasmode simulation and feasibility evaluation (Stage 2b):
-#' * [run_plasmode_feasibility()] - generate plasmode outcomes and evaluate
-#'   the full pipeline; returns bias, RMSE, and coverage
-#' * [summarize_plasmode_results()] - tabulate and plot simulation metrics
-#' * [select_tmle_candidate()] - apply the prespecified selection rule
-#' * [gate_check()] - GO / FLAG / STOP checkpoint decision
-#'
-#' @section Modular TMLE components:
-#' These functions respect clean-room stage separation. The treatment mechanism
-#' can run in Stage 2a or 2b; the outcome mechanism runs on real data only in
-#' Stage 3; the targeting step follows only after both nuisance estimates exist.
-#' * [fit_tmle_treatment_mechanism()] - estimate g(W) from W and A only
-#' * [fit_tmle_outcome_mechanism()] - estimate Q(A,W) using the real outcome
-#' * [run_tmle_targeting_step()] - perform the fluctuation / targeting update
-#' * [extract_tmle_estimate()] - compute psi, SE, CI, and diagnostics
-#'
-#' @section Candidate TMLE comparison / selection:
-#' * [fit_tmle_candidate_set()] - fit all prespecified TMLE candidates
-#' * [select_tmle_candidate()] - apply the prespecified selection rule
-#'
-#' @section Lower-level estimation utilities:
-#' * [estimate_ipwrisk()] - IPW cumulative risk curves
-#' * [estimate_gcomprisk()] - G-computation risk curves
-#' * [estimate_aipwrisk()] - Augmented IPW (doubly robust) risk curves
-#' * [estimate_ipwhr()] - Weighted Cox model hazard ratios
-#'
-#' @section TMLE package integrations:
-#' * [estimate_tmle_risk_point()] - Point-treatment TMLE for binary outcomes
-#' * [estimate_surv_tmle()] - Survival TMLE for risk at specified times
-#' * [estimate_lmtp()] - Longitudinal TMLE for static/dynamic interventions
-#'
-#' @section Workflow-level summaries:
-#' * [run_estimand_ladder()] - the declared primary plus feasible fallbacks
-#' * [forest_plot()] - side-by-side comparison across estimators
-#'
-#' @section Diagnostics and tables:
-#' * [make_table1()] - Baseline covariate table (weighted/unweighted)
-#' * [make_table2()] - Results table (N, person-time, events, risk, contrasts)
-#' * [make_wt_summary_table()] - Weight distribution summaries
-#' * [extreme_weights()] - Identify extreme weight observations
-#' * [inspect_ipw_weights()] - Extract and inspect IPW weights
-#'
+#' @importFrom graphics hist
 #' @importFrom stats as.formula approx binomial coef confint glm model.matrix
 #'   predict quantile rbinom rnorm runif sd var vcov median
 #'   pnorm qnorm qlogis weighted.mean terms reformulate setNames
@@ -87,3 +63,8 @@
 #'   .data is_missing caller_env
 #' @importFrom sandwich vcovHC
 NULL
+
+# `.weights` is a column created on the model data frame and read by
+# coxph()'s weights argument inside that frame; declare it so the
+# static checker does not read it as an undefined global.
+utils::globalVariables(".weights")

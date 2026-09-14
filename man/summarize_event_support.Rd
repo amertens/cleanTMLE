@@ -26,10 +26,12 @@ outcome only).
 }
 
 \examples{
+\dontrun{
 dat  <- sim_func1(n = 500, seed = 1)
 lock <- create_analysis_lock(dat, "treatment", "event_24",
                              c("age", "sex", "biomarker"), seed = 1)
 summarize_event_support(lock)
 
+}
 }
 \keyword{internal}

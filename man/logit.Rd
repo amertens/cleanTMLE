@@ -17,9 +17,11 @@ Maps a probability to the log-odds (logit) scale:
 \eqn{\text{logit}(p) = \log(p / (1 - p))}.
 }
 \examples{
+\dontrun{
 logit(0.5)  # 0
 logit(0.9)  # ~2.20
 
+}
 }
 \seealso{
 \code{\link[=expit]{expit()}} for the inverse operation.

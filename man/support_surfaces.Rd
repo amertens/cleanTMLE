@@ -52,8 +52,10 @@ extrapolation error: it depends on how the outcome surface behaves where
 only one arm is observed, which is exactly what this family varies.
 }
 \examples{
+\dontrun{
 support_surfaces()
 support_surfaces(confounding = c(0, 0.5, 1, 2), modification = c(0, 0.5, 1))
+}
 }
 \seealso{
 \code{\link[=simulate_support]{simulate_support()}}

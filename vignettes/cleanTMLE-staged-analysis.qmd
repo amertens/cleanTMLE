@@ -1,6 +1,6 @@
 ---
-title: "A Staged Outcome-Blind TMLE Workflow with cleanTMLE"
-subtitle: "Worked Example"
+title: "The full cleanTMLE workflow"
+subtitle: "A staged outcome-blind TMLE analysis, worked end to end"
 author: "cleanTMLE Authors"
 date: today
 format:
@@ -10,7 +10,7 @@ format:
     code-fold: false
     self-contained: true
 vignette: >
-  %\VignetteIndexEntry{A Staged Outcome-Blind TMLE Workflow with cleanTMLE}
+  %\VignetteIndexEntry{The full cleanTMLE workflow}
   %\VignetteEngine{quarto::html}
   %\VignetteEncoding{UTF-8}
 ---
@@ -105,12 +105,11 @@ balance view of the same object.
 ```{r plain-estimators, results = "hide"}
 # 3. Bind the analysis choice to the lock: the estimand plan plus the
 #    TMLE specification the plasmode selector would normally pick.
-primary_spec <- tmle_candidate(
-  candidate_id = "plain_tmle",
-  label        = "TMLE for the plain workflow",
-  q_library    = c("SL.glm", "SL.glmnet"),
-  g_library    = c("SL.glm", "SL.glmnet"),
-  truncation   = 0.01
+primary_spec <- define_candidates("plain_tmle",
+  label      = "TMLE for the plain workflow",
+  g_library  = c("SL.glm", "SL.glmnet"),
+  q_library  = c("SL.glm", "SL.glmnet"),
+  truncation = 0.01
 )
 plain_lock <- declare_estimand_ladder(plain_lock, primary = "ATE",
                                       candidate = primary_spec)
@@ -328,7 +327,7 @@ source of the staging idea and is the broader notion of a clean
 room. cleanTMLE is the *software layer* of that workflow: it
 records the analysis lock, runs the design diagnostics and the
 plasmode evaluation, executes the DQ stress test, applies the
-pre-outcome decision rule, and writes the audit trail. It does
+pre-outcome decision rule, and writes the design log. It does
 not by itself implement clean-room personnel governance. The canonical stage labels used
 throughout this vignette are:
 
@@ -377,9 +376,9 @@ Its components are:
 - Treatment- and IPCW-weight diagnostics (`clean_weight_diagnostics()`); see *Outcome-blind diagnostics before fitting the final estimator*.
 - Event-count and precision adequacy (`estimate_design_precision()`); see *Stage 1b*.
 - Outcome-blind support map (`simulate_support()`); see *Deciding the estimand before outcomes*.
-- Baseline plasmode candidate selection (`run_plasmode_feasibility()`, `select_tmle_candidate()`); see *Stage 2b*.
-- DQ stress-test results (`run_plasmode_dq_stress()` and its `summary()`); see *Stage 2c*.
-- Negative controls across cohort restrictions (`run_negative_control_ladder()`); see *Stage 3*.
+- Baseline plasmode candidate selection (`define_candidates()`, `stress_test()`, `select_candidate()`); see *Stage 2b*.
+- DQ stress-test results (`stress_test()` with a declared threat list, its `summary()`, and, when thresholds were declared at lock creation, the locked verdict and tipping points); see *Stage 2c*.
+- Negative controls across cohort restrictions (`negative_control_ladder()`); see *Stage 3*.
 - Care-process collider check (`check_process_indicators()`); see *Stage 3*.
 - The assembled dossier and recommendation (`design_report()`); see *Pre-outcome decision*.
 
@@ -524,22 +523,36 @@ lock <- create_analysis_lock(
   sl_library    = c("SL.glm", "SL.mean"),
   negative_controls = "nc_outcome",
   plasmode_reps = 40L,
-  seed          = 42L
+  seed          = 42L,
+  dq_thresholds = list(max_abs_bias   = 0.02,
+                       min_coverage   = 0.90,
+                       max_rmse_ratio = 1.5),
+  nc_criteria   = list(null_band = 0.02)
 )
 print(lock)
 ```
 
-::: {.callout-tip}
-## Optional: outcome masking
+The two threshold lists are the prespecified decision rules: the
+stress test's bias, coverage, and RMSE-ratio envelope
+(`dq_thresholds`) and the negative-control null band
+(`nc_criteria`). Declared here, they enter the lock fingerprint, so
+the rule the verdicts are scored against is provably the rule that
+was declared before outcome access.
 
-For analyses that require stricter blinding, `create_analysis_lock(mask
-= TRUE)` (or `mask_outcome()` on an existing lock) replaces the real
-outcome column with `NA` values inside the lock, so no code can read
-the outcome before estimation; `unmask_outcome(lock, original_lock)`
-restores it when the design review is complete. Stronger still is
-keeping the outcome columns in a separate store and joining them only
-at estimation, which is what the package's case study does. In this
-vignette we proceed without masking for clarity.
+::: {.callout-tip}
+## The outcome store, and optional masking
+
+The lock's data frame holds design data only; the primary outcome
+column moves into a separate store (`lock$outcome_store`) at
+creation, and only the Stage 4 estimators join it back, after the
+outcome guard. For analyses that need stricter blinding,
+`create_analysis_lock(mask = TRUE)` (or `mask_outcome()` on an
+existing lock) removes the store entirely, so the masked lock is
+physically outcome-free; `unmask_outcome(lock, original_lock)`
+restores it when the design review is complete, writing the
+unmasking (with a named approver on an `enforce = TRUE` lock) into
+the design log. In this vignette we proceed without masking for
+clarity.
 :::
 
 The estimand plan is declared next, and it is the key
@@ -557,10 +570,9 @@ lock <- declare_estimand_ladder(lock,
 )
 ```
 
-Decision thresholds for the stress test (the maximum acceptable bias,
-the coverage floor) are arguments of the functions that use them, and
-every declaration lands in the lock's design log, so the rule is on
-the record before any diagnostic is scored.
+Every declaration lands in the lock's design log, and the decision
+thresholds declared at creation live in the fingerprint itself, so
+the rule is on the record before any diagnostic is scored.
 
 ### File-based pipeline support
 
@@ -740,26 +752,29 @@ revision, not just the nuisance fit.
 ### Define TMLE candidates
 
 ```{r tmle-candidates}
-# Define candidate TMLE specifications that vary truncation
-candidates <- list(
-  tmle_candidate("glm_t01", "GLM, trunc=0.01",
-                 g_library = c("SL.glm"), truncation = 0.01),
-  tmle_candidate("glm_t05", "GLM, trunc=0.05",
-                 g_library = c("SL.glm"), truncation = 0.05),
-  tmle_candidate("glm_mean_t01", "GLM+Mean, trunc=0.01",
-                 g_library = c("SL.glm", "SL.mean"), truncation = 0.01)
-)
+# The prespecified factorial grid: two libraries crossed with two
+# truncation bounds.
+candidates <- define_candidates(grid = list(
+  truncations = c(0.01, 0.05),
+  libraries   = list(glm      = "SL.glm",
+                     glm_mean = c("SL.glm", "SL.mean"))
+))
+print(candidates)
 ```
 
-### Plasmode feasibility evaluation
+### Clean-data baseline
+
+`stress_test()` with no threats is the clean-data baseline: each
+candidate is fitted on every plasmode replicate and scored on bias,
+RMSE, coverage, and SE calibration against the simulated truth.
 
 ```{r plasmode, cache = TRUE}
-plas <- run_plasmode_feasibility(
-  lock,
-  tmle_candidates = candidates,
-  effect_sizes    = c(0.05, 0.10),
-  reps            = 40L,
-  verbose         = FALSE
+plas <- stress_test(
+  lock, candidates,
+  threats      = NULL,
+  effect_sizes = c(0.05, 0.10),
+  reps         = 40L,
+  verbose      = FALSE
 )
 print(plas)
 ```
@@ -767,7 +782,7 @@ print(plas)
 ### Select and lock the primary TMLE specification
 
 ```{r select}
-selected <- select_tmle_candidate(plas, rule = "min_rmse")
+selected <- select_candidate(plas, rule = "min_rmse")
 lock <- declare_estimand_ladder(lock,
   primary   = "ATE",
   fallbacks = c("trimmed_ATE", "ATT", "ATO"),
@@ -817,16 +832,14 @@ Four mechanisms are supported:
    ratios.
 
 ```{r dq-stress, cache = TRUE}
-dq_results <- run_plasmode_dq_stress(
-  lock,
-  tmle_candidates = candidates,
-  effect_sizes    = c(0.05),
-  # 60 (rather than 40) replicates stabilise the MCAR/measurement-error cells,
-  # whose worst-case |bias| is otherwise driven up by Monte Carlo noise close to
-  # the 0.02 threshold; at 60 reps the margin below the STOP threshold is
-  # comfortable so the illustrative gate reliably returns FLAG, not STOP.
-  reps            = 60L,
-  data_quality_scenarios = list(
+dq_results <- stress_test(
+  lock, candidates,
+  effect_sizes = c(0.05),
+  # 60 (rather than 40) replicates stabilise the MCAR/measurement-error
+  # cells, whose worst-case |bias| is otherwise driven up by Monte Carlo
+  # noise close to the declared 0.02 bias bound.
+  reps         = 60L,
+  threats      = list(
     # Covariate missingness under three mechanisms, each median-imputed.
     # MCAR is unbiased by construction; MAR (treatment-dependent) and MNAR
     # (value-dependent) make the imputation biased and are stronger tests.
@@ -860,6 +873,17 @@ deg <- summary(dq_results)
 head(deg)
 ```
 
+Because `dq_thresholds` were declared at lock creation, the result
+carries the locked GO / FLAG / STOP verdict per candidate, a pure
+function of the declared thresholds and the declared threat grid,
+plus the tipping points: the first severity level per threat family
+at which a locked bound is crossed.
+
+```{r dq-verdict}
+dq_results$verdict
+dq_results$tipping
+```
+
 The *degradation gradient* is the curve of estimator performance
 against the severity of a prespecified data-quality threat. It is
 analogous to a dose-response curve for estimator fragility. A
@@ -869,9 +893,9 @@ move performance outside the locked criteria.
 
 `summary()` on the stress-test result returns a long table comparing
 each degraded run with the baseline (no degradation): bias change,
-RMSE ratio, coverage drop. A robust candidate produces a flat curve;
+RMSE ratio, coverage drop. A stable candidate produces a flat curve;
 a fragile candidate shows a cliff. The table can be filtered to the
-candidate locked in by `select_tmle_candidate()` and reviewed
+candidate locked in by `select_candidate()` and reviewed
 alongside the SPIFD2 fit-for-purpose narrative in the design report.
 When a candidate breaches the declared bias or coverage envelope
 under a plausible severity, the reading is the Muntner "conduct
@@ -883,10 +907,10 @@ data source or the estimand, not the nuisance fit.
 The DQ stress test is one of the package's two distinguishing
 contributions relative to prior outcome-blind plasmode work (the
 other is the support map): standard plasmode selects the candidate
-with the best baseline RMSE, while `run_plasmode_dq_stress()` lets
+with the best baseline RMSE, while the declared threat grid lets
 the analyst select the candidate that stays inside the declared
 envelope across the plausible range of every prespecified threat,
-via `select_tmle_candidate(rule = "min_max_rmse")`.
+via `select_candidate(rule = "min_max_rmse")`.
 
 ---
 
@@ -904,7 +928,7 @@ The negative control `nc_outcome` (registered on the lock at Stage
 1a) was generated from covariates only, with no treatment effect, so
 any estimated association is attributable to residual confounding.
 
-`run_negative_control_ladder()` fits every registered control on
+`negative_control_ladder()` fits every registered control on
 every nested cohort restriction, so the review sees not only whether
 a control fails but which restriction makes it pass. A control that
 fails on the full cohort and turns null after a pre-registered
@@ -913,7 +937,7 @@ single-cohort check cannot show. Controls too rare to fit are
 labelled inestimable rather than dropped silently.
 
 ```{r stage3}
-nc <- run_negative_control_ladder(lock,
+nc <- negative_control_ladder(lock,
   restrictions = list(
     "comorbidity-free" = lock$data$comorbidity == 0
   ),
@@ -923,7 +947,9 @@ print(nc)
 
 On this simulated design the control is null on both rungs, as it
 should be: the covariates that drive `nc_outcome` are in the
-adjustment set. A companion check for care-process variables,
+adjustment set. Because `nc_criteria` were declared at lock
+creation, each rung also carries its verdict under the locked null
+band, which is the Check Point 3 reading the design report uses. A companion check for care-process variables,
 `check_process_indicators()`, regresses each named indicator on
 treatment given the remaining covariates and flags indicators the
 treatment predicts; such variables belong outside the adjustment set,
@@ -1244,12 +1270,13 @@ The worked example illustrates the canonical stages:
    (`estimand_feasibility()`), and balance (`love_plot()`).
 5. **Stage 2b**: the outcome-blind support map
    (`simulate_support()`) and plasmode candidate selection
-   (`run_plasmode_feasibility()`, `select_tmle_candidate()`).
-6. **Stage 2c**: plasmode DQ stress testing
-   (`run_plasmode_dq_stress()`) on the locked severity ranges from
-   the fit-for-purpose review.
+   (`define_candidates()`, `stress_test()`, `select_candidate()`).
+6. **Stage 2c**: plasmode DQ stress testing (`stress_test()` with
+   the declared threat list) on the locked severity ranges from
+   the fit-for-purpose review, with the locked verdict and tipping
+   points when thresholds were declared at lock creation.
 7. **Stage 3 (optional)**: negative controls across cohort
-   restrictions (`run_negative_control_ladder()`) and the
+   restrictions (`negative_control_ladder()`) and the
    care-process collider check (`check_process_indicators()`).
 8. **Pre-outcome decision**: the assembled dossier and
    recommendation (`design_report()`), in the vocabulary of Muntner
@@ -1275,9 +1302,10 @@ The package supports common production patterns:
   per prespecified pairwise contrast on a shared cohort, each with
   its own support assessment, ladder, and design report.
 - **Institutional enforcement**: locks created with `enforce = TRUE`
-  withhold estimation until a recorded design review, for settings
-  that want the two-pass discipline enforced in software; outcome
-  masking is available to every lock.
+  withhold estimation until the outcome is unmasked through
+  `unmask_outcome()` with a named `approved_by`, which writes the
+  authorisation into the design log; outcome masking is available to
+  every lock.
 
 The package does not enforce institutional governance (role separation,
 independent review boards, blinded data managers); those are

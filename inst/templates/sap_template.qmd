@@ -50,7 +50,7 @@ the SPIFD2 / data-quality scenario that probes it.
 | Assumption | Plausibility | Diagnostic | DQ stress scenario |
 |------------|--------------|-----------|-------------------|
 | Conditional exchangeability | DESCRIBE | Negative-control outcomes | unmeasured_confounding |
-| Positivity | DESCRIBE | PS overlap, ESS, weight summary | (truncation grid) |
+| Positivity | DESCRIBE | PS overlap, ESS, weight summary | near_positivity |
 | Consistency / SUTVA | DESCRIBE | Exposure-algorithm validation | treatment_misclass |
 | Outcome measurement | DESCRIBE | PPV / sensitivity literature | outcome_misclass |
 | Covariate completeness | DESCRIBE | Missingness summary | covariate_missingness |
@@ -59,30 +59,41 @@ the SPIFD2 / data-quality scenario that probes it.
 # 3. Pre-specified candidate grid (Stage 2b)
 
 ```r
-candidates <- list(
-  tmle_candidate("glm_t01",   "GLM PS, trunc=0.01",
-                 g_library = "SL.glm",     truncation = 0.01),
-  tmle_candidate("glmnet_t01","glmnet PS, trunc=0.01",
-                 g_library = "SL.glmnet",  truncation = 0.01),
-  tmle_candidate("glmnet_t05","glmnet PS, trunc=0.05",
-                 g_library = "SL.glmnet",  truncation = 0.05)
-)
+candidates <- define_candidates(grid = list(
+  truncations = c(0.01, 0.05),
+  libraries   = list(glm    = "SL.glm",
+                     glmnet = "SL.glmnet.bounded")))
 ```
 
 **SuperLearner library justification (Phillips et al. 2023):**
-state effective sample size, recommended $V$, library composition.
-Use `validate_superlearner_spec(n, n_events, library)` to document the
-heuristic check.
+state effective sample size, recommended $V$, and library composition.
+`build_sl_library(n, n_events)` documents the heuristic check.
 
-# 4. Pre-outcome gate thresholds
+# 4. Prespecified decision rules (fingerprinted at lock creation)
+
+Declare both rule sets as `create_analysis_lock()` arguments so they
+enter the lock fingerprint before any outcome is read:
+
+```r
+lock <- create_analysis_lock(
+  data, "TREATMENT_VAR", "OUTCOME_VAR", COVARIATES,
+  dq_thresholds = list(max_abs_bias   = 0.02,
+                       min_coverage   = 0.90,
+                       max_rmse_ratio = 1.5),
+  nc_criteria   = list(null_band = 0.02, rule = "point_in_band",
+                       min_per_domain = 1))
+```
 
 | Threshold | Value | Rationale |
 |-----------|-------|-----------|
-| `max_abs_bias` | 0.01 | Plasmode candidate-selection target |
-| `min_coverage` | 0.90 | Minimum acceptable 95% CI coverage |
-| `se_sd_window` | (0.8, 1.2) | SE-calibration band |
-| `max_rmse` | 0.05 | Optional RMSE ceiling |
-| Negative-control pass | $|RD| < 0.01$ and p > 0.05 on all registered NCs | Residual confounding screen |
+| `dq_thresholds$max_abs_bias` | 0.02 | Largest tolerable absolute bias under any declared threat |
+| `dq_thresholds$min_coverage` | 0.90 | Coverage floor under any declared threat |
+| `dq_thresholds$max_rmse_ratio` | 1.5 | Largest tolerable degraded-to-baseline RMSE ratio |
+| `nc_criteria$null_band` | 0.02 | Risk-difference half-width the negative controls must sit inside |
+
+`stress_test()` then returns the locked GO / FLAG / STOP verdict and
+the tipping points as a pure function of these thresholds and the
+declared threat grid.
 
 # 5. Negative-control outcomes (Muntner et al. 2024 domains)
 
@@ -95,32 +106,37 @@ Document at least one NC per domain when feasible.
 | NC_VAR_3 | health_seeking_behavior   | DESCRIBE |
 | NC_VAR_4 | access_to_healthcare      | DESCRIBE |
 
-Register via `define_negative_control(lock, var, domain = "...")`.
+Register via `declare_negative_controls(lock, vars, domains = ...)`.
 
 # 6. Sensitivity analyses (Stage 5 / post-outcome)
 
 - **E-value** (`compute_evalue()`) on the primary effect estimate.
-- **Tipping-point bound** (`tipping_point_sensitivity()`).
-- **Causal-gap sensitivity** (Diaz & van der Laan 2013) if the
-  unmeasured-confounding scenario in Stage 2b suggested vulnerability.
+- **Tipping points from the locked stress test**
+  (`dq_tipping_points()`): the first severity level per threat family
+  at which a locked bound is crossed.
+- **Outcome-missingness delta sensitivity**
+  (`run_delta_sensitivity()`).
 - **Quantitative bias analysis** (Lash et al. 2014) for the dominant
   threat from SPIFD2.
-- **Sensitivity truncation grid** (`sensitivity_truncation()`) over
-  the prespecified grid in §3.
+- **Truncation grid**: rerun `estimate_effect()` over the truncation
+  values prespecified in §3, as a declared `sensitivity_plans` entry
+  on the lock.
 
 # 7. Decision log
 
-Use `init_decision_log()` and `record_decision_log_entry()` at every
-stage transition to record:
+The lock writes its own design log: declarations, estimand switches,
+per-arm event-count accesses (`event_support_by_arm()`), and the named
+unmasking approval all land in `lock$design_log` as they happen.
+Decisions taken outside the software (protocol deviations, review-team
+rulings) belong in the same structure; start from
+`system.file("templates", "decision_log_template.csv",
+package = "cleanTMLE")`, which carries the Muntner et al. (2024)
+Table S1 columns (date, stage, issue, decision, rationale,
+decided_by).
 
-- Pre-specified choices (lock creation, candidate grid, gate thresholds)
-- Diagnostic results (cohort adequacy, balance, NC coverage)
-- Protocol deviations (with rationale and the lock hash at the time of
-  the deviation)
-- Gate decision and authorisation token
-
-Export the log with `export_decision_log()` and archive alongside the
-`save_lock()` / `save_audit()` artifacts.
+Export the software-written log with
+`export_design_log(lock, format = "muntner")` and archive it alongside
+the `save_lock()` artifact and the locked SAP hash.
 
 # 8. Reporting checklist
 
@@ -128,9 +144,9 @@ Export the log with `export_decision_log()` and archive alongside the
 - ☐ Identifying assumptions and DQ scenarios (§2)
 - ☐ Candidate grid locked (§3)
 - ☐ SuperLearner library justified (§3)
-- ☐ Gate thresholds locked (§4)
+- ☐ Decision thresholds fingerprinted at lock creation (§4)
 - ☐ NCs registered with domains (§5)
-- ☐ Sensitivity plan (§6)
-- ☐ Decision log archived (§7)
+- ☐ Sensitivity plan declared on the lock (§6)
+- ☐ Design log exported and archived (§7)
 - ☐ Lock fingerprint recorded
-- ☐ Plasmode + DQ stress test results before unblinding
+- ☐ stress_test() verdict and tipping points archived before unblinding

@@ -37,8 +37,8 @@ fit_ps <- function(lock, method = c("superlearner", "glm", "external"),
 #' Prespecified Thresholds for the Graded Support Verdict
 #'
 #' The defaults are the Rescue.Co main pipeline's, calibrated against a sound
-#' reference fit (g in [0.043, 0.937], max weight 7.5) and a broken one
-#' (g in [0.004, 0.940], max weight 33.5) that global statistics barely
+#' reference fit (g in \[0.043, 0.937\], max weight 7.5) and a broken one
+#' (g in \[0.004, 0.940\], max weight 33.5) that global statistics barely
 #' separated. The verdict vocabulary follows the review-team decisions of
 #' Muntner et al. (2024): PASS reports plainly, FLAG reports with a caveat,
 #' SEVERE reports only beside a common-support estimate, FAIL refuses the
@@ -206,6 +206,9 @@ print.support_thresholds <- function(x, ...) {
 #' @param ps_fit A `ps_fit` from [fit_ps()], [fit_ps_superlearner()],
 #'   [fit_ps_glm()], or [wrap_ps_fit()].
 #' @param thresholds A [support_thresholds()] object.
+#' @param balance Logical; when `TRUE` (default) the assessment carries
+#'   the unweighted and IPTW-weighted standardised-mean-difference
+#'   table that [love_plot()] reads.
 #' @param tree_search Logical; run the shallow-tree violation search when
 #'   rpart is installed. Default TRUE.
 #' @param tree_max_depth,tree_min_n Tree depth and minimum leaf size.

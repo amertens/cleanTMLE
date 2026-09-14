@@ -27,6 +27,7 @@ without any propensity-score or covariate adjustment. Intended as
 a benchmark comparator for the adjusted workflows.
 }
 \examples{
+\dontrun{
 dat  <- sim_func1(n = 500, seed = 1)
 lock <- create_analysis_lock(
   data = dat, treatment = "treatment", outcome = "event_24",
@@ -34,5 +35,6 @@ lock <- create_analysis_lock(
 )
 run_crude_workflow(lock)
 
+}
 }
 \keyword{internal}

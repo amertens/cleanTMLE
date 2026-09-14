@@ -17,6 +17,7 @@ Checks that a \code{cleanroom_lock} object is complete, internally consistent,
 and has not been modified after creation (hash check).
 }
 \examples{
+\dontrun{
 dat <- sim_func1(n = 200, seed = 1)
 lock <- create_analysis_lock(
   data       = dat,
@@ -27,5 +28,6 @@ lock <- create_analysis_lock(
 )
 validate_analysis_lock(lock)
 
+}
 }
 \keyword{internal}

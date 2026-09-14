@@ -384,7 +384,7 @@ plot_dq_heatmap <- function(x,
                                   name = metric_label, na.value = "grey80") +
     ggplot2::labs(
       x        = "Candidate",
-      y        = "Scenario × severity",
+      y        = "Scenario x severity",
       title    = paste0("DQ stress-test heatmap: ", metric_label),
       subtitle = paste0("Effect size = ", effect_size)
     ) +

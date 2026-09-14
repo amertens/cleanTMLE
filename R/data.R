@@ -67,7 +67,7 @@
 #'
 #' @export
 sim_func1 <- function(n = 1000, seed = 123, max_time = 36) {
-  set.seed(seed)
+  withr::local_seed(seed)
 
   # Baseline covariates
   age <- rnorm(n, mean = 50, sd = 10)

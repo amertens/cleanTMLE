@@ -38,10 +38,9 @@ A \code{cleanroom_lock} object with \code{cleanroom_enabled = FALSE}.
 A convenience wrapper around \code{\link[=create_analysis_lock]{create_analysis_lock()}} that disables the
 software-enforced clean-room machinery (outcome guard, gate authorisation,
 audit-trail requirement). The resulting lock can be passed to the
-estimation functions (\code{\link[=run_clean_tmle]{run_clean_tmle()}}, \code{\link[=run_ipcw_tmle]{run_ipcw_tmle()}},
-\code{\link[=run_matched_tmle]{run_matched_tmle()}}, \code{\link[=estimate_ipwrisk]{estimate_ipwrisk()}}, \code{\link[=estimate_gcomprisk]{estimate_gcomprisk()}},
-\code{\link[=estimate_aipwrisk]{estimate_aipwrisk()}}, etc.) without first calling
-\code{\link[=authorize_outcome_analysis]{authorize_outcome_analysis()}}. The lock fingerprint and the design
+estimation functions (\code{\link[=run_clean_tmle]{run_clean_tmle()}}, \code{\link[=estimate_effect]{estimate_effect()}},
+\code{\link[=estimate_ipwrisk]{estimate_ipwrisk()}}, \code{\link[=estimate_gcomprisk]{estimate_gcomprisk()}}, \code{\link[=estimate_aipwrisk]{estimate_aipwrisk()}},
+and the rest) with no unmasking ritual. The lock fingerprint and the design
 diagnostics (\code{compute_ps_diagnostics()}, \code{clean_weight_diagnostics()},
 \code{love_plot()}) remain available.
 }
@@ -55,6 +54,7 @@ For high-stakes confirmatory studies, use \code{\link[=create_analysis_lock]{cre
 (the default) and the full staged workflow.
 }
 \examples{
+\dontrun{
 dat  <- sim_func1(n = 200, seed = 1)
 lock <- create_simple_lock(
   data       = dat,
@@ -65,5 +65,6 @@ lock <- create_simple_lock(
 )
 isFALSE(lock$cleanroom_enabled)
 
+}
 }
 \keyword{internal}

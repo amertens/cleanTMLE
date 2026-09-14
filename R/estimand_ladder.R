@@ -112,6 +112,10 @@ export_design_log <- function(lock, format = c("tidy", "muntner"),
 #'   "matched_ATT")`.
 #' @param thresholds A [support_thresholds()] object.
 #' @param trim_levels Trim levels reported for `trimmed_ATE`.
+#' @param profile_vars Optional character vector of lock-data columns;
+#'   when given, the patients outside the support band are profiled on
+#'   these variables (the `who_is_unsupported` reading) and the
+#'   profile rides on the result.
 #' @param caliper_sd Caliper (SDs of the logit propensity) for
 #'   `matched_ATT`. Default 0.2.
 #' @return An object of class `estimand_feasibility`: a data.frame with one
@@ -319,6 +323,10 @@ who_is_unsupported <- function(ps_fit, vars = NULL, band = c(0.05, 0.95),
 #' @param trigger The verdict that moves the analysis off the primary:
 #'   `"SEVERE"` (default), `"FAIL"` (only extreme non-overlap moves it), or
 #'   `"FLAG"` (any violation moves it).
+#' @param candidate Optional TMLE specification to bind to the ladder
+#'   (a [select_candidate()] result, a single specification, or a
+#'   length-one candidate set from [define_candidates()]); downstream
+#'   estimation honours its truncation and libraries.
 #' @param evalue_floor,bias_to_null_floor Optional prespecified sensitivity
 #'   floors recorded with the ladder.
 #' @return The lock, with `$estimand_ladder` set and a design-log entry
@@ -415,8 +423,8 @@ run_estimand_ladder <- function(lock, ps_fit,
   if (is.null(feasibility))
     feasibility <- estimand_feasibility(ps_fit, trim_levels = trim_levels)
 
-  Y <- lock$data[[lock$outcome]]
-  if (is.null(use_ipcw)) use_ipcw <- anyNA(Y)
+  Y <- .outcome_vector(lock)
+  if (is.null(use_ipcw)) use_ipcw <- isTRUE(anyNA(Y))
 
   sev_rank <- c(PASS = 1L, FLAG = 2L, SEVERE = 3L, FAIL = 4L)
   trigger_rank <- sev_rank[[ladder$trigger]]
@@ -473,14 +481,14 @@ run_estimand_ladder <- function(lock, ps_fit,
     if (verbose) message("Estimating ", ed, " ...")
     fit <- switch(ed,
       ATE = {
+        .check_outcome_access(lock, allow_outcome_access,
+                              caller = "run_estimand_ladder")
         args <- .tmle_delegate_args(lock, family = family,
                                     use_delta = use_ipcw,
                                     sl_library = sl_library, gbound = gbound,
                                     cv_folds = cv_folds,
                                     prescreen_g = prescreen_g)
-        .check_outcome_access(lock, allow_outcome_access,
-                              caller = "run_estimand_ladder")
-        set.seed(seed)
+        withr::local_seed(seed)
         f <- do.call(tmle::tmle, args)
         est <- f$estimates$ATE
         guard <- implausibility_check(unname(est$psi),
@@ -539,7 +547,7 @@ run_estimand_ladder <- function(lock, ps_fit,
         g_m <- pmin(pmax(as.numeric(ps_fit$ps_raw %||% ps_fit$ps), 1e-6),
                     1 - 1e-6)
         A_m <- as.integer(lock$data[[lock$treatment]])
-        set.seed(seed)
+        withr::local_seed(seed)
         mm <- .greedy_caliper_match(g_m, A_m)
         if (length(mm$treated) < 10L)
           stop("matched_ATT: fewer than 10 matched pairs.", call. = FALSE)

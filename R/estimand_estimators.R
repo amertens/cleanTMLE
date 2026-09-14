@@ -19,7 +19,7 @@
                                 gbound = NULL,
                                 cv_folds = 10L,
                                 prescreen_g = FALSE) {
-  data       <- lock$data
+  data       <- .join_outcome(lock)
   Y <- as.numeric(data[[lock$outcome]])
   A <- as.numeric(data[[lock$treatment]])
   W <- data[, lock$covariates, drop = FALSE]
@@ -215,7 +215,7 @@ run_att_tmle <- function(lock,
 
   fits <- list()
   for (r in seq_len(reps)) {
-    set.seed(seed + r - 1L)
+    withr::local_seed(seed + r - 1L)
     f <- tryCatch(do.call(tmle::tmle, args), error = function(e) {
       warning("run_att_tmle: tmle fit failed (", conditionMessage(e), ").",
               call. = FALSE); NULL })
@@ -316,7 +316,7 @@ estimate_ato <- function(lock, ps_fit,
     stop("`ps_fit` must be a ps_fit object.", call. = FALSE)
   .check_outcome_access(lock, allow_outcome_access, caller = "estimate_ato")
 
-  data <- lock$data
+  data <- .join_outcome(lock)
   Y <- as.numeric(data[[lock$outcome]])
   A <- as.integer(data[[lock$treatment]])
   g <- pmin(pmax(as.numeric(ps_fit$ps_raw %||% ps_fit$ps), 1e-6), 1 - 1e-6)
@@ -342,7 +342,7 @@ estimate_ato <- function(lock, ps_fit,
     stats::gaussian()
   q <- tryCatch({
     if (requireNamespace("SuperLearner", quietly = TRUE)) {
-      set.seed(lock$seed + 31L)
+      withr::local_seed(lock$seed + 31L)
       AW <- cbind(data.frame(.A = Ac), Wc)
       sl <- SuperLearner::SuperLearner(Y = Yc, X = AW, family = fam_obj,
                                        SL.library = sl_library,
@@ -523,8 +523,7 @@ run_trimmed_tmle <- function(lock, ps_fit,
                            "skipped")
       next
     }
-    sub_lock <- lock
-    sub_lock$data <- lock$data[keep, , drop = FALSE]
+    sub_lock <- .sublock_with_outcome(lock, which(keep))
 
     # Refit the propensity on the trimmed subset with the same method.
     refit <- tryCatch({
@@ -552,7 +551,7 @@ run_trimmed_tmle <- function(lock, ps_fit,
                                 sl_library = sl_library, gbound = gbound,
                                 cv_folds = cv_folds,
                                 prescreen_g = prescreen_g)
-    set.seed(seed)
+    withr::local_seed(seed)
     fit <- tryCatch(do.call(tmle::tmle, args), error = function(e) {
       warning("run_trimmed_tmle: tmle fit failed at level ", lo, " (",
               conditionMessage(e), ").", call. = FALSE); NULL })

@@ -6,6 +6,7 @@
 \description{
 Provides \code{run_clean_tmle()}, a single-call wrapper that orchestrates
 the full staged clean-room TMLE pipeline (Stages 1 -> 2a -> 2b -> 3),
-along with helper functions for love plots, influence-curve histograms,
-and a CSV-based decision log.
+along with helper functions for love plots and influence-curve
+histograms. The design log on the lock replaced the CSV decision-log
+helpers in 0.3.0.
 }

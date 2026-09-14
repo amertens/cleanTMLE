@@ -154,7 +154,7 @@ estimate_aipwrisk <- function(spec, risk_time = NULL, trim = NULL,
   # Bootstrap
   boot_results <- NULL
   if (nboot > 0) {
-    set.seed(seed)
+    withr::local_seed(seed)
     boot_results <- .bootstrap_aipw(spec, nboot, risk_time, trim, trunc)
     risk_df <- .attach_boot_ci(risk_df, boot_results)
   }

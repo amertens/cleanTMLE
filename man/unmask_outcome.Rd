@@ -2,48 +2,56 @@
 % Please edit documentation in R/stages.R
 \name{unmask_outcome}
 \alias{unmask_outcome}
-\title{Restore the Outcome Column from an Original Lock}
+\title{Restore the Outcome from an Unmasked Original}
 \usage{
-unmask_outcome(lock, original_lock, audit = NULL, allow_unauthorized = FALSE)
+unmask_outcome(
+  lock,
+  original_lock,
+  approved_by = NULL,
+  allow_unauthorized = NULL
+)
 }
 \arguments{
-\item{lock}{A \code{cleanroom_lock} whose outcome column is masked.}
+\item{lock}{A \code{cleanroom_lock}, normally masked.}
 
-\item{original_lock}{The original \code{cleanroom_lock} holding the
-true outcome values.}
+\item{original_lock}{An unmasked \code{cleanroom_lock} over the same
+data, holding the true outcome values.}
 
-\item{audit}{Audit log (from \code{\link{create_audit_log}}) carrying the
-recorded checkpoints. On a cleanroom-enabled lock the pre-outcome gate is
-checked via \code{\link{authorize_outcome_analysis}} before the outcome is
-revealed; a non-authorising gate raises an error unless
-\code{allow_unauthorized = TRUE}. When \code{NULL} (the default) a
-cleanroom lock errors unless \code{allow_unauthorized = TRUE}.}
+\item{approved_by}{Character; the person or role authorising the
+unmasking. Required when the lock was created with
+\code{enforce = TRUE}; recorded in the design log whenever given.}
 
-\item{allow_unauthorized}{Logical; if \code{TRUE}, force unmasking even when
-the gate does not authorise or no \code{audit} is supplied (a warning is
-raised). Use for simulation studies or forced re-analysis. Default
-\code{FALSE}.}
+\item{allow_unauthorized}{Deprecated (the audit gate it bypassed was
+removed in 0.3.0). \code{TRUE} is accepted with a warning and
+behaves as an unnamed forced approval, so old scripts keep running.}
 }
 \value{
-A modified \code{cleanroom_lock} with the outcome column restored,
-\code{lock$.outcome_masked} set to \code{FALSE}, and
-\code{lock$.outcome_authorized} set to \code{TRUE}.
+A modified \code{cleanroom_lock} with the outcome restored,
+\code{lock$.outcome_masked} set to \code{FALSE},
+\code{lock$.outcome_authorized} set to \code{TRUE}, and the
+unmasking recorded in \code{lock$design_log}.
 }
 \description{
-Copies the outcome column from \code{original_lock} back into
-\code{lock}, reversing the effect of \code{\link{mask_outcome}}.
+Restores the outcome store (or, on a legacy lock, the outcome column)
+from \code{original_lock}, reversing \code{\link{mask_outcome}}, and
+records the unmasking in the design log. On a lock created with
+\code{enforce = TRUE}, unmasking requires a named \code{approved_by};
+the name is written into the design log's \code{decided_by} column
+and the lock is stamped as authorised for estimation. This explicit,
+logged step is the single institutional switch: there is no token and
+no gate object, only a person on the record.
 }
 \section{Clean-room stage}{
  Pre-estimation (outcome unblinding).
 }
 
 \examples{
-dat          <- sim_func1(n = 200, seed = 1)
-lock         <- create_analysis_lock(dat, "treatment", "event_24",
-                                     c("age", "sex", "biomarker"), seed = 1)
-masked       <- mask_outcome(lock)
-# Force unmasking outside a full gate flow (e.g. a demo or simulation):
-unmasked     <- unmask_outcome(masked, lock, allow_unauthorized = TRUE)
-identical(unmasked$data[["event_24"]], lock$data[["event_24"]])  # TRUE
+dat    <- sim_func1(n = 200, seed = 1)
+lock   <- create_analysis_lock(dat, "treatment", "event_24",
+                               c("age", "sex", "biomarker"), seed = 1)
+masked <- mask_outcome(lock)
+unmasked <- unmask_outcome(masked, lock, approved_by = "review team")
+identical(cleanTMLE:::.outcome_vector(unmasked),
+          cleanTMLE:::.outcome_vector(lock))  # TRUE
 
 }

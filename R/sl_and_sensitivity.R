@@ -41,10 +41,12 @@
 #'   }
 #'
 #' @examples
+#' \dontrun{
 #' validate_superlearner_spec(n = 1693)
 #' validate_superlearner_spec(n = 200, n_events = 25,
 #'                            library = c("SL.glm"))
 #'
+#' }
 #' @keywords internal
 validate_superlearner_spec <- function(n, n_events = NULL,
                                         library = NULL) {
@@ -120,9 +122,11 @@ validate_superlearner_spec <- function(n, n_events = NULL,
 #'   \code{|estimate - null_value|}).
 #'
 #' @examples
+#' \dontrun{
 #' # rescueCo full-cohort TMLE: RD = 0.031, 95% CI (-0.001, 0.063)
 #' tipping_point_sensitivity(0.0311, -0.0007, 0.0629)
 #'
+#' }
 #' @keywords internal
 tipping_point_sensitivity <- function(estimate, ci_lower, ci_upper,
                                        null_value = 0) {

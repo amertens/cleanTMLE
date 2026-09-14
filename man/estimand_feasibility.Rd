@@ -24,6 +24,11 @@ estimand_feasibility(
 
 \item{caliper_sd}{Caliper (SDs of the logit propensity) for
 \code{matched_ATT}. Default 0.2.}
+
+\item{profile_vars}{Optional character vector of lock-data columns;
+when given, the patients outside the support band are profiled on
+these variables (the \code{who_is_unsupported} reading) and the
+profile rides on the result.}
 }
 \value{
 An object of class \code{estimand_feasibility}: a data.frame with one

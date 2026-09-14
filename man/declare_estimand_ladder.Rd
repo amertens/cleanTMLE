@@ -28,6 +28,11 @@ declare_estimand_ladder(
 
 \item{evalue_floor, bias_to_null_floor}{Optional prespecified sensitivity
 floors recorded with the ladder.}
+
+\item{candidate}{Optional TMLE specification to bind to the ladder
+(a \code{\link[=select_candidate]{select_candidate()}} result, a single specification, or a
+length-one candidate set from \code{\link[=define_candidates]{define_candidates()}}); downstream
+estimation honours its truncation and libraries.}
 }
 \value{
 The lock, with \verb{$estimand_ladder} set and a design-log entry

@@ -46,8 +46,10 @@
 #' @return An object of class `support_surfaces`: the grid specification.
 #' @seealso [simulate_support()]
 #' @examples
+#' \dontrun{
 #' support_surfaces()
 #' support_surfaces(confounding = c(0, 0.5, 1, 2), modification = c(0, 0.5, 1))
+#' }
 #' @keywords internal
 support_surfaces <- function(confounding = c(0, 1, 2),
                              modification = c(0, 1),
@@ -363,13 +365,13 @@ simulate_support <- function(lock,
     q0_lp_extra <- q0_lp_extra - mean(q0_lp_extra)
     if (is.null(base_rate)) base_rate <- mean(yv, na.rm = TRUE)
   } else if (q0_source %in% c("heldout", "primary_outcome")) {
-    yv <- as.numeric(data[[lock$outcome]])
-    if (all(is.na(yv)))
-      stop("The lock outcome is fully NA (masked); unmask it or choose a ",
-           "different q0_source.", call. = FALSE)
+    yv <- as.numeric(.outcome_vector(lock))
+    if (length(yv) == 0L || all(is.na(yv)))
+      stop("The lock holds no readable outcome (masked); unmask it or ",
+           "choose a different q0_source.", call. = FALSE)
     rows <- which(!is.na(yv))
     if (q0_source == "heldout") {
-      set.seed(lock$seed + 1717L)
+      withr::local_seed(lock$seed + 1717L)
       heldout_rows <- sort(sample(rows, ceiling(length(rows) *
                                                   heldout_fraction)))
       rows <- heldout_rows
@@ -382,8 +384,9 @@ simulate_support <- function(lock,
     q0_lp_extra <- q0_lp_extra - mean(q0_lp_extra)
     if (is.null(base_rate)) base_rate <- mean(yv[rows], na.rm = TRUE)
   } else if (is.null(base_rate)) {
-    yv <- suppressWarnings(as.numeric(data[[lock$outcome]]))
-    base_rate <- if (!all(is.na(yv))) mean(yv, na.rm = TRUE) else 0.10
+    yv <- suppressWarnings(as.numeric(.outcome_vector(lock)))
+    base_rate <- if (length(yv) && !all(is.na(yv)))
+      mean(yv, na.rm = TRUE) else 0.10
     if (!is.finite(base_rate) || base_rate <= 0 || base_rate >= 1)
       base_rate <- 0.10
   }
@@ -424,7 +427,7 @@ simulate_support <- function(lock,
                       dimnames = list(NULL, estimands))
 
     for (r in seq_len(reps)) {
-      set.seed(lock$seed + 100000L * gi + r)
+      withr::local_seed(lock$seed + 100000L * gi + r)
       if (design == "generate_treatment") {
         idx <- sample.int(n, n, replace = TRUE)
         A_r <- stats::rbinom(n, 1L, g_gen[idx])
@@ -638,9 +641,9 @@ check_locked_estimator <- function(lock, ps_fit = NULL, reps = 200L,
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
   data <- lock$data
-  Y <- as.numeric(data[[lock$outcome]])
+  Y <- as.numeric(.outcome_vector(lock))
   A <- as.integer(data[[lock$treatment]])
-  if (all(is.na(Y)))
+  if (length(Y) == 0L || all(is.na(Y)))
     stop("check_locked_estimator needs a readable outcome.", call. = FALSE)
   W <- data[, lock$covariates, drop = FALSE]
   W <- as.data.frame(lapply(W, function(x) {
@@ -658,7 +661,7 @@ check_locked_estimator <- function(lock, ps_fit = NULL, reps = 200L,
   Wc <- W[cc, , drop = FALSE]; gc_ <- g_gen[cc]
   ests <- ses <- rep(NA_real_, reps)
   for (r in seq_len(reps)) {
-    set.seed(lock$seed + 5000L + r)
+    withr::local_seed(lock$seed + 5000L + r)
     idx <- sample.int(n, n, replace = TRUE)
     A_r <- stats::rbinom(n, 1L, gc_[idx])
     p_r <- ifelse(A_r == 1, q$Q1[idx], q$Q0[idx])

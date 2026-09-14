@@ -156,24 +156,28 @@
 #' Abadie, A. and Imbens, G. W. (2016). Matching on the estimated propensity
 #' score. *Econometrica*, 84(2), 781--807.
 #'
-#' @keywords internal
+#' @export
 bootstrap_rd_variance <- function(data, treatment, outcome, covariates,
                                   estimator = c("tmle", "iptw", "match_tmle"),
                                   R = 1000L, sl_library = c("SL.glm"),
                                   truncate = 0.01, conf_level = 0.95,
                                   seed = 42L) {
   estimator <- match.arg(estimator)
-  set.seed(seed)
   n <- nrow(data)
-  point <- .rd_point_estimate(data, treatment, outcome, covariates,
-                              estimator, sl_library, truncate)
-  boots <- vapply(seq_len(R), function(b) {
-    idx <- sample.int(n, n, replace = TRUE)
-    tryCatch(
-      .rd_point_estimate(data[idx, , drop = FALSE], treatment, outcome,
-                         covariates, estimator, sl_library, truncate),
-      error = function(e) NA_real_)
-  }, numeric(1))
+  boot_run <- withr::with_seed(seed, {
+    point <- .rd_point_estimate(data, treatment, outcome, covariates,
+                                estimator, sl_library, truncate)
+    boots <- vapply(seq_len(R), function(b) {
+      idx <- sample.int(n, n, replace = TRUE)
+      tryCatch(
+        .rd_point_estimate(data[idx, , drop = FALSE], treatment, outcome,
+                           covariates, estimator, sl_library, truncate),
+        error = function(e) NA_real_)
+    }, numeric(1))
+    list(point = point, boots = boots)
+  })
+  point <- boot_run$point
+  boots <- boot_run$boots
   boots <- boots[is.finite(boots)]
   if (length(boots) < 2L)
     stop("Bootstrap produced too few valid resamples.", call. = FALSE)

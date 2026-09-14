@@ -47,21 +47,22 @@ NULL
     )
   }
 
-  # Authorisation check, opt-in since 0.2.0. Software-enforced authorisation
-  # applies only to locks that request it (`require_authorization = TRUE`,
-  # set by the two-pass entry point run_clean_tmle_preoutcome()). The default
-  # lock enforces masking only: the one honest blinding device is a
-  # physically absent outcome column, and what protects an analysis beyond
-  # that is statistical (the support verdict, the estimand ladder, the
-  # implausibility guard), not a token.
+  # Authorisation check, opt-in via create_analysis_lock(enforce = TRUE).
+  # The default lock enforces masking only: the one honest blinding
+  # device is a physically absent outcome, and what protects an analysis
+  # beyond that is statistical (the support verdict, the estimand
+  # ladder, the implausibility guard), not a token. The enforce switch
+  # adds one requirement: estimation refuses to run until the outcome
+  # was unmasked through unmask_outcome() with a named approver, which
+  # writes the authorisation into the design log.
   if (isTRUE(lock$require_authorization) &&
       !isTRUE(lock$.outcome_authorized)) {
     stop(
-      caller, ": this lock requires a recorded pre-outcome authorisation ",
-      "(it came from run_clean_tmle_preoutcome()). Record it with ",
-      "unmask_outcome(lock, original_lock, audit = <audit>) or ",
-      "assert_outcome_authorized(audit, lock = <lock>); or set ",
-      "allow_outcome_access = TRUE to override.",
+      caller, ": this lock was created with enforce = TRUE and has not ",
+      "been authorised for estimation. Unmask it through ",
+      "unmask_outcome(lock, original_lock, approved_by = <name>) so the ",
+      "authorisation is on the design log; or set ",
+      "allow_outcome_access = TRUE to override this call.",
       call. = FALSE
     )
   }
@@ -93,36 +94,32 @@ NULL
 #' these invalidates the hash.
 #'
 #' @section What does NOT invalidate the lock:
-#' Audit-log entries, decision-log entries, recorded checkpoint objects, and
-#' user-supplied notes are kept separately (e.g. in the
-#' \code{cleantmle_audit}) and do not feed into the lock hash. They are
-#' recorded for traceability but the lock fingerprint is unchanged.
+#' Design-log entries and user-supplied notes accumulate on the lock for
+#' traceability and do not feed into the lock hash; the fingerprint
+#' covers the specification, not the running record.
 #'
-#' @section Outcome-access taxonomy:
-#' The workflow distinguishes pre-outcome access (no Y, marginal Y summaries
-#' used only for design-stage precision, simulated Y from plasmode simulation,
-#' and negative-control Y) from post-outcome access (primary Y). Stage 4
-#' functions check \code{lock$.outcome_masked} via the internal outcome guard
-#' and refuse to run on the primary Y until the gate authorises it or the
-#' caller passes \code{override_clean_room = TRUE}.
+#' @section The outcome store:
+#' Since 0.3.0 the lock's data frame holds design data only (covariates,
+#' treatment, missingness indicators, negative controls); the primary
+#' outcome column never sits in \code{lock$data}. The outcome lives in
+#' \code{lock$outcome_store}, a sealed object that only the Stage 4
+#' estimators join back, after the outcome guard.
+#' \code{\link{mask_outcome}} removes the store from its copy of the
+#' lock, so a masked lock is physically outcome-free, and
+#' \code{\link{unmask_outcome}} restores it from an unmasked original
+#' with a design-log entry recording the unmasking (on an
+#' \code{enforce = TRUE} lock, with a named approver).
 #'
-#' @section GO / FLAG / STOP decisions:
-#' Checkpoint functions (\code{\link{checkpoint_cohort_adequacy}},
-#' \code{\link{checkpoint_balance}}, \code{\link{checkpoint_residual_bias}})
-#' each return a \code{cleantmle_checkpoint} with a \code{decision} of
-#' GO, FLAG, or STOP. \code{\link{authorize_outcome_analysis}} and
-#' \code{\link{gate_all}} combine these: any STOP yields an overall STOP;
-#' any FLAG yields FLAG when \code{allow_flag = TRUE} (the default,
-#' interpreted as conditional GO) and is escalated to STOP when
-#' \code{allow_flag = FALSE}.
-#'
-#' @section Manual overrides:
-#' An \code{override_clean_room = TRUE} call to a Stage 4 function bypasses
-#' the outcome guard for that call. The override does not erase the STOP or
-#' FLAG result recorded in the audit log; it records a documented decision
-#' to proceed despite that result. Analysts should additionally call
-#' \code{\link{record_decision_log_entry}} with
-#' \code{decision_type = "override"} to capture the rationale.
+#' @section Verdicts, not tokens:
+#' The design stage records graded verdicts on its result objects: the
+#' support verdict of \code{\link{assess_support}}, the per-estimand
+#' verdicts of \code{\link{estimand_feasibility}}, the locked
+#' data-quality verdict and tipping points of \code{\link{stress_test}},
+#' and the Check Point 3 reading of \code{\link{negative_control_ladder}}
+#' under the locked \code{nc_criteria}. \code{\link{design_report}}
+#' assembles them for the review team; estimand switches and overrides
+#' are logged design decisions in \code{lock$design_log}, exported with
+#' \code{\link{export_design_log}}.
 #'
 #' @param data A data.frame containing covariates, treatment, and outcome.
 #' @param treatment Character; name of the binary treatment column.
@@ -139,12 +136,15 @@ NULL
 #' @param negative_controls Optional character vector of negative-control
 #'   columns to register on the lock at creation (before any downstream
 #'   filtering can touch them).
-#' @param mask Logical; if `TRUE`, the outcome column is masked (physically
-#'   blanked) in the returned lock. Keep the original data to unmask later
-#'   with [unmask_outcome()]. Default `FALSE`.
-#' @param enforce Logical; if `TRUE`, the lock additionally requires a
-#'   recorded pre-outcome authorisation before Stage 4 estimators run (the
-#'   software-enforced two-pass contract). Default `FALSE`.
+#' @param mask Logical; if `TRUE`, the outcome store is removed from the
+#'   returned lock, so it is physically outcome-free. Keep an unmasked
+#'   lock (or create one later over the same data) to unmask with
+#'   [unmask_outcome()]. Default `FALSE`.
+#' @param enforce Logical; if `TRUE`, Stage 4 estimators refuse to run
+#'   until the outcome has been unmasked through [unmask_outcome()] with
+#'   a named `approved_by`, which writes the authorisation into the
+#'   design log. This is the single institutional switch. Default
+#'   `FALSE`.
 #' @param dgp_mode Character; the plasmode outcome-generator mode, a
 #'   locked field read by [run_plasmode_feasibility()] and
 #'   [run_plasmode_dq_stress()]. `"hybrid"` (default) fits the
@@ -172,6 +172,18 @@ NULL
 #'   personnel structure (for example `programmer`, `analyst`,
 #'   `analytic_advisor`, `review_team`). Recorded and printed in the
 #'   design report header; nothing is enforced.
+#' @param estimand Optional structured estimand description: a named
+#'   list with any of `description`, `population`,
+#'   `treatment_strategies` (length-2 character contrast),
+#'   `outcome_label`, `followup`, `contrast` (default
+#'   `"risk_difference"`), and `statistical_estimand`; or a single
+#'   character description. Descriptive metadata; not part of the
+#'   fingerprint.
+#' @param sensitivity_plans Optional named list of sensitivity-analysis
+#'   plans; each element name is the plan label and each element may
+#'   carry `description` and `settings` (a named list, for example
+#'   `list(truncation = c(0.01, 0.05, 0.10))`). Descriptive metadata;
+#'   not part of the fingerprint.
 #'
 #' @return An object of class `cleanroom_lock` containing all specified
 #'   analysis parameters plus a reproducibility fingerprint (`lock_hash`).
@@ -200,7 +212,9 @@ create_analysis_lock <- function(data, treatment, outcome, covariates,
                                                         "external_pilot"),
                                   nc_criteria       = NULL,
                                   dq_thresholds     = NULL,
-                                  roles             = NULL) {
+                                  roles             = NULL,
+                                  estimand          = NULL,
+                                  sensitivity_plans = NULL) {
   if (!is.data.frame(data))
     stop("`data` must be a data.frame.", call. = FALSE)
   if (!is.character(treatment) || length(treatment) != 1L)
@@ -238,8 +252,16 @@ create_analysis_lock <- function(data, treatment, outcome, covariates,
     dq_thresholds = dq_thresholds
   ))
 
+  # The outcome-store split: the lock's data frame carries design data
+  # only, and the primary outcome moves into a sealed store that Stage 4
+  # joins back after the outcome guard.
+  design_data <- data
+  design_data[[outcome]] <- NULL
+
   lock <- list(
-    data              = data,
+    data              = design_data,
+    outcome_store     = .new_outcome_store(data[[outcome]], outcome,
+                                           lock_hash),
     treatment         = treatment,
     outcome           = outcome,
     covariates        = covariates,
@@ -251,11 +273,20 @@ create_analysis_lock <- function(data, treatment, outcome, covariates,
     nc_criteria       = nc_criteria,
     dq_thresholds     = dq_thresholds,
     roles             = roles,
+    # Which prespecified rules the fingerprint commits to. A rule declared
+    # later (declare_negative_controls after creation) is recorded in the
+    # design log instead of the hash, and validation hashes NULL for it.
+    declared_at_creation = list(nc_criteria   = !is.null(nc_criteria),
+                                dq_thresholds = !is.null(dq_thresholds)),
+    lock_format       = 2L,
     locked_at         = Sys.time(),
     lock_hash         = lock_hash
   )
-  class(lock) <- "cleanroom_lock"
+  class(lock) <- c("ct_lock", "cleanroom_lock")
   if (isTRUE(enforce)) lock$require_authorization <- TRUE
+  if (!is.null(estimand)) lock <- attach_estimand(lock, estimand)
+  if (!is.null(sensitivity_plans))
+    lock <- declare_sensitivity_plan(lock, sensitivity_plans)
   if (!is.null(negative_controls))
     for (nc in negative_controls) lock <- define_negative_control(lock, nc)
   if (isTRUE(mask)) lock <- mask_outcome(lock)
@@ -273,6 +304,80 @@ create_analysis_lock <- function(data, treatment, outcome, covariates,
 .design_data_digest <- function(data, outcome) {
   design_cols <- sort(setdiff(names(data), outcome))
   .compute_lock_hash(data[design_cols])
+}
+
+
+# ── The outcome store ─────────────────────────────────────────────────────
+# Since 0.3.0 the lock's data frame holds design data only (covariates,
+# treatment, missingness indicators, negative controls); the primary
+# outcome lives in a separate outcome store that Stage 4 joins back.
+# mask_outcome() removes the store from its copy of the lock, so a masked
+# lock is physically outcome-free. Locks created by earlier versions
+# carry the outcome inside $data; every accessor below branches on that.
+
+#' @keywords internal
+.new_outcome_store <- function(y, outcome, lock_hash) {
+  store <- list(outcome = outcome, y = y, n = length(y),
+                lock_hash = lock_hash)
+  class(store) <- "ct_outcome_store"
+  store
+}
+
+#' @export
+print.ct_outcome_store <- function(x, ...) {
+  cat(sprintf("Outcome store: '%s' (%d rows; joined at Stage 4; lock %s)\n",
+              x$outcome, x$n,
+              if (is.null(x$lock_hash)) "?" else substr(x$lock_hash, 1, 12)))
+  invisible(x)
+}
+
+# TRUE for locks created since the outcome-store split.
+#' @keywords internal
+.lock_has_store_format <- function(lock) isTRUE(lock$lock_format >= 2L)
+
+# The primary outcome vector, or NULL when the lock does not hold one
+# (a masked store-format lock). Legacy locks read the data column.
+#' @keywords internal
+.outcome_vector <- function(lock) {
+  if (.lock_has_store_format(lock)) {
+    if (is.null(lock$outcome_store)) return(NULL)
+    lock$outcome_store$y
+  } else {
+    lock$data[[lock$outcome]]
+  }
+}
+
+# Whether the lock's outcome is readable (present and not all NA).
+#' @keywords internal
+.outcome_readable <- function(lock) {
+  y <- .outcome_vector(lock)
+  !is.null(y) && !all(is.na(y))
+}
+
+# The full analytic data frame: design data plus the outcome column.
+# Stage 4 functions call this once at entry, after the outcome guard.
+#' @keywords internal
+.join_outcome <- function(lock) {
+  if (!.lock_has_store_format(lock)) return(lock$data)
+  d <- lock$data
+  y <- .outcome_vector(lock)
+  if (is.null(y))
+    stop("The lock holds no outcome (masked store-format lock). ",
+         "Unmask with unmask_outcome() before estimation.", call. = FALSE)
+  d[[lock$outcome]] <- y
+  d
+}
+
+# A transient Stage 4 sub-lock over selected rows, with the outcome
+# joined into $data (legacy layout). Used by the matched and trimmed
+# paths after the outcome guard has passed; never a design-stage object.
+#' @keywords internal
+.sublock_with_outcome <- function(lock, idx) {
+  sub <- lock
+  sub$data <- .join_outcome(lock)[idx, , drop = FALSE]
+  sub$outcome_store <- NULL
+  sub$lock_format <- 1L
+  sub
 }
 
 # Normalise (and validate) the prespecified negative-control criteria.
@@ -338,10 +443,9 @@ create_analysis_lock <- function(data, treatment, outcome, covariates,
 #' A convenience wrapper around [create_analysis_lock()] that disables the
 #' software-enforced clean-room machinery (outcome guard, gate authorisation,
 #' audit-trail requirement). The resulting lock can be passed to the
-#' estimation functions ([run_clean_tmle()], [run_ipcw_tmle()],
-#' [run_matched_tmle()], [estimate_ipwrisk()], [estimate_gcomprisk()],
-#' [estimate_aipwrisk()], etc.) without first calling
-#' [authorize_outcome_analysis()]. The lock fingerprint and the design
+#' estimation functions ([run_clean_tmle()], [estimate_effect()],
+#' [estimate_ipwrisk()], [estimate_gcomprisk()], [estimate_aipwrisk()],
+#' and the rest) with no unmasking ritual. The lock fingerprint and the design
 #' diagnostics (`compute_ps_diagnostics()`, `clean_weight_diagnostics()`,
 #' `love_plot()`) remain available.
 #'
@@ -358,6 +462,7 @@ create_analysis_lock <- function(data, treatment, outcome, covariates,
 #' @return A `cleanroom_lock` object with `cleanroom_enabled = FALSE`.
 #'
 #' @examples
+#' \dontrun{
 #' dat  <- sim_func1(n = 200, seed = 1)
 #' lock <- create_simple_lock(
 #'   data       = dat,
@@ -368,6 +473,7 @@ create_analysis_lock <- function(data, treatment, outcome, covariates,
 #' )
 #' isFALSE(lock$cleanroom_enabled)
 #'
+#' }
 #' @keywords internal
 create_simple_lock <- function(data, treatment, outcome, covariates,
                                 sl_library    = c("SL.glm", "SL.mean"),
@@ -383,182 +489,6 @@ create_simple_lock <- function(data, treatment, outcome, covariates,
     seed              = as.integer(seed),
     cleanroom_enabled = FALSE
   )
-}
-
-#' Construct a Prespecified Decision-Threshold Object
-#'
-#' Bundles every GO / FLAG / STOP threshold used across the staged
-#' workflow into one object so they are declared once, in one place, and
-#' can be fingerprinted into the analysis lock with
-#' [attach_decision_thresholds()]. Each `checkpoint_*()` / `gate_*()`
-#' function still accepts its thresholds as arguments; this object is the
-#' single prespecified source those arguments should be drawn from, and
-#' the helpers [dt_cohort()], [dt_balance()], [dt_plasmode()], [dt_dq()],
-#' and [dt_nco()] extract the argument lists for each step.
-#'
-#' Centralising the thresholds addresses a gap in earlier versions: the
-#' decision rule, arguably the most outcome-relevant set of analyst
-#' choices, was passed ad hoc to each checkpoint and was not part of the
-#' lock fingerprint. With [attach_decision_thresholds()] the thresholds
-#' receive their own SHA-256 `thresholds_hash` recorded on the lock, so a
-#' reviewer can verify the decision rule was fixed before unblinding.
-#'
-#' @param cohort_min_n_per_arm,cohort_min_events,cohort_min_prevalence
-#'   Check Point 1 (cohort adequacy) FLAG thresholds.
-#' @param cohort_stop_n_per_arm,cohort_stop_min_events Check Point 1 STOP
-#'   floors.
-#' @param balance_max_smd,balance_min_ess_pct Check Point 2 (balance) FLAG
-#'   thresholds; \code{balance_stop_smd} the STOP floor.
-#' @param balance_stop_smd Check Point 2 STOP floor on the max weighted SMD.
-#' @param plasmode_max_abs_bias,plasmode_min_coverage,plasmode_se_sd_window
-#'   Baseline-plasmode gate (`gate_check`) thresholds.
-#' @param dq_max_abs_bias,dq_min_coverage,dq_max_rmse_ratio Check Point 2c
-#'   (`gate_dq`) STOP thresholds.
-#' @param dq_flag_coverage,dq_flag_rmse_ratio Check Point 2c FLAG envelope.
-#' @param nco_alpha,nco_rule,nco_null_band,nco_adjust Check Point 3
-#'   (negative-control / residual bias) thresholds. \code{nco_rule} is
-#'   \code{"equivalence"} (recommended) or \code{"significance"}.
-#'
-#' @return An object of class \code{cleantmle_thresholds}.
-#'
-#' @examples
-#' dt <- decision_thresholds(dq_max_abs_bias = 0.02, nco_rule = "equivalence",
-#'                           nco_null_band = 0.02)
-#' dt_dq(dt)
-#' @keywords internal
-decision_thresholds <- function(
-    cohort_min_n_per_arm   = 50L,
-    cohort_min_events      = 20L,
-    cohort_min_prevalence  = 0.01,
-    cohort_stop_n_per_arm  = 20L,
-    cohort_stop_min_events = 20L,
-    balance_max_smd        = 0.10,
-    balance_min_ess_pct    = 50,
-    balance_stop_smd       = 0.20,
-    plasmode_max_abs_bias  = 0.01,
-    plasmode_min_coverage  = 0.90,
-    plasmode_se_sd_window  = c(0.8, 1.2),
-    dq_max_abs_bias        = 0.02,
-    dq_min_coverage        = 0.85,
-    dq_max_rmse_ratio      = 1.5,
-    dq_flag_coverage       = 0.90,
-    dq_flag_rmse_ratio     = 1.20,
-    nco_alpha              = 0.05,
-    nco_rule               = c("equivalence", "significance"),
-    nco_null_band          = 0.02,
-    nco_adjust             = c("none", "bonferroni")) {
-  .superseded("decision_thresholds", "support_thresholds()")
-  nco_rule   <- match.arg(nco_rule)
-  nco_adjust <- match.arg(nco_adjust)
-  obj <- list(
-    cohort = list(min_n_per_arm = cohort_min_n_per_arm,
-                  min_events = cohort_min_events,
-                  min_prevalence = cohort_min_prevalence,
-                  stop_n_per_arm = cohort_stop_n_per_arm,
-                  stop_min_events = cohort_stop_min_events),
-    balance = list(max_smd = balance_max_smd,
-                   min_ess_pct = balance_min_ess_pct,
-                   stop_smd = balance_stop_smd),
-    plasmode = list(max_abs_bias = plasmode_max_abs_bias,
-                    min_coverage = plasmode_min_coverage,
-                    se_sd_window = plasmode_se_sd_window),
-    dq = list(max_abs_bias = dq_max_abs_bias,
-              min_coverage = dq_min_coverage,
-              max_rmse_ratio = dq_max_rmse_ratio,
-              flag_coverage = dq_flag_coverage,
-              flag_rmse_ratio = dq_flag_rmse_ratio),
-    nco = list(alpha = nco_alpha, rule = nco_rule,
-               null_band = nco_null_band, adjust = nco_adjust)
-  )
-  class(obj) <- "cleantmle_thresholds"
-  obj
-}
-
-#' @export
-print.cleantmle_thresholds <- function(x, ...) {
-  cat("cleanTMLE decision thresholds\n=============================\n")
-  cat(sprintf("Cohort (CP1):   min_n/arm=%s FLAG, <%s STOP; min_events=%s\n",
-              x$cohort$min_n_per_arm, x$cohort$stop_n_per_arm,
-              x$cohort$min_events))
-  cat(sprintf("Balance (CP2):  max|SMD|=%.2f FLAG, >%.2f STOP; minESS%%=%s\n",
-              x$balance$max_smd, x$balance$stop_smd, x$balance$min_ess_pct))
-  cat(sprintf("Plasmode gate:  |bias|<%.3f, cov>=%.2f, SE/SD in [%.2f,%.2f]\n",
-              x$plasmode$max_abs_bias, x$plasmode$min_coverage,
-              x$plasmode$se_sd_window[1], x$plasmode$se_sd_window[2]))
-  cat(sprintf("DQ gate (CP2c): STOP |bias|>%.3f | cov<%.2f | rmseR>%.2f\n",
-              x$dq$max_abs_bias, x$dq$min_coverage, x$dq$max_rmse_ratio))
-  cat(sprintf("NCO (CP3):      rule=%s, null_band=%.3g, alpha=%.3g, adjust=%s\n",
-              x$nco$rule, x$nco$null_band, x$nco$alpha, x$nco$adjust))
-  invisible(x)
-}
-
-#' Argument-list extractors for [decision_thresholds()]
-#'
-#' Convenience helpers that return the named argument list each
-#' checkpoint / gate expects, so a single prespecified
-#' \code{cleantmle_thresholds} object drives every step:
-#' \code{do.call(checkpoint_balance, c(list(ps_diag), dt_balance(dt)))}.
-#'
-#' @param dt A \code{cleantmle_thresholds} object.
-#' @return A named list of arguments for the corresponding function.
-#' @name dt_extractors
-#' @keywords internal
-dt_cohort <- function(dt) {
-  stopifnot(inherits(dt, "cleantmle_thresholds")); dt$cohort
-}
-#' @rdname dt_extractors
-#' @keywords internal
-dt_balance <- function(dt) {
-  stopifnot(inherits(dt, "cleantmle_thresholds")); dt$balance
-}
-#' @rdname dt_extractors
-#' @keywords internal
-dt_plasmode <- function(dt) {
-  stopifnot(inherits(dt, "cleantmle_thresholds"))
-  list(max_abs_bias = dt$plasmode$max_abs_bias,
-       coverage_threshold = dt$plasmode$min_coverage,
-       se_sd_window = dt$plasmode$se_sd_window)
-}
-#' @rdname dt_extractors
-#' @keywords internal
-dt_dq <- function(dt) {
-  stopifnot(inherits(dt, "cleantmle_thresholds")); dt$dq
-}
-#' @rdname dt_extractors
-#' @keywords internal
-dt_nco <- function(dt) {
-  stopifnot(inherits(dt, "cleantmle_thresholds")); dt$nco
-}
-
-#' Attach Prespecified Decision Thresholds to an Analysis Lock
-#'
-#' Stores a [decision_thresholds()] object on the lock and records its
-#' own SHA-256 fingerprint (`thresholds_hash`). The base `lock_hash` is
-#' left unchanged so existing locks remain reconcilable; the additional
-#' `thresholds_hash` gives the decision rule its own tamper-evident
-#' record. Attach the thresholds *before* any checkpoint is evaluated.
-#'
-#' @param lock A \code{cleanroom_lock}.
-#' @param thresholds A \code{cleantmle_thresholds} object (default: the
-#'   package defaults from [decision_thresholds()]).
-#' @return The lock with `$decision_thresholds` and `$thresholds_hash` set.
-#' @examples
-#' dat  <- sim_func1(n = 200, seed = 1)
-#' lock <- create_analysis_lock(dat, "treatment", "event_24",
-#'                              c("age", "sex", "biomarker"), seed = 1)
-#' lock <- attach_decision_thresholds(lock, decision_thresholds())
-#' lock$thresholds_hash
-#' @keywords internal
-attach_decision_thresholds <- function(lock,
-                                       thresholds = decision_thresholds()) {
-  .superseded("attach_decision_thresholds", "support_thresholds(), passed to assess_support() and estimand_feasibility()")
-  if (!inherits(lock, "cleanroom_lock"))
-    stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
-  if (!inherits(thresholds, "cleantmle_thresholds"))
-    stop("`thresholds` must be a cleantmle_thresholds object.", call. = FALSE)
-  lock$decision_thresholds <- thresholds
-  lock$thresholds_hash <- .compute_lock_hash(thresholds)
-  lock
 }
 
 
@@ -586,6 +516,7 @@ attach_decision_thresholds <- function(lock,
 #' @return Invisibly returns `lock` if valid; otherwise throws an error.
 #'
 #' @examples
+#' \dontrun{
 #' dat <- sim_func1(n = 200, seed = 1)
 #' lock <- create_analysis_lock(
 #'   data       = dat,
@@ -596,6 +527,7 @@ attach_decision_thresholds <- function(lock,
 #' )
 #' validate_analysis_lock(lock)
 #'
+#' }
 #' @keywords internal
 validate_analysis_lock <- function(lock) {
   if (!inherits(lock, "cleanroom_lock"))
@@ -608,11 +540,13 @@ validate_analysis_lock <- function(lock) {
     stop("Lock is missing required fields: ",
          paste(missing_fields, collapse = ", "), call. = FALSE)
 
-  # Recompute and compare hash. The content digest covers every column
-  # except the outcome, so a masked lock validates against the hash
-  # computed at creation. Locks created before the content digest
-  # existed (no dgp_mode field) are checked against the legacy
-  # fingerprint so archived locks stay loadable.
+  # Recompute and compare hash. The fingerprint was computed over the
+  # full input data at creation; a store-format lock reconstructs the
+  # input's dimensions and names from the design data plus the outcome
+  # name, so masking (removing the store) does not disturb validation.
+  # The content digest covers every column except the outcome. Locks
+  # from earlier versions fall back to the fingerprint scheme of their
+  # era so archived locks stay loadable.
   if (is.null(lock$dgp_mode)) {
     computed_hash <- .compute_lock_hash(list(
       treatment  = lock$treatment,
@@ -627,6 +561,22 @@ validate_analysis_lock <- function(lock) {
     message("validate_analysis_lock: pre-content-digest lock; the legacy ",
             "fingerprint (names and dimensions only) was checked.")
   } else {
+    if (.lock_has_store_format(lock)) {
+      full_names <- sort(c(names(lock$data), lock$outcome))
+      full_ncol  <- ncol(lock$data) + 1L
+    } else {
+      full_names <- sort(names(lock$data))
+      full_ncol  <- ncol(lock$data)
+    }
+    # Hash only the rules the fingerprint committed to at creation; a
+    # rule declared afterwards lives in the design log, not the hash.
+    # Locks predating the flag treated any present rule as
+    # creation-declared, so that is the fallback.
+    dac <- lock$declared_at_creation
+    nc_hashed <- if (is.null(dac)) lock$nc_criteria
+                 else if (isTRUE(dac$nc_criteria)) lock$nc_criteria
+    dq_hashed <- if (is.null(dac)) lock$dq_thresholds
+                 else if (isTRUE(dac$dq_thresholds)) lock$dq_thresholds
     computed_hash <- .compute_lock_hash(list(
       treatment     = lock$treatment,
       outcome       = lock$outcome,
@@ -634,12 +584,12 @@ validate_analysis_lock <- function(lock) {
       sl_library    = lock$sl_library,
       seed          = as.integer(lock$seed),
       data_nrow     = nrow(lock$data),
-      data_ncol     = ncol(lock$data),
-      data_names    = paste(sort(names(lock$data)), collapse = "|"),
+      data_ncol     = full_ncol,
+      data_names    = paste(full_names, collapse = "|"),
       data_content  = .design_data_digest(lock$data, lock$outcome),
       dgp_mode      = lock$dgp_mode,
-      nc_criteria   = lock$nc_criteria,
-      dq_thresholds = lock$dq_thresholds
+      nc_criteria   = nc_hashed,
+      dq_thresholds = dq_hashed
     ))
   }
   if (!identical(lock$lock_hash, computed_hash))
@@ -650,9 +600,19 @@ validate_analysis_lock <- function(lock) {
   if (!lock$treatment %in% names(lock$data))
     stop("treatment variable '", lock$treatment,
          "' not found in locked data.", call. = FALSE)
-  if (!lock$outcome %in% names(lock$data))
+  if (.lock_has_store_format(lock)) {
+    if (!is.null(lock$outcome_store) &&
+        !identical(lock$outcome_store$outcome, lock$outcome))
+      stop("outcome store names '", lock$outcome_store$outcome,
+           "' but the lock declares '", lock$outcome, "'.", call. = FALSE)
+    if (!is.null(lock$outcome_store) &&
+        lock$outcome_store$n != nrow(lock$data))
+      stop("outcome store has ", lock$outcome_store$n, " rows; the lock ",
+           "data has ", nrow(lock$data), ".", call. = FALSE)
+  } else if (!lock$outcome %in% names(lock$data)) {
     stop("outcome variable '", lock$outcome,
          "' not found in locked data.", call. = FALSE)
+  }
   missing_cov <- lock$covariates[!lock$covariates %in% names(lock$data)]
   if (length(missing_cov) > 0L)
     stop("covariates not found in locked data: ",
@@ -668,10 +628,18 @@ print.cleanroom_lock <- function(x, ...) {
 
   cat("cleanTMLE Analysis Lock\n")
   cat("=======================\n")
-  cat("Data:       ", nrow(x$data), "observations,", ncol(x$data),
-      "variables\n")
+  if (.lock_has_store_format(x)) {
+    cat("Data:       ", nrow(x$data), "observations,", ncol(x$data),
+        "design variables (outcome kept in a separate store)\n")
+    cat("Outcome:    ", x$outcome,
+        if (is.null(x$outcome_store)) " [store removed: masked]"
+        else " [in outcome store]", "\n", sep = "")
+  } else {
+    cat("Data:       ", nrow(x$data), "observations,", ncol(x$data),
+        "variables\n")
+    cat("Outcome:    ", x$outcome, "\n")
+  }
   cat("Treatment:  ", x$treatment, "\n")
-  cat("Outcome:    ", x$outcome, "\n")
   cat("Covariates: ", paste(x$covariates, collapse = ", "), "\n")
   cat("SL library: ", paste(x$sl_library, collapse = ", "), "\n")
   cat("Plasmode:   ", x$plasmode_reps, "replicates\n")
@@ -812,7 +780,7 @@ fit_ps_superlearner <- function(lock, truncate = 0.01,
   extra_args <- list(...)
   sl_args[names(extra_args)] <- extra_args
 
-  set.seed(lock$seed)
+  withr::local_seed(lock$seed)
   sl_fit <- tryCatch({
     if (!is.null(cluster)) {
       sl_args$cluster <- cluster
@@ -887,6 +855,7 @@ print.ps_fit <- function(x, ...) {
 #'   instead of `sl_fit`).
 #'
 #' @examples
+#' \dontrun{
 #' dat  <- sim_func1(n = 200, seed = 1)
 #' lock <- create_analysis_lock(
 #'   data = dat, treatment = "treatment", outcome = "event_24",
@@ -895,6 +864,7 @@ print.ps_fit <- function(x, ...) {
 #' ps_fit <- fit_ps_glm(lock)
 #' print(ps_fit)
 #'
+#' }
 #' @keywords internal
 fit_ps_glm <- function(lock, truncate = 0.01) {
   if (!inherits(lock, "cleanroom_lock"))
@@ -1106,10 +1076,12 @@ plot.ps_diagnostics <- function(x, ...) {
 #' @return A list of class \code{tmle_candidate_spec}.
 #'
 #' @examples
+#' \dontrun{
 #' tmle_candidate("glm_t01", "GLM, trunc=0.01",
 #'                g_library = "SL.glm", truncation = 0.01)
 #'
-#' @export
+#' }
+#' @keywords internal
 tmle_candidate <- function(candidate_id, label = candidate_id,
                            g_library       = c("SL.glm"),
                            q_library       = NULL,
@@ -1260,10 +1232,12 @@ validate_tmle_candidates <- function(candidates) {
 #' @return A list of \code{tmle_candidate_spec} objects.
 #'
 #' @examples
+#' \dontrun{
 #' grid <- expand_tmle_candidate_grid()
 #' length(grid)
 #' grid[[1]]
 #'
+#' }
 #' @keywords internal
 expand_tmle_candidate_grid <- function(
     truncations = c(0.01, 0.05),
@@ -1513,7 +1487,7 @@ expand_tmle_candidate_grid <- function(
 #' print(plas)
 #' }
 #'
-#' @export
+#' @keywords internal
 run_plasmode_feasibility <- function(lock,
                                       tmle_candidates = NULL,
                                       effect_sizes    = c(0.05, 0.10),
@@ -1560,14 +1534,13 @@ run_plasmode_feasibility <- function(lock,
     # so this path runs on a masked lock.
     p_base <- .resolve_pilot_q0(pilot_q0, data, covariates, n)
   } else {
-    Y <- data[[outcome]]
-    n_obs_y <- sum(!is.na(Y))
+    Y <- .outcome_vector(lock)
+    n_obs_y <- if (is.null(Y)) 0L else sum(!is.na(Y))
     if (n_obs_y == 0L) {
-      stop("Q0 model cannot be fit: lock$data[[lock$outcome]] has zero ",
-           "non-NA observations. If the outcome is masked, either call ",
-           "unmask_outcome() before run_plasmode_feasibility() or lock ",
-           "dgp_mode = 'external_pilot' and supply `pilot_q0`.",
-           call. = FALSE)
+      stop("Q0 model cannot be fit: the lock holds no readable outcome. ",
+           "If the outcome is masked, either call unmask_outcome() before ",
+           "run_plasmode_feasibility() or lock dgp_mode = 'external_pilot' ",
+           "and supply `pilot_q0`.", call. = FALSE)
     }
     if (n_obs_y < length(covariates) + 1L) {
       stop("Q0 model cannot be fit: only ", n_obs_y, " non-NA outcome ",
@@ -1583,21 +1556,23 @@ run_plasmode_feasibility <- function(lock,
     # select among candidates are not biased toward linear-in-logit
     # learners.
     if (is.null(q0_library)) {
+      q_data <- data[, covariates, drop = FALSE]
+      q_data[[outcome]] <- Y
       Q0_fml <- stats::reformulate(covariates, response = outcome)
-      Q0_fit <- stats::glm(Q0_fml, data = data, family = stats::binomial(),
+      Q0_fit <- stats::glm(Q0_fml, data = q_data, family = stats::binomial(),
                            na.action = stats::na.exclude)
       p_base <- as.numeric(stats::predict(Q0_fit, type = "response",
-                                           newdata = data))
+                                           newdata = q_data))
     } else {
       if (!requireNamespace("SuperLearner", quietly = TRUE))
         stop("`q0_library` requested but 'SuperLearner' package is not ",
              "available. Install it or leave q0_library = NULL.",
              call. = FALSE)
-      cc <- stats::complete.cases(data[, c(outcome, covariates),
-                                        drop = FALSE])
+      cc <- !is.na(Y) & stats::complete.cases(data[, covariates,
+                                                   drop = FALSE])
       p_base <- rep(NA_real_, nrow(data))
       Q0_sl <- SuperLearner::SuperLearner(
-        Y          = data[[outcome]][cc],
+        Y          = Y[cc],
         X          = data[cc, covariates, drop = FALSE],
         family     = stats::binomial(),
         SL.library = q0_library,
@@ -1645,7 +1620,7 @@ run_plasmode_feasibility <- function(lock,
     rep_results <- vector("list", reps)
 
     for (rep_i in seq_len(reps)) {
-      set.seed(lock$seed + rep_i)
+      withr::local_seed(lock$seed + rep_i)
 
       # Generate-treatment design (default): resample the covariate rows with
       # replacement and draw treatment from the fitted generating propensity.
@@ -1908,7 +1883,7 @@ print.plasmode_results <- function(x, ...) {
 #' as.character(best)
 #' }
 #'
-#' @export
+#' @keywords internal
 select_tmle_candidate <- function(sim_results,
                                    rule = c("min_rmse", "min_bias",
                                             "max_coverage", "min_max_rmse",
@@ -2145,7 +2120,7 @@ run_match_workflow <- function(lock, ps_fit, caliper = NULL,
   .check_outcome_access(lock, allow_outcome_access,
                         caller = "run_match_workflow")
 
-  data      <- lock$data
+  data      <- .join_outcome(lock)
   treatment <- lock$treatment
   outcome   <- lock$outcome
   A         <- data[[treatment]]
@@ -2280,7 +2255,7 @@ run_iptw_workflow <- function(lock, ps_fit, trim = NULL,
   .check_outcome_access(lock, allow_outcome_access,
                         caller = "run_iptw_workflow")
 
-  data      <- lock$data
+  data      <- .join_outcome(lock)
   treatment <- lock$treatment
   outcome   <- lock$outcome
   A         <- data[[treatment]]
@@ -2411,7 +2386,7 @@ run_ipcw_tmle <- function(lock, ps_fit = NULL,
     stop("Package 'tmle' is required for run_ipcw_tmle(). ",
          "Install with: install.packages('tmle')", call. = FALSE)
 
-  data       <- lock$data
+  data       <- .join_outcome(lock)
   treatment  <- lock$treatment
   outcome    <- lock$outcome
   covariates <- lock$covariates
@@ -2440,7 +2415,7 @@ run_ipcw_tmle <- function(lock, ps_fit = NULL,
   resp_X <- data.frame(A = A, W)
   resp_pred <- tryCatch({
     if (requireNamespace("SuperLearner", quietly = TRUE)) {
-      set.seed(lock$seed + 99L)
+      withr::local_seed(lock$seed + 99L)
       sl <- SuperLearner::SuperLearner(
         Y = R, X = resp_X, family = stats::binomial(),
         SL.library = cens_lib,
@@ -2615,7 +2590,7 @@ fit_tmle_treatment_mechanism <- function(lock, ps_fit = NULL,
       identical(primary_spec$cv_scheme, "cv_tmle") &&
       n_folds == 1L && is.null(fold_vec)) {
     n_folds <- if (!is.null(primary_spec$cv_V)) primary_spec$cv_V
-               else recommend_cv_V(compute_n_eff(data[[lock$outcome]],
+               else recommend_cv_V(compute_n_eff(.outcome_vector(lock),
                                                  family = "binomial"))
   }
   use_cv     <- !is.null(fold_vec) || n_folds > 1L
@@ -2635,7 +2610,7 @@ fit_tmle_treatment_mechanism <- function(lock, ps_fit = NULL,
       val_idx   <- which(fold_vec == k)
       train_idx <- which(fold_vec != k)
 
-      set.seed(lock$seed + k)
+      withr::local_seed(lock$seed + k)
       g_sl <- SuperLearner::SuperLearner(
         Y = A[train_idx], X = W[train_idx, , drop = FALSE],
         family = binomial(), SL.library = lock$sl_library,
@@ -2732,7 +2707,7 @@ fit_tmle_outcome_mechanism <- function(lock, g_fit, sl_library = NULL,
     }
   }
 
-  data       <- lock$data
+  data       <- .join_outcome(lock)
   treatment  <- lock$treatment
   outcome    <- lock$outcome
   covariates <- lock$covariates
@@ -2781,7 +2756,7 @@ fit_tmle_outcome_mechanism <- function(lock, g_fit, sl_library = NULL,
       train_idx <- intersect(which(fold_vec != k), fit_idx)
       if (length(train_idx) == 0L) next
 
-      set.seed(lock$seed + 1L + k)
+      withr::local_seed(lock$seed + 1L + k)
       Q_sl_k <- SuperLearner::SuperLearner(
         Y          = Y[train_idx],
         X          = AW[train_idx, , drop = FALSE],
@@ -2801,7 +2776,7 @@ fit_tmle_outcome_mechanism <- function(lock, g_fit, sl_library = NULL,
     Q_fit_o <- NULL
 
   } else if (requireNamespace("SuperLearner", quietly = TRUE)) {
-    set.seed(lock$seed + 1L)
+    withr::local_seed(lock$seed + 1L)
     Q_sl <- SuperLearner::SuperLearner(
       Y          = Y[fit_idx],
       X          = AW[fit_idx, , drop = FALSE],
@@ -3283,162 +3258,6 @@ fit_tmle_candidate_set <- function(lock, candidates = NULL, ps_fit = NULL,
 }
 
 
-# ── Gate Decision ─────────────────────────────────────────────────────────
-
-#' Evaluate a Plasmode-Simulation Gate (GO / FLAG / STOP)
-#'
-#' Compares performance metrics from a plasmode-simulation replicate set
-#' against pre-specified targets and returns a structured GO / FLAG / STOP
-#' decision. This implements the checkpoint logic described in the
-#' clean-room staged workflow: if bias, coverage, and SE-calibration all
-#' pass, the decision is **GO**; if bias and coverage pass but
-#' SE-calibration fails, the decision is **FLAG** (proceed with caution);
-#' otherwise the decision is **STOP**.
-#'
-#' @param metrics A data.frame with at least columns `bias`, `coverage`,
-#'   `emp_sd`, and `mean_se`, plus a `candidate` column (from the updated
-#'   plasmode API) or a `method` column (legacy API).
-#' @param scenario_name Character label for the scenario (used in output).
-#' @param targets A list with elements `max_abs_bias` (maximum tolerable
-#'   absolute bias), `min_coverage` (minimum acceptable 95 percent CI
-#'   coverage), `se_sd_low` (lower bound for SE / empirical-SD ratio), and
-#'   `se_sd_high` (upper bound for SE / empirical-SD ratio).
-#' @param method Character; which row to evaluate.
-#'   Matched against the `candidate` column if it exists, otherwise the
-#'   `method` column. Default: `"TMLE"`.
-#' @param rmse_threshold Numeric or `NULL`; optional maximum tolerable RMSE.
-#'   Used to build `targets$max_rmse` when `targets` is not supplied.
-#' @param coverage_threshold Numeric or `NULL`; shorthand minimum coverage
-#'   used to build `targets$min_coverage` when `targets` is not supplied
-#'   (default 0.90).
-#' @param max_abs_bias Numeric or `NULL`; shorthand maximum absolute bias
-#'   used to build `targets$max_abs_bias` when `targets` is not supplied
-#'   (default 0.01).
-#' @param se_sd_window Numeric length-2; the acceptable SE / empirical-SD
-#'   window used when `targets` is not supplied. Default `c(0.8, 1.2)`.
-#'
-#' @return A list with elements `decision` (one of `"GO"`, `"FLAG"`, or
-#'   `"STOP"`), `table` (a one-row data.frame summarising the evaluation),
-#'   and `scenario` (the `scenario_name` used).
-#'
-#' @examples
-#' metrics <- data.frame(
-#'   candidate = c("glm_t01", "glm_t05"),
-#'   bias      = c(0.002, 0.005),
-#'   coverage  = c(0.95,  0.93),
-#'   emp_sd    = c(0.03,  0.04),
-#'   mean_se   = c(0.031, 0.041),
-#'   stringsAsFactors = FALSE
-#' )
-#' targets <- list(
-#'   max_abs_bias = 0.01,
-#'   min_coverage = 0.90,
-#'   se_sd_low    = 0.8,
-#'   se_sd_high   = 1.2
-#' )
-#' gate_check(metrics, "Example", targets, method = "glm_t01")
-#'
-#' @keywords internal
-gate_check <- function(metrics, scenario_name = "plasmode", targets = NULL,
-                       method = "TMLE",
-                       rmse_threshold = NULL,
-                       coverage_threshold = NULL,
-                       max_abs_bias = NULL,
-                       se_sd_window = c(0.8, 1.2)) {
-  .superseded("gate_check", "the verdicts carried on simulate_support() and plasmode results")
-  # Ergonomic dispatch: accept a plasmode_results or plasmode_dq_results
-  # object directly. The DQ path checks every degraded scenario; the
-  # baseline-only path checks the "none" row(s).
-  if (inherits(metrics, "plasmode_results")) {
-    df <- metrics$metrics
-    metrics <- df
-  } else if (inherits(metrics, "plasmode_dq_results")) {
-    df <- metrics$metrics
-    df <- df[df$scenario == "none" | is.na(df$scenario), , drop = FALSE]
-    if (nrow(df) == 0L) df <- metrics$metrics
-    metrics <- df
-  }
-
-  if (!is.data.frame(metrics))
-    stop("`metrics` must be a data.frame, plasmode_results, or ",
-         "plasmode_dq_results object.", call. = FALSE)
-
-  # Build targets from the ergonomic shorthand if not supplied.
-  if (is.null(targets)) {
-    targets <- list(
-      max_abs_bias = if (!is.null(max_abs_bias)) max_abs_bias else 0.01,
-      min_coverage = if (!is.null(coverage_threshold)) coverage_threshold
-                     else 0.90,
-      se_sd_low    = se_sd_window[1],
-      se_sd_high   = se_sd_window[2]
-    )
-    if (!is.null(rmse_threshold)) targets$max_rmse <- rmse_threshold
-  }
-
-  # Support both new "candidate" column and legacy "method" column
-  id_col <- if ("candidate" %in% names(metrics)) "candidate" else "method"
-
-  # If the requested method/candidate is not present, fall back to the
-  # first row -- helpful when callers pass `method = "TMLE"` against a
-  # candidate-keyed metrics frame.
-  if (!method %in% metrics[[id_col]]) {
-    available <- unique(metrics[[id_col]])
-    warning("gate_check: '", method, "' not in metrics$", id_col,
-            "; using '", available[1], "'.", call. = FALSE)
-    method <- available[1]
-  }
-  if (!method %in% metrics[[id_col]])
-    stop("'", method, "' not found in metrics$", id_col, ".", call. = FALSE)
-
-  row <- metrics[metrics[[id_col]] == method, , drop = FALSE]
-  if (nrow(row) == 0L)
-    stop("No rows matched for method '", method, "'.", call. = FALSE)
-  row <- row[1L, , drop = FALSE]
-
-  bias_ok <- abs(row$bias) < targets$max_abs_bias
-  cov_ok  <- row$coverage >= targets$min_coverage
-  rmse_ok <- if (!is.null(targets$max_rmse) && "rmse" %in% names(row))
-               row$rmse <= targets$max_rmse else TRUE
-
-  se_sd_ratio <- if ("mean_se" %in% names(row) && "emp_sd" %in% names(row) &&
-                      !is.na(row$emp_sd) && row$emp_sd > 0) {
-    row$mean_se / row$emp_sd
-  } else {
-    NA_real_
-  }
-  se_cal <- if (!is.na(se_sd_ratio)) {
-    se_sd_ratio >= targets$se_sd_low && se_sd_ratio <= targets$se_sd_high
-  } else {
-    FALSE
-  }
-
-  decision <- if (bias_ok && cov_ok && rmse_ok && se_cal) {
-    "GO"
-  } else if (bias_ok && cov_ok && rmse_ok) {
-    "FLAG"
-  } else {
-    "STOP"
-  }
-
-  tbl <- data.frame(
-    scenario    = scenario_name,
-    method      = method,
-    bias        = round(row$bias, 5),
-    coverage    = round(row$coverage, 3),
-    rmse        = if ("rmse" %in% names(row)) round(row$rmse, 5) else NA_real_,
-    se_sd_ratio = if (!is.na(se_sd_ratio)) round(se_sd_ratio, 3) else NA_real_,
-    bias_ok     = bias_ok,
-    cov_ok      = cov_ok,
-    rmse_ok     = rmse_ok,
-    se_cal      = se_cal,
-    decision    = decision,
-    stringsAsFactors = FALSE
-  )
-
-  list(decision = decision, table = tbl, scenario = scenario_name)
-}
-
-
 # ── Crude Workflow ────────────────────────────────────────────────────────
 
 #' Run Crude (Unadjusted) Risk Difference Workflow
@@ -3455,6 +3274,7 @@ gate_check <- function(metrics, scenario_name = "plasmode", targets = NULL,
 #'   `p_value`, `r1` (risk in treated), and `r0` (risk in control).
 #'
 #' @examples
+#' \dontrun{
 #' dat  <- sim_func1(n = 500, seed = 1)
 #' lock <- create_analysis_lock(
 #'   data = dat, treatment = "treatment", outcome = "event_24",
@@ -3462,6 +3282,7 @@ gate_check <- function(metrics, scenario_name = "plasmode", targets = NULL,
 #' )
 #' run_crude_workflow(lock)
 #'
+#' }
 #' @keywords internal
 run_crude_workflow <- function(lock, allow_outcome_access = FALSE,
                                override_clean_room = NULL) {
@@ -3477,7 +3298,7 @@ run_crude_workflow <- function(lock, allow_outcome_access = FALSE,
   .check_outcome_access(lock, allow_outcome_access,
                         caller = "run_crude_workflow")
 
-  data <- lock$data
+  data <- .join_outcome(lock)
   A    <- data[[lock$treatment]]
   Y    <- data[[lock$outcome]]
   Y    <- as.numeric(Y)

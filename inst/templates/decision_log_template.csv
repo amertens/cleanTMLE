@@ -1,0 +1,2 @@
+date,stage,issue,decision,rationale,decided_by
+YYYY-MM-DD,"Stage 0 (specification)","EXAMPLE ROW (delete): cohort definition ambiguity for transfers-in","Exclude transfers-in from the eligible cohort","Baseline covariates unobservable before transfer","review team"

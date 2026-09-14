@@ -45,8 +45,10 @@ qualitative conclusion.
 }
 
 \examples{
+\dontrun{
 # rescueCo full-cohort TMLE: RD = 0.031, 95\% CI (-0.001, 0.063)
 tipping_point_sensitivity(0.0311, -0.0007, 0.0629)
 
+}
 }
 \keyword{internal}

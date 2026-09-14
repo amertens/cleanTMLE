@@ -52,9 +52,11 @@ library and PS truncation level. Useful as a default when the user
 does not supply a custom candidate list.
 }
 \examples{
+\dontrun{
 grid <- expand_tmle_candidate_grid()
 length(grid)
 grid[[1]]
 
+}
 }
 \keyword{internal}

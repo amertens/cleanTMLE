@@ -47,6 +47,7 @@ confounding.
 }
 
 \examples{
+\dontrun{
 dat  <- sim_func1(n = 200, seed = 1)
 lock <- create_analysis_lock(dat, "treatment", "event_24",
                              c("age", "sex", "biomarker"), seed = 1)
@@ -54,5 +55,6 @@ lock <- define_negative_control(lock, "nc_outcome",
   description = "Outcome known to be unrelated to treatment",
   domain = "confounding_by_indication")
 
+}
 }
 \keyword{internal}

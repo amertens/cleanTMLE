@@ -150,7 +150,7 @@ estimate_ipwrisk <- function(spec, risk_time = NULL, trim = NULL, trunc = NULL,
   # ---- Bootstrap ----
   boot_results <- NULL
   if (nboot > 0) {
-    set.seed(seed)
+    withr::local_seed(seed)
     boot_results <- .bootstrap_ipwrisk(
       spec = spec, nboot = nboot, risk_time = risk_time,
       trim = trim, trunc = trunc, weight_type = weight_type

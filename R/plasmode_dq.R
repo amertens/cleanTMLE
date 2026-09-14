@@ -33,8 +33,10 @@ NULL
 #'   estimated propensity scores reach the boundary. This is the same
 #'   covariate-to-treatment amplification used by the divergence study.
 #' @examples
+#' \dontrun{
 #' default_dq_scenarios()
 #' default_dq_scenarios("exploratory")
+#' }
 #' @keywords internal
 default_dq_scenarios <- function(preset = c("regulatory_standard",
                                              "exploratory", "stress")) {
@@ -72,54 +74,6 @@ default_dq_scenarios <- function(preset = c("regulatory_standard",
       near_positivity       = list(slopes = c(2.0, 3.0, 4.0))
     )
   )
-}
-
-
-#' Print the Active Locked TMLE Specification
-#'
-#' Prints (or returns invisibly) the locked primary TMLE specification
-#' carried on a `cleanroom_lock`: candidate id, label, g/Q libraries,
-#' truncation, plasmode RMSE that won the selection, and the lock hash.
-#' Useful for verifying that downstream estimator calls will pick up the
-#' right candidate.
-#'
-#' @param lock A `cleanroom_lock`.
-#' @return Invisibly returns the locked spec (or `NULL` if none).
-#' @examples
-#' \dontrun{
-#' print_locked_spec(lock)
-#' }
-#' @keywords internal
-print_locked_spec <- function(lock) {
-  .superseded("print_locked_spec", "declare_estimand_ladder(), which records the selected specification on the lock")
-  if (!inherits(lock, "cleanroom_lock"))
-    stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
-  spec <- lock$primary_tmle_spec
-  if (is.null(spec)) {
-    cat("No primary TMLE specification locked. Use ",
-        "lock_primary_tmle_spec() after select_tmle_candidate().\n",
-        sep = "")
-    return(invisible(NULL))
-  }
-  cat("Locked Primary TMLE Specification\n")
-  cat("=================================\n")
-  cat(sprintf("Candidate ID:    %s\n", spec$candidate_id %||% NA))
-  cat(sprintf("Label:           %s\n", spec$label        %||% NA))
-  cat(sprintf("g-library:       %s\n",
-              paste(spec$g_library, collapse = ", ")))
-  cat(sprintf("Q-library:       %s\n",
-              paste(spec$q_library, collapse = ", ")))
-  cat(sprintf("Truncation:      %s\n", as.character(spec$truncation)))
-  if (!is.null(spec$selection_rule))
-    cat(sprintf("Selection rule:  %s\n", spec$selection_rule))
-  if (!is.null(spec$metrics) && is.data.frame(spec$metrics)) {
-    if ("rmse" %in% names(spec$metrics))
-      cat(sprintf("Plasmode RMSE:   %.5f\n", spec$metrics$rmse[1]))
-    if ("coverage" %in% names(spec$metrics))
-      cat(sprintf("Plasmode cov:    %.3f\n", spec$metrics$coverage[1]))
-  }
-  cat(sprintf("Lock hash:       %s\n", lock$lock_hash %||% NA))
-  invisible(spec)
 }
 
 
@@ -257,8 +211,10 @@ print_locked_spec <- function(lock) {
   # Self-contained worker: references cleanTMLE by namespace so it does not
   # drag the package environment through serialisation.
   child_fn <- function(Y_sim, A, W_data, treatment, covariates, n, cands) {
+    fit_one <- get(".plasmode_fit_one_candidate",
+                   envir = asNamespace("cleanTMLE"))
     one <- function(cand) tryCatch(
-      cleanTMLE:::.plasmode_fit_one_candidate(
+      fit_one(
         Y_sim = Y_sim, A = A, W_data = W_data, treatment = treatment,
         covariates = covariates, cand = cand, n = n),
       error = function(e) list(est = NA_real_, se = NA_real_,
@@ -570,6 +526,14 @@ print_locked_spec <- function(lock) {
 #'   propensities under either design.
 #' @param fit_timeout Numeric seconds; see the out-of-process fit guard
 #'   section below. Default \code{Inf} runs fits in-process.
+#' @param parallel Logical; when \code{TRUE} and \pkg{furrr} is
+#'   installed, the replicates of each scenario cell run under the
+#'   caller's \code{future::plan()}. Replicate seeds are derived
+#'   deterministically from the lock seed inside each replicate, so
+#'   parallel and sequential runs return identical results. The
+#'   \code{fit_timeout} subprocess guard applies only to sequential
+#'   runs; under \code{parallel = TRUE} fits run in-process on the
+#'   workers.
 #' @param verbose Logical; print progress messages.
 #'
 #' @details
@@ -640,11 +604,14 @@ print_locked_spec <- function(lock) {
 #'       tipping-point table, one row per candidate per threat family,
 #'       giving the first severity level at which the locked bias or
 #'       coverage bound is crossed. \code{NULL} otherwise.}
+#'     \item{tmle_candidates}{the candidate specifications that were
+#'       fitted, so [select_candidate()] can apply the locked rule to
+#'       this result directly.}
 #'     \item{lock_hash, dgp_mode}{provenance; the lock itself, its
 #'       data, and the fitted Q0 are deliberately not returned.}
 #'   }
 #'
-#' @export
+#' @keywords internal
 run_plasmode_dq_stress <- function(lock,
                                     tmle_candidates = NULL,
                                     effect_sizes    = c(0.05),
@@ -655,6 +622,7 @@ run_plasmode_dq_stress <- function(lock,
                                                         "sample_treatment"),
                                     pilot_q0        = NULL,
                                     fit_timeout     = Inf,
+                                    parallel        = FALSE,
                                     verbose         = TRUE) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
@@ -692,18 +660,17 @@ run_plasmode_dq_stress <- function(lock,
     # so this path runs on a masked lock.
     p_base <- .resolve_pilot_q0(pilot_q0, data, covariates, n)
   } else {
-    # Hybrid mode. Guard against locks where the outcome column is fully
-    # NA (e.g. a lock that has been mask_outcome()'d): this Q0 fit needs
-    # the real outcome.
-    y_all <- data[[outcome]]
-    n_obs_y <- sum(!is.na(y_all))
+    # Hybrid mode. Guard against locks with no readable outcome (a lock
+    # that has been mask_outcome()'d): this Q0 fit needs the real outcome.
+    y_all <- .outcome_vector(lock)
+    n_obs_y <- if (is.null(y_all)) 0L else sum(!is.na(y_all))
     if (n_obs_y == 0L) {
-      stop("Q0 model cannot be fit: lock$data[[lock$outcome]] has zero ",
-           "non-NA observations. If the outcome is masked, either call ",
-           "unmask_outcome() before run_plasmode_dq_stress() or lock ",
-           "dgp_mode = 'external_pilot' and supply `pilot_q0`. In hybrid ",
-           "mode the plasmode uses the covariate-conditional mean of Y ",
-           "but never the treatment-outcome association.", call. = FALSE)
+      stop("Q0 model cannot be fit: the lock holds no readable outcome. ",
+           "If the outcome is masked, either call unmask_outcome() before ",
+           "run_plasmode_dq_stress() or lock dgp_mode = 'external_pilot' ",
+           "and supply `pilot_q0`. In hybrid mode the plasmode uses the ",
+           "covariate-conditional mean of Y but never the ",
+           "treatment-outcome association.", call. = FALSE)
     }
     if (n_obs_y < length(covariates) + 1L) {
       stop("Q0 model cannot be fit: only ", n_obs_y, " non-NA outcome ",
@@ -725,9 +692,9 @@ run_plasmode_dq_stress <- function(lock,
     use_sl_q0 <- !is.null(q0_library) &&
       requireNamespace("SuperLearner", quietly = TRUE)
     if (use_sl_q0) {
-      cc <- !is.na(data[[outcome]])
+      cc <- !is.na(y_all)
       Q0_sl <- SuperLearner::SuperLearner(
-        Y = data[[outcome]][cc],
+        Y = y_all[cc],
         X = data[cc, covariates, drop = FALSE],
         family = stats::binomial(), SL.library = q0_library,
         env = .cleantmle_sl_env())
@@ -737,10 +704,12 @@ run_plasmode_dq_stress <- function(lock,
       if (!is.null(q0_library))
         warning("q0_library supplied but SuperLearner is not available; ",
                 "falling back to logistic-GLM Q0.", call. = FALSE)
+      q_data <- data[, covariates, drop = FALSE]
+      q_data[[outcome]] <- y_all
       Q0_fml <- stats::reformulate(covariates, response = outcome)
-      Q0_fit <- stats::glm(Q0_fml, data = data, family = stats::binomial(),
+      Q0_fit <- stats::glm(Q0_fml, data = q_data, family = stats::binomial(),
                            na.action = stats::na.exclude)
-      p_base <- as.numeric(stats::predict(Q0_fit, newdata = data,
+      p_base <- as.numeric(stats::predict(Q0_fit, newdata = q_data,
                                            type = "response"))
     }
     if (length(p_base) != n) {
@@ -886,13 +855,30 @@ run_plasmode_dq_stress <- function(lock,
                 nrow(scenario_grid), length(effect_sizes), reps, length(cand_ids)))
   }
 
+  # ── Parallel path ─────────────────────────────────────────────────────
+  # One parallel mechanism for the package: furrr over the replicates of
+  # each scenario cell, under whatever future::plan() the caller set.
+  # Seeds are derived per replicate from the lock seed (withr::with_seed
+  # below), so the parallel and sequential runs are bit-identical.
+  use_parallel <- isTRUE(parallel)
+  if (use_parallel && !requireNamespace("furrr", quietly = TRUE)) {
+    warning("parallel = TRUE requires the furrr package; ",
+            "running sequentially.", call. = FALSE)
+    use_parallel <- FALSE
+  }
+  if (use_parallel && is.finite(fit_timeout))
+    warning("The fit_timeout subprocess guard is sequential-only; under ",
+            "parallel = TRUE the candidate fits run in-process on the ",
+            "workers.", call. = FALSE)
+
   # ── Out-of-process fit guard ──────────────────────────────────────────
   # Each replicate's candidate fits run in a persistent, killable callr
   # subprocess so a degenerate simulated design that sends glmnet into a
   # runaway cannot wedge the whole study. See .fit_candidates_bounded().
   # Falls back to in-process fitting when callr is unavailable.
   sess <- NULL
-  if (is.finite(fit_timeout) && requireNamespace("callr", quietly = TRUE)) {
+  if (!use_parallel && is.finite(fit_timeout) &&
+      requireNamespace("callr", quietly = TRUE)) {
     sess <- new.env(parent = emptyenv())
     sess$rs <- tryCatch(callr::r_session$new(), error = function(e) NULL)
     if (is.null(sess$rs)) sess <- NULL
@@ -948,10 +934,10 @@ run_plasmode_dq_stress <- function(lock,
     }
 
     for (es in effect_sizes) {
-      rep_results <- vector("list", reps)
-
-      for (rep_i in seq_len(reps)) {
-        set.seed(lock$seed + rep_i + sg_i * 10000L)
+      # One replicate, seeded deterministically from the lock seed so the
+      # sequential and furrr paths draw identical data.
+      run_one_rep <- function(rep_i) withr::with_seed(
+        lock$seed + rep_i + sg_i * 10000L, {
 
         # Generate-treatment design (default): resample the covariate rows
         # with replacement and draw treatment from the fitted generating
@@ -1077,7 +1063,17 @@ run_plasmode_dq_stress <- function(lock,
           tmle_candidates = tmle_candidates, timeout = fit_timeout,
           label = sprintf("%s[%s] rep %d", sc_name, sc_level, rep_i))
 
-        rep_results[[rep_i]] <- c(cand_results, list(.truth = truth))
+        c(cand_results, list(.truth = truth))
+      })
+
+      rep_results <- if (use_parallel) {
+        furrr::future_map(
+          seq_len(reps), run_one_rep,
+          # with_seed sets the replicate seed itself; seed = TRUE only
+          # silences furrr's unseeded-RNG check.
+          .options = furrr::furrr_options(seed = TRUE))
+      } else {
+        lapply(seq_len(reps), run_one_rep)
       }
 
       # Aggregate per-candidate metrics.
@@ -1125,25 +1121,33 @@ run_plasmode_dq_stress <- function(lock,
   # The returned object deliberately carries no lock, no data, and no
   # fitted Q0: only per-replicate candidate metrics plus provenance.
   result <- list(
-    metrics   = metrics,
-    scenarios = data_quality_scenarios,
-    baseline  = metrics[metrics$scenario == "none", ],
-    lock_hash = lock$lock_hash,
-    dgp_mode  = dgp_mode,
-    reps      = reps,
-    design    = design,
-    call      = match.call()
+    metrics         = metrics,
+    scenarios       = data_quality_scenarios,
+    baseline        = metrics[metrics$scenario == "none", ],
+    tmle_candidates = tmle_candidates,
+    lock_hash       = lock$lock_hash,
+    dgp_mode        = dgp_mode,
+    reps            = reps,
+    design          = design,
+    call            = match.call()
   )
   class(result) <- "plasmode_dq_results"
 
   # Pure locked verdict and tipping points, computed only when the lock
   # declared dq_thresholds (a fingerprinted field): the reading is a
   # function of (locked thresholds, declared threat grid, metrics) and
-  # of nothing else -- no realised bias, no true effect.
-  if (!is.null(lock$dq_thresholds)) {
+  # of nothing else -- no realised bias, no true effect. A baseline-only
+  # run (no declared threats) has no threat grid to read, so it carries
+  # the thresholds but no verdict.
+  if (!is.null(lock$dq_thresholds) &&
+      any(metrics$scenario != "none")) {
     result$thresholds <- lock$dq_thresholds
     result$verdict    <- dq_locked_verdict(result, lock$dq_thresholds)
     result$tipping    <- dq_tipping_points(result, lock$dq_thresholds)
+  } else if (!is.null(lock$dq_thresholds)) {
+    result$thresholds <- lock$dq_thresholds
+    result$verdict    <- NULL
+    result$tipping    <- NULL
   } else {
     if (verbose)
       message("No dq_thresholds declared on the lock; the stress test ",
@@ -1288,6 +1292,9 @@ print.plasmode_dq_results <- function(x, ...) {
     cat("Tipping points (first declared severity crossing a locked bound):\n")
     print(x$tipping[, c("candidate", "scenario", "tipping_level",
                         "tipping_or")], row.names = FALSE)
+  } else if (!is.null(x$thresholds)) {
+    cat("Baseline-only run: thresholds are declared on the lock, but no ",
+        "threat grid was run, so there is no verdict to read.\n", sep = "")
   } else {
     cat("No dq_thresholds declared on the lock: metrics only, no verdict.\n")
   }
@@ -1348,152 +1355,6 @@ plot.plasmode_dq_results <- function(x, metric = c("rmse", "bias", "coverage"),
   }
 
   p
-}
-
-
-#' Pre-Outcome Checkpoint Derived from a DQ Stress Test
-#'
-#' Converts the degraded-scenario rows of a \code{plasmode_dq_results}
-#' object into a \code{cleantmle_checkpoint} so the DQ output can be
-#' fed into \code{\link{gate_all}()} alongside the cohort-adequacy,
-#' balance, and residual-bias checkpoints. The checkpoint flips to
-#' STOP if any degraded row for the supplied candidate exceeds the
-#' configured \code{max_abs_bias}, falls below \code{min_coverage},
-#' or has an RMSE ratio above \code{max_rmse_ratio}. FLAG triggers
-#' when the bias is within tolerance but coverage or RMSE-ratio
-#' breach a softer envelope (\code{flag_coverage}, \code{flag_rmse_ratio}).
-#'
-#' @param dq_results A \code{plasmode_dq_results} object.
-#' @param candidate Character; the \code{candidate_id} that the gate
-#'   should evaluate. Defaults to the first candidate appearing in
-#'   the degraded rows.
-#' @param max_abs_bias Numeric; any degraded row with
-#'   \code{|bias| > max_abs_bias} returns STOP. Default 0.02.
-#' @param min_coverage Numeric; any degraded row with
-#'   \code{coverage < min_coverage} returns STOP. Default 0.85.
-#' @param max_rmse_ratio Numeric; any degraded row with
-#'   \code{rmse / rmse_baseline > max_rmse_ratio} returns STOP.
-#'   Default 1.5.
-#' @param flag_coverage,flag_rmse_ratio Softer thresholds that demote
-#'   a GO to a FLAG when no STOP condition is met. Defaults 0.90 and
-#'   1.20.
-#' @param scenarios Optional character vector restricting which DQ
-#'   scenarios to evaluate (e.g. \code{c("unmeasured_U")}). Default
-#'   evaluates every degraded row.
-#' @param thresholds Optional \code{\link{decision_thresholds}} object (or
-#'   its \code{$dq} sublist). When supplied, the DQ thresholds are drawn
-#'   from it, overriding the \code{max_abs_bias} / \code{min_coverage} /
-#'   \code{max_rmse_ratio} / \code{flag_*} arguments, so the gate reads
-#'   from a single prespecified, fingerprinted source.
-#' @param lock_hash Optional lock hash to attach to the checkpoint.
-#'
-#' @return A \code{cleantmle_checkpoint} of stage
-#'   \code{"Check Point 2c: DQ Stress"}.
-#'
-#' @examples
-#' \dontrun{
-#' cp_dq <- gate_dq(dq_results, candidate = best$candidate_id)
-#' audit <- record_checkpoint(audit, cp_dq)
-#' gate  <- gate_all(cp1, cp2, cp_dq, cp3, allow_flag = TRUE)
-#' }
-#' @keywords internal
-gate_dq <- function(dq_results,
-                    candidate      = NULL,
-                    max_abs_bias   = 0.02,
-                    min_coverage   = 0.85,
-                    max_rmse_ratio = 1.5,
-                    flag_coverage  = 0.90,
-                    flag_rmse_ratio = 1.20,
-                    scenarios      = NULL,
-                    thresholds     = NULL,
-                    lock_hash      = NA_character_) {
-  .superseded("gate_dq", "the pass rule carried on simulate_support() and summarize_dq_degradation() output")
-  if (!inherits(dq_results, "plasmode_dq_results"))
-    stop("`dq_results` must be a plasmode_dq_results object.", call. = FALSE)
-
-  # If a prespecified decision_thresholds() object (or its $dq sublist) is
-  # supplied, draw the DQ thresholds from it so the gate reads from a
-  # single fingerprinted source rather than ad hoc arguments.
-  if (!is.null(thresholds)) {
-    dq <- if (inherits(thresholds, "cleantmle_thresholds")) thresholds$dq
-          else thresholds
-    if (!is.null(dq$max_abs_bias))    max_abs_bias    <- dq$max_abs_bias
-    if (!is.null(dq$min_coverage))    min_coverage    <- dq$min_coverage
-    if (!is.null(dq$max_rmse_ratio))  max_rmse_ratio  <- dq$max_rmse_ratio
-    if (!is.null(dq$flag_coverage))   flag_coverage   <- dq$flag_coverage
-    if (!is.null(dq$flag_rmse_ratio)) flag_rmse_ratio <- dq$flag_rmse_ratio
-  }
-
-  deg <- summarize_dq_degradation(dq_results)
-  if (nrow(deg) == 0L) {
-    return(new_checkpoint(
-      stage      = "Check Point 2c: DQ Stress",
-      decision   = "FLAG",
-      metrics    = data.frame(note = "no degraded rows to evaluate"),
-      thresholds = list(max_abs_bias = max_abs_bias,
-                        min_coverage = min_coverage,
-                        max_rmse_ratio = max_rmse_ratio),
-      rationale  = "DQ stress test produced no degraded-scenario rows.",
-      lock_hash  = lock_hash
-    ))
-  }
-
-  if (is.null(candidate)) candidate <- deg$candidate[1]
-  if (!candidate %in% deg$candidate)
-    stop("candidate '", candidate, "' not found in DQ output.", call. = FALSE)
-
-  sub <- deg[deg$candidate == candidate, , drop = FALSE]
-  if (!is.null(scenarios))
-    sub <- sub[sub$scenario %in% scenarios, , drop = FALSE]
-  if (nrow(sub) == 0L)
-    stop("no DQ rows match the requested scenarios.", call. = FALSE)
-
-  bias_v <- abs(sub$bias_degraded)
-  cov_v  <- sub$cov_degraded
-  rr_v   <- sub$rmse_ratio
-
-  stop_bias <- any(bias_v > max_abs_bias, na.rm = TRUE)
-  stop_cov  <- any(cov_v  < min_coverage,  na.rm = TRUE)
-  stop_rr   <- any(rr_v   > max_rmse_ratio, na.rm = TRUE)
-
-  flag_cov  <- any(cov_v < flag_coverage,    na.rm = TRUE)
-  flag_rr   <- any(rr_v  > flag_rmse_ratio,  na.rm = TRUE)
-
-  decision <- if (stop_bias || stop_cov || stop_rr) "STOP"
-              else if (flag_cov || flag_rr)         "FLAG"
-              else                                   "GO"
-
-  worst <- sub[which.max(bias_v), , drop = FALSE]
-  metrics <- data.frame(
-    candidate     = candidate,
-    n_rows        = nrow(sub),
-    max_abs_bias  = round(max(bias_v, na.rm = TRUE), 5),
-    min_coverage  = round(min(cov_v,  na.rm = TRUE), 3),
-    max_rmse_ratio = round(max(rr_v,  na.rm = TRUE), 3),
-    worst_scenario = worst$scenario,
-    worst_level    = worst$level,
-    stringsAsFactors = FALSE
-  )
-
-  rationale <- switch(decision,
-    STOP = sprintf("DQ stress exceeds locked thresholds (worst: %s @ %s).",
-                   worst$scenario, worst$level),
-    FLAG = "DQ stress within STOP thresholds but past FLAG envelope.",
-    GO   = "DQ stress within locked thresholds across scenarios.")
-
-  new_checkpoint(
-    stage      = "Check Point 2c: DQ Stress",
-    decision   = decision,
-    metrics    = metrics,
-    thresholds = list(max_abs_bias   = max_abs_bias,
-                      min_coverage   = min_coverage,
-                      max_rmse_ratio = max_rmse_ratio,
-                      flag_coverage  = flag_coverage,
-                      flag_rmse_ratio = flag_rmse_ratio,
-                      scenarios      = scenarios),
-    rationale  = rationale,
-    lock_hash  = lock_hash
-  )
 }
 
 

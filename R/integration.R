@@ -29,9 +29,8 @@ NULL
 #'   Default: \code{NULL} (no truncation; scores used as-is).
 #'
 #' @return An object of class \code{ps_fit} compatible with all
-#'   downstream cleanTMLE functions (\code{\link{compute_ps_diagnostics}},
-#'   \code{\link{checkpoint_balance}}, \code{\link{run_iptw_workflow}},
-#'   etc.).
+#'   downstream cleanTMLE functions (\code{\link{assess_support}},
+#'   \code{\link{estimand_feasibility}}, the estimators, etc.).
 #'
 #' @examples
 #' \dontrun{
@@ -67,88 +66,6 @@ wrap_ps_fit <- function(lock, ps_scores, method = "external",
     data       = lock$data,
     sl_library = NULL,
     method     = method,
-    truncate   = truncate,
-    call       = match.call()
-  )
-  class(result) <- c("ps_fit", "cr_result")
-  result
-}
-
-
-# ── P0: Parallel SuperLearner ────────────────────────────────────────────
-
-#' Fit Propensity Score with Parallel SuperLearner
-#'
-#' Like \code{\link{fit_ps_superlearner}} but accepts a PSOCK or FORK
-#' cluster for parallel computation via
-#' \code{SuperLearner::snowSuperLearner()}.  Essential for reasonable
-#' runtime on Windows with non-trivial learner libraries.
-#'
-#' @inheritParams fit_ps_superlearner
-#' @param cluster A \code{parallel} cluster object (e.g., from
-#'   \code{parallel::makeCluster()}).  If \code{NULL}, falls back to
-#'   sequential \code{SuperLearner::SuperLearner()}.
-#' @param truncate Numeric in (0, 0.5) or \code{NULL}; PS truncation.
-#'
-#' @return A \code{ps_fit} object.
-#'
-#' @examples
-#' \dontrun{
-#' cl <- parallel::makeCluster(2, type = "PSOCK")
-#' ps_fit <- fit_ps_parallel(lock, cluster = cl)
-#' parallel::stopCluster(cl)
-#' }
-#'
-#' @keywords internal
-fit_ps_parallel <- function(lock, cluster = NULL, truncate = NULL, ...) {
-  .superseded("fit_ps_parallel", "fit_ps(method = 'superlearner', cluster = )")
-  if (!inherits(lock, "cleanroom_lock"))
-    stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
-  if (!requireNamespace("SuperLearner", quietly = TRUE))
-    stop("Package 'SuperLearner' is required.", call. = FALSE)
-
-  data <- lock$data
-  A    <- data[[lock$treatment]]
-  W    <- data[, lock$covariates, drop = FALSE]
-
-  set.seed(lock$seed)
-
-  if (!is.null(cluster)) {
-    sl_fit <- SuperLearner::snowSuperLearner(
-      Y          = A,
-      X          = W,
-      family     = binomial(),
-      SL.library = lock$sl_library,
-      cluster    = cluster,
-      env        = .cleantmle_sl_env(),
-      ...
-    )
-  } else {
-    sl_fit <- SuperLearner::SuperLearner(
-      Y          = A,
-      X          = W,
-      family     = binomial(),
-      SL.library = lock$sl_library,
-      env        = .cleantmle_sl_env(),
-      ...
-    )
-  }
-
-  ps <- as.numeric(sl_fit$SL.predict)
-  ps_raw <- ps
-  if (!is.null(truncate)) {
-    ps <- pmax(pmin(ps, 1 - truncate), truncate)
-  }
-
-  result <- list(
-    ps         = ps,
-    ps_raw     = ps_raw,
-    sl_fit     = sl_fit,
-    treatment  = lock$treatment,
-    covariates = lock$covariates,
-    data       = data,
-    sl_library = lock$sl_library,
-    method     = if (!is.null(cluster)) "parallel_sl" else "sl",
     truncate   = truncate,
     call       = match.call()
   )
@@ -213,46 +130,6 @@ load_lock <- function(path, validate = TRUE) {
 }
 
 
-#' Save an Audit Log to Disk
-#'
-#' @param audit A \code{cleantmle_audit}.
-#' @param path Character; file path (must end in \code{.rds}).
-#'
-#' @return Invisibly returns \code{path}.
-#'
-#' @keywords internal
-save_audit <- function(audit, path) {
-  if (!inherits(audit, "cleantmle_audit"))
-    stop("`audit` must be a cleantmle_audit object.", call. = FALSE)
-
-  dir_path <- dirname(path)
-  if (!dir.exists(dir_path)) dir.create(dir_path, recursive = TRUE)
-
-  saveRDS(audit, file = path)
-  invisible(path)
-}
-
-
-#' Load an Audit Log from Disk
-#'
-#' @param path Character; path to the RDS file.
-#'
-#' @return A \code{cleantmle_audit} object.
-#'
-#' @keywords internal
-load_audit <- function(path) {
-  if (!file.exists(path))
-    stop("Audit file not found: ", path, call. = FALSE)
-
-  audit <- readRDS(path)
-
-  if (!inherits(audit, "cleantmle_audit"))
-    stop("File does not contain a cleantmle_audit object.", call. = FALSE)
-
-  audit
-}
-
-
 # ── P1: TMLE-Based Negative Controls ────────────────────────────────────
 
 #' Run TMLE-Based Negative Control Analysis
@@ -303,7 +180,7 @@ run_negative_control_tmle <- function(lock, variable, ps_fit,
 
   Q_fit <- tryCatch({
     if (requireNamespace("SuperLearner", quietly = TRUE)) {
-      set.seed(lock$seed + 99L)
+      withr::local_seed(lock$seed + 99L)
       sl <- SuperLearner::SuperLearner(
         Y = Y_nc, X = AW, family = binomial(),
         SL.library = sl_library,
@@ -419,7 +296,7 @@ run_matched_tmle <- function(lock, ps_fit, subset_idx,
 
   if (is.null(sl_library)) sl_library <- lock$sl_library
 
-  data_sub   <- lock$data[subset_idx, , drop = FALSE]
+  data_sub   <- .join_outcome(lock)[subset_idx, , drop = FALSE]
   ps_sub     <- ps_fit$ps[subset_idx]
   A          <- data_sub[[lock$treatment]]
   Y          <- data_sub[[lock$outcome]]
@@ -454,7 +331,7 @@ run_matched_tmle <- function(lock, ps_fit, subset_idx,
 
   Q_result <- tryCatch({
     if (requireNamespace("SuperLearner", quietly = TRUE)) {
-      set.seed(lock$seed + 2L)
+      withr::local_seed(lock$seed + 2L)
       sl <- SuperLearner::SuperLearner(
         Y = Y[fit_idx], X = AW[fit_idx, , drop = FALSE], family = binomial(),
         SL.library = sl_library,
@@ -921,91 +798,6 @@ love_plot_threeway <- function(ps_diag, matched_smds, threshold = 0.10) {
     ) +
     ggplot2::theme_minimal() +
     ggplot2::theme(legend.position = "bottom")
-}
-
-
-# ── P2: Composite Gate ──────────────────────────────────────────────────
-
-#' Composite GO / FLAG / STOP Gate
-#'
-#' Evaluates all checkpoint objects and returns a single GO / FLAG /
-#' STOP decision.  Useful as a unified pre-outcome gate when the
-#' analysis has multiple checkpoint stages.
-#'
-#' @section Decision rule:
-#' Any STOP among the supplied checkpoints yields STOP. Otherwise, any
-#' FLAG yields FLAG when \code{allow_flag = TRUE} (the default, interpreted
-#' as conditional GO) and is escalated to STOP when
-#' \code{allow_flag = FALSE}. Only an input set with no STOP and no
-#' escalated FLAG yields GO.
-#'
-#' @section Override handling:
-#' This gate aggregates checkpoint evidence; it does not itself accept an
-#' override. A documented decision to proceed past a STOP or FLAG belongs
-#' in the decision log (see
-#' \code{\link{record_decision_log_entry}} with
-#' \code{decision_type = "override"}) and does not erase the composite
-#' decision returned here.
-#'
-#' @param ... One or more \code{cleantmle_checkpoint} objects.
-#' @param allow_flag Logical; if \code{TRUE} (default), FLAG decisions
-#'   do not block the pipeline (treated as conditional GO).
-#'
-#' @return A \code{cleantmle_checkpoint} with the composite decision.
-#'
-#' @keywords internal
-gate_all <- function(..., allow_flag = TRUE) {
-  .superseded("gate_all", "the verdicts carried on assess_support(), simulate_support() and estimand_feasibility() results")
-  checkpoints <- list(...)
-  # Flatten if a list was passed
-  if (length(checkpoints) == 1L && is.list(checkpoints[[1]]) &&
-      !inherits(checkpoints[[1]], "cleantmle_checkpoint")) {
-    checkpoints <- checkpoints[[1]]
-  }
-
-  decisions <- vapply(checkpoints, function(cp) {
-    if (inherits(cp, "cleantmle_checkpoint")) cp$decision
-    else NA_character_
-  }, character(1))
-
-  stages <- vapply(checkpoints, function(cp) {
-    if (inherits(cp, "cleantmle_checkpoint")) cp$stage
-    else "unknown"
-  }, character(1))
-
-  if (any(decisions == "STOP", na.rm = TRUE)) {
-    stop_stages <- stages[decisions == "STOP"]
-    decision <- "STOP"
-    rationale <- paste("STOP at:", paste(stop_stages, collapse = ", "))
-  } else if (any(decisions == "FLAG", na.rm = TRUE)) {
-    flag_stages <- stages[decisions == "FLAG"]
-    if (allow_flag) {
-      decision <- "FLAG"
-      rationale <- paste("FLAG (proceeding with caution) at:",
-                         paste(flag_stages, collapse = ", "))
-    } else {
-      decision <- "STOP"
-      rationale <- paste("FLAG treated as STOP at:",
-                         paste(flag_stages, collapse = ", "))
-    }
-  } else {
-    decision <- "GO"
-    rationale <- "All checkpoints passed."
-  }
-
-  metrics <- data.frame(
-    stage    = stages,
-    decision = decisions,
-    stringsAsFactors = FALSE
-  )
-
-  new_checkpoint(
-    stage      = "Composite Gate",
-    decision   = decision,
-    metrics    = metrics,
-    thresholds = list(allow_flag = allow_flag),
-    rationale  = rationale
-  )
 }
 
 

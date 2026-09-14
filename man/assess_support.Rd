@@ -19,6 +19,10 @@ assess_support(
 
 \item{thresholds}{A \code{\link[=support_thresholds]{support_thresholds()}} object.}
 
+\item{balance}{Logical; when \code{TRUE} (default) the assessment carries
+the unweighted and IPTW-weighted standardised-mean-difference
+table that \code{\link[=love_plot]{love_plot()}} reads.}
+
 \item{tree_search}{Logical; run the shallow-tree violation search when
 rpart is installed. Default TRUE.}
 

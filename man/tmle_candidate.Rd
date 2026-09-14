@@ -77,7 +77,10 @@ libraries and PS truncation threshold.
 }
 
 \examples{
+\dontrun{
 tmle_candidate("glm_t01", "GLM, trunc=0.01",
                g_library = "SL.glm", truncation = 0.01)
 
 }
+}
+\keyword{internal}

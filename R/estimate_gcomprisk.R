@@ -164,7 +164,7 @@ estimate_gcomprisk <- function(spec, risk_time = NULL, outcome_formula = NULL,
   # Bootstrap
   boot_results <- NULL
   if (nboot > 0) {
-    set.seed(seed)
+    withr::local_seed(seed)
     # Pass the fully resolved formula (treatment already injected) so the
     # bootstrap does not re-trigger the treatment-injection warning.
     boot_results <- suppressWarnings(

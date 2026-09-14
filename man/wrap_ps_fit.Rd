@@ -21,9 +21,8 @@ Default: \code{NULL} (no truncation; scores used as-is).}
 }
 \value{
 An object of class \code{ps_fit} compatible with all
-downstream cleanTMLE functions (\code{\link{compute_ps_diagnostics}},
-\code{\link{checkpoint_balance}}, \code{\link{run_iptw_workflow}},
-etc.).
+downstream cleanTMLE functions (\code{\link{assess_support}},
+\code{\link{estimand_feasibility}}, the estimators, etc.).
 }
 \description{
 Creates a \code{ps_fit} object from user-supplied propensity scores,

@@ -1,9 +1,10 @@
 # Blinding invariants for the design stage (revision WP0).
 #
 # Contract under test: every design-stage function must return the same
-# output whether or not the primary outcome column is readable. Two
+# output whether or not the primary outcome is readable. Two
 # sentinels are used against a reference lock:
-#   (i)  a masked lock (mask_outcome(); outcome column all NA), and
+#   (i)  a masked lock (mask_outcome(); the outcome store removed, so the
+#        lock is physically outcome-free), and
 #   (ii) a lock whose outcome column is randomly permuted (this preserves
 #        the marginal outcome distribution, so functions whose contract
 #        allows marginal outcome summaries must also be invariant).
@@ -23,7 +24,8 @@ strip_volatile <- function(x) {
     return(x)
   }
   if (is.list(x)) {
-    drop <- c("call", "data", "glm_fit", "sl_fit", "fit", "fits",
+    drop <- c("call", "data", "outcome_store", "glm_fit", "sl_fit",
+              "fit", "fits",
               "locked_at", "created_at", "declared_at", "saved_at")
     nm <- names(x)
     if (!is.null(nm)) x <- x[!(nm %in% drop)]
@@ -48,16 +50,23 @@ blinding_fixtures <- function(n = 400L) {
   lock_perm <- create_analysis_lock(dat_perm, "treatment", "event_24", covs,
                                     seed = 7, negative_controls = "nc_outcome")
   lock_masked <- mask_outcome(lock)
-  list(dat = dat, lock = lock, perm = lock_perm, masked = lock_masked)
+  list(dat = dat, dat_perm = dat_perm, lock = lock, perm = lock_perm,
+       masked = lock_masked)
 }
 
 fx <- blinding_fixtures()
 
-test_that("mask_outcome blanks the column on a copy and flags the lock", {
-  expect_true("event_24" %in% names(fx$masked$data))
-  expect_true(all(is.na(fx$masked$data$event_24)))
+test_that("mask_outcome removes the store on a copy and flags the lock", {
+  # Store format: the design data never holds the outcome column, and
+  # masking removes the store, so the masked lock is physically
+  # outcome-free.
+  expect_false("event_24" %in% names(fx$masked$data))
+  expect_null(fx$masked$outcome_store)
   expect_true(isTRUE(fx$masked$.outcome_masked))
-  expect_false(anyNA(fx$lock$data$event_24))
+  expect_null(cleanTMLE:::.outcome_vector(fx$masked))
+  # The reference lock still carries the outcome, in the store only.
+  expect_false("event_24" %in% names(fx$lock$data))
+  expect_false(anyNA(cleanTMLE:::.outcome_vector(fx$lock)))
 })
 
 test_that("fit_ps(method = 'glm') never reads the outcome", {
@@ -209,7 +218,7 @@ test_that("plasmode external-pilot mode is fully outcome blind", {
                                          seed = 7,
                                          dgp_mode = "external_pilot")
   lock_ep   <- mk(fx$dat)
-  perm_ep   <- mk(fx$perm$data)
+  perm_ep   <- mk(fx$dat_perm)
   masked_ep <- mask_outcome(lock_ep)
   cand <- list(tmle_candidate("c1", g_library = "SL.glm", truncation = 0.01))
 

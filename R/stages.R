@@ -1,314 +1,3 @@
-# ── Staged Clean-Room Workflow Infrastructure ──────────────────────────────
-#
-# This module provides S3 classes and helper functions for Muntner-style
-# staged clean-room analyses.  Every major stage function returns a typed
-# object that carries metadata (stage name, timestamp, lock hash) so that
-# an audit trail can be assembled automatically.
-#
-# Stage mapping (Muntner et al.):
-#   Stage 1a  – analysis specification and lock
-#   Stage 1b  – cohort adequacy / Check Point 1
-#   Stage 2   – treatment-arm comparability / Check Point 2
-#   Stage 3   – residual-bias assessment / Check Point 3
-#   Stage 4   – comparative analysis
-#
-# All functions in this file are pre-outcome unless explicitly documented
-# otherwise.
-
-
-# Note: attach_estimand() and declare_sensitivity_plan() were moved to the
-# companion cleanroomGov package (they only stash metadata on the lock and are
-# not read by the estimation core or the gate).
-
-
-# ── Checkpoint constructor ────────────────────────────────────────────────
-
-#' Create a Stage Checkpoint Object
-#'
-#' Low-level constructor for \code{cleantmle_checkpoint} objects.  Higher-
-#' level helpers (\code{checkpoint_cohort_adequacy},
-#' \code{checkpoint_balance}, \code{checkpoint_residual_bias}) call this
-#' internally.
-#'
-#' @param stage Character; stage label (e.g. \code{"Check Point 1"}).
-#' @param decision Character; one of \code{"GO"}, \code{"FLAG"}, \code{"STOP"}.
-#' @param metrics A data.frame of diagnostic metrics.
-#' @param thresholds A named list of thresholds used.
-#' @param rationale Character; human-readable justification.
-#' @param lock_hash Character; hash from the analysis lock, for traceability.
-#'
-#' @return An object of class \code{cleantmle_checkpoint}.
-#'
-#' @keywords internal
-#' @keywords internal
-new_checkpoint <- function(stage, decision, metrics, thresholds,
-                           rationale = "", lock_hash = NA_character_) {
-  decision <- match.arg(decision, c("GO", "FLAG", "STOP"))
-  obj <- list(
-    stage      = stage,
-    decision   = decision,
-    metrics    = metrics,
-    thresholds = thresholds,
-    rationale  = rationale,
-    lock_hash  = lock_hash,
-    timestamp  = Sys.time()
-  )
-  class(obj) <- "cleantmle_checkpoint"
-  obj
-}
-
-
-#' @export
-print.cleantmle_checkpoint <- function(x, ...) {
-  cat(sprintf("=== %s ===\n", x$stage))
-  cat(sprintf("Decision:  %s\n", x$decision))
-  cat(sprintf("Rationale: %s\n", x$rationale))
-  if (!is.na(x$lock_hash))
-    cat(sprintf("Lock hash: %s\n", x$lock_hash))
-  cat(sprintf("Timestamp: %s\n", format(x$timestamp, "%Y-%m-%d %H:%M:%S")))
-  cat("\nMetrics:\n")
-  print(x$metrics, row.names = FALSE)
-  invisible(x)
-}
-
-
-#' @export
-as.data.frame.cleantmle_checkpoint <- function(x, ...) {
-  data.frame(
-    stage     = x$stage,
-    decision  = x$decision,
-    rationale = x$rationale,
-    lock_hash = x$lock_hash,
-    timestamp = format(x$timestamp, "%Y-%m-%d %H:%M:%S"),
-    stringsAsFactors = FALSE
-  )
-}
-
-
-# ── Check Point 1: Cohort Adequacy ───────────────────────────────────────
-
-#' Check Point 1: Cohort Adequacy and Precision
-#'
-#' Generates a structured report assessing whether the analytic cohort has
-#' adequate sample size, event counts, and positivity for the planned
-#' analysis.  Returns a \code{cleantmle_checkpoint} with a GO / FLAG /
-#' STOP decision.
-#'
-#' @section Clean-room stage: Stage 1b (pre-outcome for design-stage
-#'   summaries; event counts use the outcome variable).
-#'
-#' @param lock A \code{cleanroom_lock}.
-#' @param min_n_per_arm Integer; minimum acceptable sample size per
-#'   treatment arm. A shortfall below this (but above \code{stop_n_per_arm})
-#'   is a FLAG. Default: 50.
-#' @param min_events Integer; minimum acceptable total outcome events.
-#'   Default: 20.
-#' @param min_prevalence Numeric; minimum outcome prevalence. Default: 0.01.
-#' @param stop_n_per_arm Integer; a per-arm count strictly below this
-#'   forces a STOP rather than a FLAG. Default \code{NULL} = 20 (the former
-#'   hard-coded floor).
-#' @param stop_min_events Integer; a total event count strictly below this
-#'   forces a STOP. Default \code{NULL} = \code{min_events}.
-#'
-#' @return A \code{cleantmle_checkpoint} for Check Point 1.
-#'
-#' @examples
-#' dat  <- sim_func1(n = 500, seed = 1)
-#' lock <- create_analysis_lock(dat, "treatment", "event_24",
-#'                              c("age", "sex", "biomarker"), seed = 1)
-#' cp1 <- checkpoint_cohort_adequacy(lock)
-#' print(cp1)
-#'
-#' @keywords internal
-checkpoint_cohort_adequacy <- function(lock,
-                                       min_n_per_arm  = 50L,
-                                       min_events     = 20L,
-                                       min_prevalence = 0.01,
-                                       stop_n_per_arm = NULL,
-                                       stop_min_events = NULL) {
-  .superseded("checkpoint_cohort_adequacy", "assess_support() and estimand_feasibility()")
-  if (!inherits(lock, "cleanroom_lock"))
-    stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
-
-  # STOP floors. Historically these were hard-coded at n = 20 per arm and
-  # at `min_events`; they are now explicit arguments. Default behaviour is
-  # unchanged: STOP at fewer than 20 per arm or fewer than `min_events`
-  # total events; otherwise the soft `min_n_per_arm` shortfall is a FLAG.
-  if (is.null(stop_n_per_arm))  stop_n_per_arm  <- 20L
-  if (is.null(stop_min_events)) stop_min_events <- min_events
-
-  data <- lock$data
-  A    <- data[[lock$treatment]]
-  Y    <- data[[lock$outcome]]
-  n    <- nrow(data)
-  n1   <- sum(A == 1, na.rm = TRUE)
-  n0   <- sum(A == 0, na.rm = TRUE)
-  # Marginal outcome quantities only: the decision reads total events
-  # and prevalence, and the metrics table carries nothing that splits
-  # the outcome by arm (arm-specific event counts are the crude
-  # association; see event_support_by_arm()).
-  events_total <- sum(Y == 1, na.rm = TRUE)
-  prevalence   <- mean(Y == 1, na.rm = TRUE)
-  if (is.na(prevalence)) prevalence <- 0
-
-  # Simple MDD proxy: risk difference detectable with 80% power
-  p_bar <- prevalence
-  mdd <- if (n1 > 0 && n0 > 0 && p_bar > 0 && p_bar < 1) {
-    2.8 * sqrt(p_bar * (1 - p_bar) * (1/n1 + 1/n0))
-  } else NA_real_
-
-  metrics <- data.frame(
-    metric = c("N total", "N treated", "N control",
-               "Events total (marginal)",
-               "Outcome prevalence", "MDD (approx)"),
-    value  = c(n, n1, n0, events_total,
-               round(prevalence, 4), round(mdd, 4)),
-    stringsAsFactors = FALSE
-  )
-
-  # Decision logic
-  flags <- character(0)
-  if (n1 < min_n_per_arm) flags <- c(flags, "treated arm below min N")
-  if (n0 < min_n_per_arm) flags <- c(flags, "control arm below min N")
-  if (events_total < min_events) flags <- c(flags, "total events below minimum")
-  if (is.na(prevalence) || prevalence < min_prevalence)
-    flags <- c(flags, "outcome prevalence too low or NA")
-
-  # Positivity red flag: any covariate with zero variance in an arm
-  pos_flags <- vapply(lock$covariates, function(v) {
-    x <- data[[v]]
-    if (is.numeric(x)) {
-      v1 <- var(x[A == 1], na.rm = TRUE)
-      v0 <- var(x[A == 0], na.rm = TRUE)
-      isTRUE(v1 == 0) || isTRUE(v0 == 0)
-    } else {
-      a1_vals <- x[!is.na(A) & A == 1]
-      a0_vals <- x[!is.na(A) & A == 0]
-      length(unique(a1_vals[!is.na(a1_vals)])) <= 1 ||
-        length(unique(a0_vals[!is.na(a0_vals)])) <= 1
-    }
-  }, logical(1))
-  if (any(pos_flags))
-    flags <- c(flags,
-               paste("positivity concern:",
-                     paste(lock$covariates[pos_flags], collapse = ", ")))
-
-  decision <- if (length(flags) == 0L) "GO"
-              else if (events_total < stop_min_events ||
-                       n1 < stop_n_per_arm || n0 < stop_n_per_arm) "STOP"
-              else "FLAG"
-
-  rationale <- if (length(flags) == 0L) {
-    "Cohort size, event counts, and positivity adequate."
-  } else {
-    paste("Issues:", paste(flags, collapse = "; "))
-  }
-
-  thresholds <- list(
-    min_n_per_arm   = min_n_per_arm,
-    min_events      = min_events,
-    min_prevalence  = min_prevalence,
-    stop_n_per_arm  = stop_n_per_arm,
-    stop_min_events = stop_min_events
-  )
-
-  new_checkpoint(
-    stage      = "Check Point 1: Cohort Adequacy",
-    decision   = decision,
-    metrics    = metrics,
-    thresholds = thresholds,
-    rationale  = rationale,
-    lock_hash  = lock$lock_hash
-  )
-}
-
-
-# ── Check Point 2: Balance / Comparability ───────────────────────────────
-
-#' Check Point 2: Treatment Arm Comparability
-#'
-#' Converts propensity-score diagnostics into a structured checkpoint
-#' decision.  Evaluates standardised mean differences, effective sample
-#' size, and overlap against user-specified thresholds.
-#'
-#' @section Clean-room stage: Stage 2 (pre-outcome).
-#'
-#' @param ps_diag A \code{ps_diagnostics} object from
-#'   \code{\link{compute_ps_diagnostics}}.
-#' @param max_smd Numeric; maximum tolerable absolute SMD after weighting.
-#'   Exceeding this (but not \code{stop_smd}) is a FLAG. Default: 0.10.
-#' @param min_ess_pct Numeric; minimum ESS as a percent of the original N.
-#'   Default: 50.
-#' @param stop_smd Numeric; a max weighted SMD strictly above this forces a
-#'   STOP rather than a FLAG. Default 0.20 (the former hard-coded floor).
-#' @param lock_hash Character; optional lock hash for traceability.
-#'
-#' @return A \code{cleantmle_checkpoint} for Check Point 2.
-#'
-#' @examples
-#' dat  <- sim_func1(n = 500, seed = 1)
-#' lock <- create_analysis_lock(dat, "treatment", "event_24",
-#'                              c("age", "sex", "biomarker"), seed = 1)
-#' ps   <- fit_ps_glm(lock)
-#' diag <- compute_ps_diagnostics(ps)
-#' cp2  <- checkpoint_balance(diag, lock_hash = lock$lock_hash)
-#' print(cp2)
-#'
-#' @keywords internal
-checkpoint_balance <- function(ps_diag,
-                               max_smd     = 0.10,
-                               min_ess_pct = 50,
-                               stop_smd    = 0.20,
-                               lock_hash   = NA_character_) {
-  .superseded("checkpoint_balance", "assess_support() and estimand_feasibility()")
-  if (!inherits(ps_diag, "ps_diagnostics"))
-    stop("`ps_diag` must be a ps_diagnostics object.", call. = FALSE)
-
-  smds     <- ps_diag$smds
-  ess_tbl  <- ps_diag$ess
-
-  max_weighted_smd <- max(abs(smds$smd_weighted))
-  n_smd_over       <- sum(abs(smds$smd_weighted) > max_smd, na.rm = TRUE)
-  total_ess_pct    <- ess_tbl$ess_pct[ess_tbl$group == "Total"]
-
-  flags <- character(0)
-  if (max_weighted_smd > max_smd)
-    flags <- c(flags,
-               sprintf("max weighted SMD = %.3f (> %.2f) in %d covariate(s)",
-                       max_weighted_smd, max_smd, n_smd_over))
-  if (total_ess_pct < min_ess_pct)
-    flags <- c(flags,
-               sprintf("total ESS%% = %.1f (< %.0f%%)",
-                       total_ess_pct, min_ess_pct))
-
-  metrics <- data.frame(
-    variable    = c(smds$variable, "Total ESS %"),
-    smd_before  = c(smds$smd_unweighted, NA),
-    smd_after   = c(smds$smd_weighted, NA),
-    ess_pct     = c(rep(NA, nrow(smds)), total_ess_pct),
-    stringsAsFactors = FALSE
-  )
-
-  decision <- if (length(flags) == 0L) "GO"
-              else if (max_weighted_smd > stop_smd) "STOP"
-              else "FLAG"
-
-  rationale <- if (length(flags) == 0L) {
-    "All covariates balanced and ESS adequate."
-  } else {
-    paste("Issues:", paste(flags, collapse = "; "))
-  }
-
-  new_checkpoint(
-    stage      = "Check Point 2: Treatment Comparability",
-    decision   = decision,
-    metrics    = metrics,
-    thresholds = list(max_smd = max_smd, min_ess_pct = min_ess_pct,
-                      stop_smd = stop_smd, n_smd_over = n_smd_over),
-    rationale  = rationale,
-    lock_hash  = lock_hash
-  )
-}
 
 
 # ── Negative Control Framework ────────────────────────────────────────────
@@ -341,6 +30,7 @@ checkpoint_balance <- function(ps_diag,
 #'   \code{negative_controls}.
 #'
 #' @examples
+#' \dontrun{
 #' dat  <- sim_func1(n = 200, seed = 1)
 #' lock <- create_analysis_lock(dat, "treatment", "event_24",
 #'                              c("age", "sex", "biomarker"), seed = 1)
@@ -348,6 +38,7 @@ checkpoint_balance <- function(ps_diag,
 #'   description = "Outcome known to be unrelated to treatment",
 #'   domain = "confounding_by_indication")
 #'
+#' }
 #' @keywords internal
 define_negative_control <- function(lock, variable, type = "outcome",
                                     description = NULL, domain = NULL) {
@@ -376,86 +67,6 @@ define_negative_control <- function(lock, variable, type = "outcome",
 }
 
 
-#' Run a Negative Control Analysis
-#'
-#' Estimates the association between treatment and a negative control
-#' outcome using the same analytic design (covariates, PS model) as the
-#' primary analysis.  Any non-null association suggests residual
-#' confounding.
-#'
-#' @section Clean-room stage: Stage 3 (accesses the negative control
-#'   outcome variable).
-#'
-#' @param lock A \code{cleanroom_lock} with registered negative controls.
-#' @param variable Character; the negative control variable name.
-#' @param ps_fit A \code{ps_fit} object from the Stage 2 PS estimation.
-#'
-#' @return A list of class \code{cleantmle_nc_result} with elements
-#'   \code{variable}, \code{estimate}, \code{se}, \code{ci_lower},
-#'   \code{ci_upper}, \code{p_value}, and \code{interpretation}.
-#'
-#' @examples
-#' dat  <- sim_func1(n = 500, seed = 1)
-#' lock <- create_analysis_lock(dat, "treatment", "event_24",
-#'                              c("age", "sex", "biomarker"), seed = 1)
-#' lock <- define_negative_control(lock, "nc_outcome")
-#' ps   <- fit_ps_glm(lock)
-#' nc_result <- run_negative_control(lock, "nc_outcome", ps)
-#' print(nc_result)
-#'
-#' @keywords internal
-run_negative_control <- function(lock, variable, ps_fit) {
-  .superseded("run_negative_control", "run_negative_control_tmle()")
-  if (!inherits(lock, "cleanroom_lock"))
-    stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
-  if (!inherits(ps_fit, "ps_fit"))
-    stop("`ps_fit` must be a ps_fit object.", call. = FALSE)
-  if (!variable %in% names(lock$data))
-    stop("Variable '", variable, "' not found in lock data.", call. = FALSE)
-
-  data <- lock$data
-  A    <- data[[lock$treatment]]
-  Y_nc <- data[[variable]]
-  ps   <- ps_fit$ps
-  n    <- nrow(data)
-
-  # Stabilised IPTW
-  p_trt <- mean(A)
-  w     <- ifelse(A == 1, p_trt / ps, (1 - p_trt) / (1 - ps))
-
-  r1 <- weighted.mean(Y_nc[A == 1], w[A == 1])
-  r0 <- weighted.mean(Y_nc[A == 0], w[A == 0])
-  rd <- r1 - r0
-
-  se_sq_1 <- sum(w[A == 1]^2 * (Y_nc[A == 1] - r1)^2) / sum(w[A == 1])^2
-  se_sq_0 <- sum(w[A == 0]^2 * (Y_nc[A == 0] - r0)^2) / sum(w[A == 0])^2
-  se <- sqrt(se_sq_1 + se_sq_0)
-
-  ci_lo   <- rd - 1.96 * se
-  ci_hi   <- rd + 1.96 * se
-  p_value <- 2 * pnorm(-abs(rd / se))
-
-  # Interpretation
-  interpretation <- if (p_value < 0.05) {
-    "Association detected: potential residual confounding."
-  } else {
-    "No significant association: no evidence of residual confounding."
-  }
-
-  result <- list(
-    variable       = variable,
-    estimate       = rd,
-    se             = se,
-    ci_lower       = ci_lo,
-    ci_upper       = ci_hi,
-    p_value        = p_value,
-    interpretation = interpretation
-  )
-  class(result) <- "cleantmle_nc_result"
-  result
-}
-
-
 #' @export
 print.cleantmle_nc_result <- function(x, ...) {
   cat("Negative Control Analysis\n")
@@ -466,333 +77,6 @@ print.cleantmle_nc_result <- function(x, ...) {
   cat(sprintf("SE:          %.5f   p-value: %.4f\n", x$se, x$p_value))
   cat(sprintf("Assessment:  %s\n", x$interpretation))
   invisible(x)
-}
-
-
-# ── Check Point 3: Residual Bias ─────────────────────────────────────────
-
-#' Check Point 3: Residual Bias Assessment
-#'
-#' Evaluates negative control results to assess whether residual
-#' confounding is likely present.  Returns a structured checkpoint.
-#'
-#' Two screening rules are supported. The legacy \code{"significance"} rule
-#' flags a negative control when its association with treatment is
-#' statistically significant (\code{p < alpha}) or exceeds
-#' \code{max_nc_estimate}; it is the historical default but rewards low
-#' power, because a noisy NC with a large point estimate but a wide CI
-#' "passes". The recommended \code{"equivalence"} rule (two one-sided
-#' tests) instead flags a negative control unless its
-#' \code{(1 - 2*alpha)} confidence interval lies entirely inside the null
-#' band \code{(-null_band, null_band)}: a NC passes only when it is
-#' *demonstrated* to be near-null with adequate precision. With several
-#' negative controls, set \code{adjust = "bonferroni"} to widen each
-#' interval for multiplicity.
-#'
-#' @section Clean-room stage: Stage 3 (after negative control analysis).
-#'
-#' @param nc_results A single \code{cleantmle_nc_result} or a list of them.
-#' @param alpha Numeric; significance / one-sided-test level. Default: 0.05.
-#' @param max_nc_estimate Numeric; maximum tolerable absolute NC estimate.
-#'   Default: \code{Inf} (rely on p-value only). Used by the
-#'   \code{"significance"} rule.
-#' @param rule Character; \code{"significance"} (legacy default) or
-#'   \code{"equivalence"} (TOST-style; recommended).
-#' @param null_band Numeric; half-width of the practical-null band on the
-#'   NC estimate's scale, required when \code{rule = "equivalence"}.
-#' @param adjust Character; multiplicity adjustment for the equivalence
-#'   intervals across the NC panel. \code{"none"} (default) or
-#'   \code{"bonferroni"}.
-#' @param lock_hash Character; optional lock hash for traceability.
-#'
-#' @return A \code{cleantmle_checkpoint} for Check Point 3.
-#'
-#' @examples
-#' dat  <- sim_func1(n = 500, seed = 1)
-#' lock <- create_analysis_lock(dat, "treatment", "event_24",
-#'                              c("age", "sex", "biomarker"), seed = 1)
-#' lock <- define_negative_control(lock, "nc_outcome")
-#' ps   <- fit_ps_glm(lock)
-#' nc   <- run_negative_control(lock, "nc_outcome", ps)
-#' cp3  <- checkpoint_residual_bias(nc, lock_hash = lock$lock_hash)
-#' print(cp3)
-#'
-#' @keywords internal
-checkpoint_residual_bias <- function(nc_results,
-                                     alpha           = 0.05,
-                                     max_nc_estimate = Inf,
-                                     rule            = c("significance",
-                                                         "equivalence"),
-                                     null_band       = NULL,
-                                     adjust          = c("none", "bonferroni"),
-                                     lock_hash       = NA_character_) {
-  .superseded("checkpoint_residual_bias", "run_negative_control_ladder()")
-  rule   <- match.arg(rule)
-  adjust <- match.arg(adjust)
-
-  # Accept single result or list
-  if (inherits(nc_results, "cleantmle_nc_result"))
-    nc_results <- list(nc_results)
-  m <- length(nc_results)
-
-  if (rule == "equivalence") {
-    if (is.null(null_band) || !is.numeric(null_band) || null_band <= 0)
-      stop("`null_band` (a positive practical-null half-width) is required ",
-           "when rule = 'equivalence'.", call. = FALSE)
-    # Bonferroni widens each interval by splitting alpha across the panel.
-    alpha_each <- if (adjust == "bonferroni") alpha / max(m, 1L) else alpha
-    z <- stats::qnorm(1 - alpha_each)  # one-sided z for the (1-2*alpha) CI
-  }
-
-  rows <- lapply(nc_results, function(nc) {
-    if (rule == "equivalence") {
-      half <- z * nc$se
-      lo <- nc$estimate - half
-      hi <- nc$estimate + half
-      # PASS only if the whole CI sits inside the null band; otherwise FLAG.
-      within <- (lo > -null_band) && (hi < null_band)
-      flagged <- !within
-    } else {
-      lo <- nc$ci_lower
-      hi <- nc$ci_upper
-      flagged <- nc$p_value < alpha || abs(nc$estimate) > max_nc_estimate
-    }
-    data.frame(
-      variable = nc$variable,
-      estimate = round(nc$estimate, 5),
-      se       = round(nc$se, 5),
-      ci_lower = round(lo, 5),
-      ci_upper = round(hi, 5),
-      p_value  = round(nc$p_value, 4),
-      flagged  = flagged,
-      stringsAsFactors = FALSE
-    )
-  })
-  metrics <- do.call(rbind, rows)
-  n_flagged <- sum(metrics$flagged)
-
-  decision <- if (n_flagged == 0L) "GO"
-              else if (n_flagged <= m / 2) "FLAG"
-              else "STOP"
-
-  rationale <- if (n_flagged == 0L) {
-    if (rule == "equivalence")
-      sprintf("All %d NC(s) demonstrated near-null within +/-%.3g; no evidence of residual confounding.",
-              m, null_band)
-    else
-      "No negative controls flagged; no evidence of residual confounding."
-  } else {
-    sprintf("%d of %d negative control(s) flagged (rule = %s).",
-            n_flagged, m, rule)
-  }
-
-  new_checkpoint(
-    stage      = "Check Point 3: Residual Bias",
-    decision   = decision,
-    metrics    = metrics,
-    thresholds = list(alpha = alpha, max_nc_estimate = max_nc_estimate,
-                      rule = rule, null_band = null_band, adjust = adjust),
-    rationale  = rationale,
-    lock_hash  = lock_hash
-  )
-}
-
-
-# ── Audit Trail ──────────────────────────────────────────────────────────
-
-#' Create an Audit Log
-#'
-#' Initialises an empty audit log that accumulates entries as the
-#' analysis progresses through stages.
-#'
-#' @param lock A \code{cleanroom_lock}.
-#'
-#' @return An object of class \code{cleantmle_audit}.
-#'
-#' @keywords internal
-create_audit_log <- function(lock) {
-  .superseded("create_audit_log", "the lock's design log and the cleanroomGov reporting helpers")
-  if (!inherits(lock, "cleanroom_lock"))
-    stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
-
-  obj <- list(
-    lock_hash  = lock$lock_hash,
-    locked_at  = lock$locked_at,
-    entries    = list(),
-    created_at = Sys.time()
-  )
-  class(obj) <- "cleantmle_audit"
-  obj
-}
-
-
-#' Record a Stage Entry in the Audit Log
-#'
-#' Appends a timestamped entry to the audit log.
-#'
-#' @param audit A \code{cleantmle_audit}.
-#' @param stage Character; stage label.
-#' @param action Character; description of what was done.
-#' @param decision Character; checkpoint decision if applicable
-#'   (\code{"GO"}, \code{"FLAG"}, \code{"STOP"}, or \code{NA}).
-#' @param details Character; optional additional detail.
-#'
-#' @return Modified \code{cleantmle_audit}.
-#'
-#' @keywords internal
-record_stage <- function(audit, stage, action, decision = NA_character_,
-                         details = "") {
-  .superseded("record_stage", "the lock's design log and the cleanroomGov reporting helpers")
-  if (!inherits(audit, "cleantmle_audit"))
-    stop("`audit` must be a cleantmle_audit object.", call. = FALSE)
-
-  entry <- list(
-    stage     = stage,
-    action    = action,
-    decision  = decision,
-    details   = details,
-    timestamp = Sys.time()
-  )
-
-  audit$entries <- c(audit$entries, list(entry))
-  audit
-}
-
-
-#' Record a Checkpoint in the Audit Log
-#'
-#' Convenience wrapper that extracts stage, decision, and rationale from
-#' a \code{cleantmle_checkpoint} and appends them to the audit log.
-#'
-#' @param audit A \code{cleantmle_audit}.
-#' @param checkpoint A \code{cleantmle_checkpoint}.
-#'
-#' @return Modified \code{cleantmle_audit}.
-#'
-#' @keywords internal
-record_checkpoint <- function(audit, checkpoint) {
-  .superseded("record_checkpoint", "the lock's design log and the cleanroomGov reporting helpers")
-  if (!inherits(checkpoint, "cleantmle_checkpoint"))
-    stop("`checkpoint` must be a cleantmle_checkpoint object.", call. = FALSE)
-
-  record_stage(audit,
-    stage    = checkpoint$stage,
-    action   = paste("Checkpoint evaluated:", checkpoint$rationale),
-    decision = checkpoint$decision
-  )
-}
-
-
-#' Export an Audit Trail as a Data Frame
-#'
-#' Converts the audit log to a tidy data frame suitable for printing
-#' or inclusion in a vignette.
-#'
-#' @param audit A \code{cleantmle_audit}.
-#'
-#' @return A data.frame with columns \code{stage}, \code{action},
-#'   \code{decision}, \code{details}, and \code{timestamp}.
-#'
-#' @examples
-#' dat  <- sim_func1(n = 200, seed = 1)
-#' lock <- create_analysis_lock(dat, "treatment", "event_24",
-#'                              c("age", "sex", "biomarker"), seed = 1)
-#' audit <- create_audit_log(lock)
-#' audit <- record_stage(audit, "Stage 1a", "Analysis lock created")
-#' export_audit_trail(audit)
-#'
-#' @keywords internal
-export_audit_trail <- function(audit) {
-  .superseded("export_audit_trail", "the lock's design log and cleanroomGov::build_stage_manifest()")
-  if (!inherits(audit, "cleantmle_audit"))
-    stop("`audit` must be a cleantmle_audit object.", call. = FALSE)
-
-  if (length(audit$entries) == 0L) {
-    return(data.frame(
-      stage     = character(0),
-      action    = character(0),
-      decision  = character(0),
-      details   = character(0),
-      timestamp = character(0),
-      stringsAsFactors = FALSE
-    ))
-  }
-
-  rows <- lapply(audit$entries, function(e) {
-    data.frame(
-      stage     = e$stage,
-      action    = e$action,
-      decision  = if (is.na(e$decision)) "" else e$decision,
-      details   = e$details,
-      timestamp = format(e$timestamp, "%Y-%m-%d %H:%M:%S"),
-      stringsAsFactors = FALSE
-    )
-  })
-  do.call(rbind, rows)
-}
-
-
-#' @export
-print.cleantmle_audit <- function(x, ...) {
-  cat("cleanTMLE Audit Log\n")
-  cat("====================\n")
-  cat(sprintf("Lock hash:  %s\n", x$lock_hash))
-  cat(sprintf("Entries:    %d\n", length(x$entries)))
-  if (length(x$entries) > 0L) {
-    cat("\n")
-    trail <- export_audit_trail(x)
-    print(trail, row.names = FALSE, right = FALSE)
-  }
-  invisible(x)
-}
-
-
-# Note: build_stage_manifest() and summarize_stage_path() (audit-path summaries)
-# were moved to the companion cleanroomGov package; they render the audit log
-# and are read by neither the estimation core nor the gate.
-
-
-# ── Sensitivity Analysis Helper ──────────────────────────────────────────
-
-#' Run Truncation Sensitivity Analysis
-#'
-#' Re-estimates the primary IPTW-based risk difference under multiple
-#' propensity score truncation thresholds to assess sensitivity of the
-#' estimate to extreme weights.
-#'
-#' @section Clean-room stage: Stage 4 (post-outcome).
-#'
-#' @param lock A \code{cleanroom_lock}.
-#' @param thresholds Numeric vector of truncation thresholds to evaluate.
-#'   Default: \code{c(0.01, 0.025, 0.05, 0.10)}.
-#' @param override_clean_room Logical; if \code{TRUE}, skips the outcome-access check.  Default \code{FALSE}.
-#'
-#' @return A data.frame with columns \code{truncation}, \code{estimate},
-#'   \code{se}, \code{ci_lower}, \code{ci_upper}.
-#'
-#' @keywords internal
-sensitivity_truncation <- function(lock,
-                                   thresholds = c(0.01, 0.025, 0.05, 0.10),
-                                   override_clean_room = FALSE) {
-  .superseded("sensitivity_truncation", "run_trimmed_tmle() and resolve_truncation_rule()")
-  if (!inherits(lock, "cleanroom_lock"))
-    stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
-  .check_outcome_access(lock, override_clean_room,
-                        caller = "sensitivity_truncation")
-
-  rows <- lapply(thresholds, function(trunc) {
-    ps_fit <- fit_ps_glm(lock, truncate = trunc)
-    iptw   <- run_iptw_workflow(lock, ps_fit)
-    data.frame(
-      truncation = trunc,
-      estimate   = round(iptw$estimate, 5),
-      se         = round(iptw$se, 5),
-      ci_lower   = round(iptw$ci_lower, 5),
-      ci_upper   = round(iptw$ci_upper, 5),
-      stringsAsFactors = FALSE
-    )
-  })
-  do.call(rbind, rows)
 }
 
 
@@ -870,6 +154,7 @@ compute_evalue <- function(rr, ci_bound = NULL) {
 #'   \code{primary_tmle_spec}.
 #'
 #' @examples
+#' \dontrun{
 #' dat  <- sim_func1(n = 200, seed = 1)
 #' lock <- create_analysis_lock(dat, "treatment", "event_24",
 #'                              c("age", "sex", "biomarker"), seed = 1)
@@ -878,13 +163,18 @@ compute_evalue <- function(rr, ci_bound = NULL) {
 #' lock <- lock_primary_tmle_spec(lock, spec)
 #' get_primary_tmle_spec(lock)
 #'
+#' }
 #' @keywords internal
 lock_primary_tmle_spec <- function(lock, selected) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
+  # A single-candidate set from define_candidates() stands in for its
+  # one specification.
+  if (inherits(selected, "ct_candidates") && length(selected) == 1L)
+    selected <- selected[[1L]]
   if (!inherits(selected, "tmle_candidate_spec"))
-    stop("`selected` must be a tmle_candidate_spec or tmle_selected_spec.",
-         call. = FALSE)
+    stop("`selected` must be a tmle_candidate_spec (or a length-one ",
+         "candidate set from define_candidates()).", call. = FALSE)
 
   lock$primary_tmle_spec <- selected
   lock
@@ -956,13 +246,13 @@ estimate_design_precision <- function(lock, target_mdd = NULL) {
 
   data      <- lock$data
   A         <- data[[lock$treatment]]
-  Y         <- data[[lock$outcome]]
+  Y         <- .outcome_vector(lock)
 
-  if (isTRUE(lock$.outcome_masked) || all(is.na(Y))) {
-    stop("estimate_design_precision() requires the outcome column to be ",
-         "available. The lock is masked or the outcome is all NA. Call ",
-         "this on the un-masked lock (before mask_outcome()) or call ",
-         "unmask_outcome() first.", call. = FALSE)
+  if (isTRUE(lock$.outcome_masked) || !.outcome_readable(lock)) {
+    stop("estimate_design_precision() requires a readable outcome. ",
+         "The lock is masked or the outcome is all NA. Call this on the ",
+         "un-masked lock (before mask_outcome()) or call unmask_outcome() ",
+         "first.", call. = FALSE)
   }
 
   n_total   <- nrow(data)
@@ -1059,22 +349,24 @@ print.design_precision <- function(x, ...) {
 #'   and \code{event_rate} (all marginal).
 #'
 #' @examples
+#' \dontrun{
 #' dat  <- sim_func1(n = 500, seed = 1)
 #' lock <- create_analysis_lock(dat, "treatment", "event_24",
 #'                              c("age", "sex", "biomarker"), seed = 1)
 #' summarize_event_support(lock)
 #'
+#' }
 #' @keywords internal
 summarize_event_support <- function(lock) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
 
   data <- lock$data
-  Y    <- data[[lock$outcome]]
+  Y    <- .outcome_vector(lock)
 
-  if (isTRUE(lock$.outcome_masked) || all(is.na(Y))) {
-    stop("summarize_event_support() requires the outcome column to be ",
-         "available. The lock is masked or the outcome is all NA.",
+  if (isTRUE(lock$.outcome_masked) || !.outcome_readable(lock)) {
+    stop("summarize_event_support() requires a readable outcome. ",
+         "The lock is masked or the outcome is all NA.",
          call. = FALSE)
   }
 
@@ -1141,10 +433,10 @@ event_support_by_arm <- function(lock, reason) {
 
   data <- lock$data
   A    <- data[[lock$treatment]]
-  Y    <- data[[lock$outcome]]
-  if (isTRUE(lock$.outcome_masked) || all(is.na(Y)))
-    stop("event_support_by_arm() requires the outcome column to be ",
-         "available. The lock is masked or the outcome is all NA.",
+  Y    <- .outcome_vector(lock)
+  if (isTRUE(lock$.outcome_masked) || !.outcome_readable(lock))
+    stop("event_support_by_arm() requires a readable outcome. ",
+         "The lock is masked or the outcome is all NA.",
          call. = FALSE)
 
   strat <- lock$estimand$treatment_strategies
@@ -1194,762 +486,131 @@ print.event_support_by_arm <- function(x, ...) {
 }
 
 
-# ── Stage 3 Residual Confounding Wrapper ─────────────────────────────────
-
-#' Stage 3: Residual Confounding Assessment
-#'
-#' Convenience wrapper that runs \code{\link{run_negative_control}} on
-#' every registered negative control variable in the lock and returns a
-#' structured stage result with an embedded checkpoint.
-#'
-#' @section Clean-room stage: Stage 3 (residual confounding).
-#'
-#' @param lock A \code{cleanroom_lock} with negative controls registered
-#'   via \code{\link{define_negative_control}}.
-#' @param ps_fit A \code{ps_fit} object from \code{\link{fit_ps_glm}}.
-#' @param variables Character vector of negative-control variable names
-#'   to evaluate.  If \code{NULL} (default), all variables registered in
-#'   \code{lock$negative_controls} are used.
-#' @param alpha Numeric; significance threshold for flagging a negative
-#'   control.  Default \code{0.05}.
-#' @param max_abs_estimate Numeric; absolute estimate threshold for
-#'   flagging a negative control.  Default \code{0.05}.
-#' @param rule Character; negative-control screening rule passed to
-#'   \code{\link{checkpoint_residual_bias}}: \code{"significance"} (default)
-#'   or \code{"equivalence"}. If the lock carries a
-#'   \code{\link{decision_thresholds}} object and \code{rule} is not
-#'   supplied, the lock's NCO rule is used.
-#' @param null_band Numeric; practical-null half-width required when
-#'   \code{rule = "equivalence"}.
-#' @param adjust Character; multiplicity adjustment for the equivalence
-#'   intervals: \code{"none"} (default) or \code{"bonferroni"}.
-#'
-#' @return A list of class \code{residual_confounding_stage} with:
-#'   \describe{
-#'     \item{nc_results}{Named list of \code{cleantmle_nc_result} objects.}
-#'     \item{summary_table}{data.frame summarising each NC variable.}
-#'     \item{checkpoint}{A \code{cleantmle_checkpoint} (Check Point 3).}
-#'     \item{n_controls}{Number of negative controls evaluated.}
-#'     \item{n_flagged}{Number of flagged negative controls.}
-#'     \item{proportion_flagged}{Proportion flagged.}
-#'   }
-#'
-#' @examples
-#' dat  <- sim_func1(n = 500, seed = 1)
-#' lock <- create_analysis_lock(dat, "treatment", "event_24",
-#'                              c("age", "sex", "biomarker"), seed = 1)
-#' lock <- define_negative_control(lock, "nc_outcome")
-#' ps   <- fit_ps_glm(lock)
-#' stage3 <- run_residual_confounding_stage(lock, ps)
-#' print(stage3)
-#'
-#' @keywords internal
-run_residual_confounding_stage <- function(lock,
-                                           ps_fit,
-                                           variables        = NULL,
-                                           alpha            = 0.05,
-                                           max_abs_estimate = 0.05,
-                                           rule             = c("significance",
-                                                                "equivalence"),
-                                           null_band        = NULL,
-                                           adjust           = c("none",
-                                                                "bonferroni")) {
-  .superseded("run_residual_confounding_stage", "run_negative_control_tmle() and run_negative_control_ladder()")
-  rule_missing <- missing(rule)
-  rule   <- match.arg(rule)
-  adjust <- match.arg(adjust)
-  if (!inherits(lock, "cleanroom_lock"))
-    stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
-
-  # If the lock carries a prespecified decision_thresholds() object and the
-  # caller did not override, adopt its negative-control rule.
-  if (!is.null(lock$decision_thresholds) &&
-      rule_missing && is.null(null_band)) {
-    nco <- lock$decision_thresholds$nco
-    if (!is.null(nco)) {
-      rule      <- nco$rule
-      null_band <- nco$null_band
-      adjust    <- nco$adjust
-    }
-  }
-  if (!inherits(ps_fit, "ps_fit"))
-    stop("`ps_fit` must be a ps_fit object.", call. = FALSE)
-
-  if (is.null(variables)) {
-    variables <- names(lock$negative_controls)
-    if (length(variables) == 0L)
-      stop("No negative controls registered. Use define_negative_control() first.",
-           call. = FALSE)
-  }
-
-  # Each NC fit can fail (e.g. degenerate column, all-NA, separation). We
-  # capture failures explicitly rather than dropping silently: failed NCs
-  # are surfaced in the summary_table with `failed = TRUE` and `flagged =
-  # NA`, and the failures field is returned for inclusion in the audit log
-  # so the gate decision can see partial NC coverage.
-  nc_attempts <- lapply(variables, function(v) {
-    tryCatch(list(ok = TRUE, value = run_negative_control(lock, v, ps_fit)),
-             error = function(e) list(ok = FALSE, value = NULL,
-                                       error = conditionMessage(e),
-                                       variable = v))
-  })
-  names(nc_attempts) <- variables
-
-  ok_idx <- vapply(nc_attempts, function(x) isTRUE(x$ok), logical(1))
-  nc_results <- lapply(nc_attempts[ok_idx], `[[`, "value")
-  failures   <- nc_attempts[!ok_idx]
-
-  if (length(failures) > 0L) {
-    warning("run_residual_confounding_stage: ", length(failures),
-            " of ", length(variables),
-            " negative-control fits failed: ",
-            paste(sprintf("%s (%s)", names(failures),
-                          vapply(failures, function(x) x$error, character(1))),
-                  collapse = "; "),
-            call. = FALSE)
-  }
-
-  ok_rows <- if (length(nc_results) > 0L) {
-    do.call(rbind, lapply(nc_results, function(nc) {
-      flagged <- nc$p_value < alpha || abs(nc$estimate) > max_abs_estimate
-      data.frame(
-        variable = nc$variable,
-        estimate = round(nc$estimate, 5),
-        se       = round(nc$se,       5),
-        p_value  = round(nc$p_value,  4),
-        flagged  = flagged,
-        failed   = FALSE,
-        error    = NA_character_,
-        stringsAsFactors = FALSE
-      )
-    }))
-  } else NULL
-
-  fail_rows <- if (length(failures) > 0L) {
-    do.call(rbind, lapply(failures, function(f) {
-      data.frame(
-        variable = f$variable,
-        estimate = NA_real_, se = NA_real_, p_value = NA_real_,
-        flagged  = NA, failed = TRUE, error = f$error,
-        stringsAsFactors = FALSE
-      )
-    }))
-  } else NULL
-
-  summary_table <- rbind(ok_rows, fail_rows)
-  rownames(summary_table) <- NULL
-
-  n_controls         <- length(variables)
-  n_failed           <- length(failures)
-  n_flagged          <- if (!is.null(ok_rows)) sum(ok_rows$flagged) else 0L
-  proportion_flagged <- n_flagged / max(1L, n_controls - n_failed)
-
-  checkpoint <- checkpoint_residual_bias(
-    nc_results,
-    alpha           = alpha,
-    max_nc_estimate = max_abs_estimate,
-    rule            = rule,
-    null_band       = null_band,
-    adjust          = adjust,
-    lock_hash       = lock$lock_hash
-  )
-
-  result <- list(
-    nc_results         = nc_results,
-    summary_table      = summary_table,
-    checkpoint         = checkpoint,
-    n_controls         = n_controls,
-    n_flagged          = n_flagged,
-    n_failed           = n_failed,
-    failures           = failures,
-    proportion_flagged = proportion_flagged
-  )
-  class(result) <- "residual_confounding_stage"
-  result
-}
-
-
-#' @export
-print.residual_confounding_stage <- function(x, ...) {
-  cat("=== Stage 3: Residual Confounding Assessment ===\n")
-  cat(sprintf("Negative controls evaluated: %d\n", x$n_controls))
-  cat(sprintf("Flagged:                     %d (%.1f%%)\n",
-              x$n_flagged, 100 * x$proportion_flagged))
-  cat("\nSummary table:\n")
-  print(x$summary_table, row.names = FALSE)
-  cat("\n")
-  print(x$checkpoint)
-  invisible(x)
-}
-
-
-# ── Pre-Outcome Gate ──────────────────────────────────────────────────────
-
-#' Authorise Outcome Analysis
-#'
-#' Scans the audit log to check that all required stage checkpoints have
-#' been recorded and none resulted in an unconditional STOP.  Returns a
-#' \code{pre_outcome_gate} checkpoint summarising the GO / FLAG / STOP
-#' decision.
-#'
-#' @section Clean-room stage: Pre-Outcome Gate (between Stage 3 and
-#'   Stage 4).
-#'
-#' @section GO / FLAG / STOP rule:
-#' For each required stage the most recent recorded decision is read from
-#' the audit. A missing required stage yields STOP. Any STOP decision yields
-#' STOP. Otherwise, any FLAG decision yields FLAG when
-#' \code{allow_flag = TRUE} (the default, treated as conditional GO) and is
-#' escalated to STOP when \code{allow_flag = FALSE}. Only an audit with all
-#' required stages present and no STOP or escalated FLAG yields GO.
-#'
-#' @section Overrides and audit:
-#' The gate does not itself accept an override flag; it reports the
-#' decision implied by recorded checkpoint evidence. A downstream Stage 4
-#' function called with \code{override_clean_room = TRUE} can still proceed
-#' against a STOP or FLAG, but the gate's recorded result is preserved.
-#' Callers should document such overrides via
-#' \code{\link{record_decision_log_entry}} with
-#' \code{decision_type = "override"} so the audit retains both the gate
-#' decision and the rationale for proceeding past it.
-#'
-#' @param audit A \code{cleantmle_audit}.
-#' @param required_stages Character vector of stage labels that must be
-#'   present in the audit.  Matching is on the stage *key* (the text
-#'   before the first colon), so \code{"Check Point 2"} matches
-#'   \code{"Check Point 2: Treatment Comparability"} but NOT
-#'   \code{"Check Point 2c: DQ Stress"}.  Default:
-#'   \code{c("Check Point 1", "Check Point 2", "Check Point 3")}.
-#' @param allow_flag Logical; if \code{FALSE} any FLAG decision is treated
-#'   as a STOP.  Default \code{TRUE}.
-#' @param block_on_any_stop Logical; if \code{TRUE} (the default) *any*
-#'   recorded checkpoint with a STOP decision blocks authorisation, even
-#'   if it is not in \code{required_stages}.  This makes optional
-#'   checkpoints such as the DQ-stress gate (\code{"Check Point 2c"})
-#'   authoritative once recorded, and prevents a STOP from being masked
-#'   by a later same-prefix checkpoint.
-#' @param lock_hash Character; optional lock hash for traceability.
-#' @param checkpoints Optional \code{cleantmle_checkpoint} or list of them;
-#'   supplied instead of (or in addition to) \code{audit}, in which case a
-#'   temporary audit is synthesised from the checkpoints.
-#'
-#' @return A \code{cleantmle_checkpoint} of subclass
-#'   \code{pre_outcome_gate} with an additional logical field
-#'   \code{authorized}.
-#'
-#' @examples
-#' dat   <- sim_func1(n = 500, seed = 1)
-#' lock  <- create_analysis_lock(dat, "treatment", "event_24",
-#'                               c("age", "sex", "biomarker"), seed = 1)
-#' audit <- create_audit_log(lock)
-#' ps    <- fit_ps_glm(lock)
-#' cp1   <- checkpoint_cohort_adequacy(lock)
-#' diag  <- compute_ps_diagnostics(ps)
-#' cp2   <- checkpoint_balance(diag, lock_hash = lock$lock_hash)
-#' lock  <- define_negative_control(lock, "nc_outcome")
-#' nc    <- run_negative_control(lock, "nc_outcome", ps)
-#' cp3   <- checkpoint_residual_bias(nc, lock_hash = lock$lock_hash)
-#' audit <- record_checkpoint(audit, cp1)
-#' audit <- record_checkpoint(audit, cp2)
-#' audit <- record_checkpoint(audit, cp3)
-#' gate  <- authorize_outcome_analysis(audit)
-#' print(gate)
-#'
-#' @keywords internal
-authorize_outcome_analysis <- function(audit = NULL,
-                                       required_stages = NULL,
-                                       allow_flag      = TRUE,
-                                       lock_hash       = NULL,
-                                       checkpoints     = NULL,
-                                       block_on_any_stop = TRUE) {
-  .superseded("authorize_outcome_analysis", "the opt-in two-pass path (run_clean_tmle_preoutcome()); plain locks no longer require authorisation")
-  # Polymorphic: accept either an audit, a list of checkpoints, or both.
-  # When both are supplied, the union of evidence is used (audit entries
-  # plus the explicit checkpoints).
-  synth_audit <- function(cps) {
-    a <- structure(list(
-      lock_hash = if (is.null(lock_hash)) NA_character_ else lock_hash,
-      created   = Sys.time(),
-      entries   = list()
-    ), class = "cleantmle_audit")
-    for (cp in cps) {
-      if (inherits(cp, "cleantmle_checkpoint")) a <- record_checkpoint(a, cp)
-    }
-    a
-  }
-  if (is.null(audit)) {
-    if (is.null(checkpoints))
-      stop("Provide either `audit` or `checkpoints`.", call. = FALSE)
-    if (inherits(checkpoints, "cleantmle_checkpoint"))
-      checkpoints <- list(checkpoints)
-    audit <- synth_audit(checkpoints)
-  } else if (!is.null(checkpoints)) {
-    if (inherits(checkpoints, "cleantmle_checkpoint"))
-      checkpoints <- list(checkpoints)
-    for (cp in checkpoints) {
-      if (inherits(cp, "cleantmle_checkpoint")) audit <- record_checkpoint(audit, cp)
-    }
-  }
-  if (!inherits(audit, "cleantmle_audit"))
-    stop("`audit` must be a cleantmle_audit object.", call. = FALSE)
-
-  if (is.null(required_stages))
-    required_stages <- c("Check Point 1", "Check Point 2", "Check Point 3")
-
-  if (is.null(lock_hash))
-    lock_hash <- if (!is.null(audit$lock_hash)) audit$lock_hash else NA_character_
-
-  # Stage key = the label before the first colon, trimmed. This makes
-  # required-stage matching exact at the checkpoint level and prevents
-  # "Check Point 2" from accidentally matching "Check Point 2c: DQ Stress".
-  stage_key <- function(s) trimws(sub(":.*$", "", s))
-
-  # For each required stage, reduce the decisions of ALL entries whose
-  # stage key matches, using STOP > FLAG > GO precedence. Returning the
-  # most severe (rather than the last) decision means a STOP can never be
-  # masked by a later same-key entry.
-  reduce_decisions <- function(ds) {
-    ds <- ds[!is.na(ds)]
-    if (length(ds) == 0L) return(NA_character_)
-    if (any(ds == "STOP")) return("STOP")
-    if (any(ds == "FLAG")) return("FLAG")
-    "GO"
-  }
-  find_decision <- function(stage_pattern) {
-    key <- stage_key(stage_pattern)
-    matched <- Filter(function(e) identical(stage_key(e$stage), key),
-                      audit$entries)
-    if (length(matched) == 0L) return(NULL)
-    reduce_decisions(vapply(matched, function(e) {
-      d <- e$decision
-      if (is.null(d) || length(d) != 1L) NA_character_ else as.character(d)
-    }, character(1L)))
-  }
-
-  decisions      <- lapply(required_stages, find_decision)
-  names(decisions) <- required_stages
-
-  missing_stages <- required_stages[vapply(decisions, is.null, logical(1L))]
-  found_decisions <- unlist(decisions[!vapply(decisions, is.null, logical(1L))])
-
-  overall_decision <- "GO"
-  rationale_parts  <- character(0)
-
-  if (length(missing_stages) > 0L) {
-    overall_decision <- "STOP"
-    rationale_parts  <- c(rationale_parts,
-      paste("Missing required stages:", paste(missing_stages, collapse = "; ")))
-  }
-
-  if (any(found_decisions == "STOP")) {
-    overall_decision <- "STOP"
-    stop_stages <- names(found_decisions)[found_decisions == "STOP"]
-    rationale_parts <- c(rationale_parts,
-      paste("STOP decision in:", paste(stop_stages, collapse = "; ")))
-  }
-
-  # Authoritative scan: any recorded checkpoint with a STOP decision
-  # blocks authorisation, even if it is not in required_stages (e.g. the
-  # DQ-stress gate, Check Point 2c). This is the safety net that makes the
-  # gate_dq() STOP binding without forcing every analysis to run the DQ
-  # stage.
-  if (isTRUE(block_on_any_stop)) {
-    all_stop_keys <- unique(vapply(
-      Filter(function(e) identical(as.character(e$decision), "STOP"),
-             audit$entries),
-      function(e) stage_key(e$stage), character(1L)))
-    extra_stop <- setdiff(all_stop_keys,
-                          vapply(required_stages, stage_key, character(1L)))
-    if (length(extra_stop) > 0L) {
-      overall_decision <- "STOP"
-      rationale_parts <- c(rationale_parts,
-        paste("STOP decision in (non-required):",
-              paste(extra_stop, collapse = "; ")))
-    }
-  }
-
-  if (!allow_flag && any(found_decisions == "FLAG")) {
-    overall_decision <- "STOP"
-    flag_stages <- names(found_decisions)[found_decisions == "FLAG"]
-    rationale_parts <- c(rationale_parts,
-      paste("FLAG decision not permitted in:", paste(flag_stages, collapse = "; ")))
-  }
-
-  if (overall_decision == "GO" && any(found_decisions == "FLAG")) {
-    overall_decision <- "FLAG"
-    flag_stages <- names(found_decisions)[found_decisions == "FLAG"]
-    rationale_parts <- c(rationale_parts,
-      paste("FLAG in:", paste(flag_stages, collapse = "; "), "(allowed)"))
-  }
-
-  rationale <- if (length(rationale_parts) == 0L) {
-    "All required stages passed; outcome analysis authorised."
-  } else {
-    paste(rationale_parts, collapse = " | ")
-  }
-
-  metrics <- data.frame(
-    stage             = required_stages,
-    decision_in_audit = vapply(decisions, function(d) if (is.null(d)) "MISSING" else d,
-                               character(1L)),
-    stringsAsFactors  = FALSE
-  )
-
-  cp <- new_checkpoint(
-    stage      = "Pre-Outcome Gate",
-    decision   = overall_decision,
-    metrics    = metrics,
-    thresholds = list(allow_flag = allow_flag,
-                      required_stages = required_stages),
-    rationale  = rationale,
-    lock_hash  = lock_hash
-  )
-
-  class(cp)        <- c("pre_outcome_gate", "cleantmle_checkpoint")
-  cp$authorized    <- (cp$decision != "STOP")
-  # Bind the authorisation token to the exact audit state it was minted from,
-  # so a checkpoint added or removed after authorisation is detectable
-  # downstream (see run_clean_tmle_primary()).
-  cp$audit_fingerprint <- .audit_fingerprint(audit)
-  cp
-}
-
-
-# Order-independent fingerprint of an audit's (stage, decision, action) multiset.
-# Used to bind a gate token to the audit it was granted on: any checkpoint added,
-# removed, or whose decision or action text (e.g. the recorded selected
-# candidate) is edited after authorisation changes this value. sha256 via digest
-# when available, with a labelled non-cryptographic checksum fallback.
-.audit_fingerprint <- function(audit) {
-  if (!inherits(audit, "cleantmle_audit") || length(audit$entries) == 0L)
-    return(NA_character_)
-  parts <- vapply(audit$entries, function(e) {
-    dec <- if (is.null(e$decision) || length(e$decision) != 1L) "NA"
-           else as.character(e$decision)
-    act <- if (is.null(e$action) || length(e$action) != 1L) "NA"
-           else as.character(e$action)
-    paste(e$stage, dec, act, sep = "=")
-  }, character(1L))
-  key <- paste(sort(parts), collapse = "|")
-  if (requireNamespace("digest", quietly = TRUE))
-    digest::digest(key, algo = "sha256")
-  else paste0("checksum:", sum(utf8ToInt(key)))
-}
-
-
-#' Assert That Outcome Analysis Is Authorised
-#'
-#' Calls \code{\link{authorize_outcome_analysis}} and raises an error if
-#' the outcome analysis has not been authorised.
-#'
-#' @section Clean-room stage: Pre-Outcome Gate assertion.
-#'
-#' @param audit A \code{cleantmle_audit}.
-#' @param lock Optional \code{cleanroom_lock}. When supplied, the pre-outcome
-#'   gate is checked and, on success, the lock is stamped
-#'   \code{.outcome_authorized = TRUE} and returned so that Stage 4 estimators
-#'   run. This is the recommended way to authorise an unmasked staged lock.
-#' @param allow_unauthorized Logical; when \code{lock} is supplied, force the
-#'   authorisation stamp even if the gate does not authorise (a warning is
-#'   raised). Default \code{FALSE}.
-#' @param ... Additional arguments passed to
-#'   \code{\link{authorize_outcome_analysis}} (used when \code{lock} is
-#'   \code{NULL}).
-#'
-#' @return When \code{lock} is \code{NULL}, \code{invisible(TRUE)} if authorised
-#'   (otherwise an error). When \code{lock} is supplied, the stamped
-#'   \code{cleanroom_lock}.
-#'
-#' @examples
-#' dat   <- sim_func1(n = 500, seed = 1)
-#' lock  <- create_analysis_lock(dat, "treatment", "event_24",
-#'                               c("age", "sex", "biomarker"), seed = 1)
-#' audit <- create_audit_log(lock)
-#' ps    <- fit_ps_glm(lock)
-#' cp1   <- checkpoint_cohort_adequacy(lock)
-#' diag  <- compute_ps_diagnostics(ps)
-#' cp2   <- checkpoint_balance(diag, lock_hash = lock$lock_hash)
-#' lock  <- define_negative_control(lock, "nc_outcome")
-#' nc    <- run_negative_control(lock, "nc_outcome", ps)
-#' cp3   <- checkpoint_residual_bias(nc, lock_hash = lock$lock_hash)
-#' audit <- record_checkpoint(audit, cp1)
-#' audit <- record_checkpoint(audit, cp2)
-#' audit <- record_checkpoint(audit, cp3)
-#' assert_outcome_authorized(audit)
-#'
-#' @keywords internal
-assert_outcome_authorized <- function(audit, lock = NULL,
-                                      allow_unauthorized = FALSE, ...) {
-  .superseded("assert_outcome_authorized", "the opt-in two-pass path (run_clean_tmle_preoutcome()); plain locks no longer require authorisation")
-  if (!is.null(lock)) {
-    return(.authorize_outcome_lock(lock, audit, allow_unauthorized,
-                                   caller = "assert_outcome_authorized"))
-  }
-  gate <- authorize_outcome_analysis(audit, ...)
-  if (!isTRUE(gate$authorized)) {
-    stop(
-      "Outcome analysis NOT authorised. Pre-Outcome Gate decision: ",
-      gate$decision, ". Rationale: ", gate$rationale,
-      call. = FALSE
-    )
-  }
-  invisible(TRUE)
-}
-
-
-# ── Decision Log ──────────────────────────────────────────────────────────
-
-#' Record a Decision Log Entry
-#'
-#' Appends a structured decision log entry to the audit.  Use this to
-#' capture analyst decisions, protocol deviations, or model-specification
-#' choices that are not automatically captured by checkpoint functions.
-#'
-#' @param audit A \code{cleantmle_audit}.
-#' @param stage Character; stage label associated with the decision.
-#' @param decision_type Character; free-text category such as
-#'   \code{"model_specification"}, \code{"protocol_deviation"}, or
-#'   \code{"override"}.
-#' @param description Character; brief description of the decision.
-#' @param rationale Character; optional justification.  Default \code{""}.
-#' @param metrics A named list of optional numeric or character metrics.
-#'   Default \code{NULL}.
-#'
-#' @return Modified \code{cleantmle_audit} with the new entry appended to
-#'   \code{audit$decision_log}.
-#'
-#' @examples
-#' dat   <- sim_func1(n = 200, seed = 1)
-#' lock  <- create_analysis_lock(dat, "treatment", "event_24",
-#'                               c("age", "sex", "biomarker"), seed = 1)
-#' audit <- create_audit_log(lock)
-#' audit <- record_decision_log_entry(
-#'   audit, "Stage 2", "model_specification",
-#'   "Selected logistic PS model with 3 covariates",
-#'   rationale = "Pre-specified in SAP"
-#' )
-#'
-#' @keywords internal
-record_decision_log_entry <- function(audit,
-                                      stage,
-                                      decision_type,
-                                      description,
-                                      rationale = "",
-                                      metrics   = NULL) {
-  .superseded("record_decision_log_entry", "the design log on the lock, which declare_estimand_ladder() and run_estimand_ladder() write")
-  if (!inherits(audit, "cleantmle_audit"))
-    stop("`audit` must be a cleantmle_audit object.", call. = FALSE)
-
-  entry <- list(
-    stage         = stage,
-    decision_type = decision_type,
-    description   = description,
-    rationale     = rationale,
-    metrics       = metrics,
-    timestamp     = Sys.time()
-  )
-
-  if (is.null(audit$decision_log))
-    audit$decision_log <- list()
-
-  audit$decision_log <- c(audit$decision_log, list(entry))
-  audit
-}
-
-
-#' Export the Decision Log as a Data Frame
-#'
-#' Converts all entries in \code{audit$decision_log} to a tidy data frame.
-#'
-#' @param audit A \code{cleantmle_audit}.
-#'
-#' @return A data.frame with columns \code{stage}, \code{decision_type},
-#'   \code{description}, \code{rationale}, and \code{timestamp}.  Returns
-#'   an empty data frame if no decision log entries exist.
-#'
-#' @examples
-#' dat   <- sim_func1(n = 200, seed = 1)
-#' lock  <- create_analysis_lock(dat, "treatment", "event_24",
-#'                               c("age", "sex", "biomarker"), seed = 1)
-#' audit <- create_audit_log(lock)
-#' audit <- record_decision_log_entry(audit, "Stage 2", "model_specification",
-#'                                    "Logistic PS model selected")
-#' export_decision_log(audit)
-#'
-#' @keywords internal
-export_decision_log <- function(audit) {
-  .superseded("export_decision_log", "the design log on the lock (lock$design_log)")
-  if (!inherits(audit, "cleantmle_audit"))
-    stop("`audit` must be a cleantmle_audit object.", call. = FALSE)
-
-  empty <- data.frame(
-    stage         = character(0),
-    decision_type = character(0),
-    description   = character(0),
-    rationale     = character(0),
-    timestamp     = character(0),
-    stringsAsFactors = FALSE
-  )
-
-  if (is.null(audit$decision_log) || length(audit$decision_log) == 0L)
-    return(empty)
-
-  rows <- lapply(audit$decision_log, function(e) {
-    data.frame(
-      stage         = e$stage,
-      decision_type = e$decision_type,
-      description   = e$description,
-      rationale     = e$rationale,
-      timestamp     = format(e$timestamp, "%Y-%m-%d %H:%M:%S"),
-      stringsAsFactors = FALSE
-    )
-  })
-  do.call(rbind, rows)
-}
-
-
 # ── Outcome Masking ───────────────────────────────────────────────────────
 
-#' Mask the Outcome Column in the Lock
+#' Mask the Outcome
 #'
-#' Returns a modified copy of the lock in which the outcome column is
-#' replaced with \code{NA}.  This operationalises the clean-room principle of
-#' keeping analysts blind to outcome data during the design stage.
+#' Returns a modified copy of the lock with the outcome physically
+#' absent: on a store-format lock (0.3.0 and later) the outcome store is
+#' removed, so no outcome values exist anywhere on the returned object;
+#' on a legacy lock the outcome column is set to \code{NA}. Keep an
+#' unmasked lock (or the raw data) to unmask later with
+#' \code{\link{unmask_outcome}}.
 #'
 #' @section Clean-room stage: Design stage (pre-outcome blinding).
 #'
 #' @param lock A \code{cleanroom_lock}.
 #'
-#' @return A modified \code{cleanroom_lock} with \code{lock$data[[outcome]]}
-#'   set to \code{NA} and \code{lock$.outcome_masked} set to \code{TRUE}.
+#' @return A modified \code{cleanroom_lock} with the outcome removed and
+#'   \code{lock$.outcome_masked} set to \code{TRUE}.
 #'
 #' @examples
 #' dat    <- sim_func1(n = 200, seed = 1)
 #' lock   <- create_analysis_lock(dat, "treatment", "event_24",
 #'                                c("age", "sex", "biomarker"), seed = 1)
 #' masked <- mask_outcome(lock)
-#' all(is.na(masked$data[[masked$outcome]]))  # TRUE
+#' is.null(masked$outcome_store)  # TRUE: physically outcome-free
 #'
 #' @export
 mask_outcome <- function(lock) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
 
-  lock$data[[lock$outcome]] <- NA
-  lock$.outcome_masked      <- TRUE
+  if (.lock_has_store_format(lock)) {
+    lock$outcome_store <- NULL
+  } else {
+    lock$data[[lock$outcome]] <- NA
+  }
+  lock$.outcome_masked <- TRUE
   lock
 }
 
 
-# Internal: verify and record outcome authorisation on a lock, or stop.
-# Shared by unmask_outcome() and assert_outcome_authorized(). Locks created
-# with cleanroom_enabled = FALSE are exempt (plain pipeline). With an audit,
-# the pre-outcome gate is checked via authorize_outcome_analysis(); a
-# non-authorising gate stops unless allow_unauthorized = TRUE (then it warns
-# and forces). Without an audit, a cleanroom lock stops unless
-# allow_unauthorized = TRUE. On success the lock is stamped
-# .outcome_authorized = TRUE and returned.
-.authorize_outcome_lock <- function(lock, audit = NULL,
-                                    allow_unauthorized = FALSE,
-                                    caller = "unmask_outcome") {
-  if (!isTRUE(lock$cleanroom_enabled)) {
-    lock$.outcome_authorized <- TRUE
-    return(lock)
-  }
-  if (is.null(audit)) {
-    # Since 0.2.0 only a lock that opted into software-enforced
-    # authorisation (the two-pass path) demands an audit here; a plain
-    # cleanroom lock unmasks freely, and the design log, the support
-    # verdict, and the estimand ladder carry the record.
-    if (isTRUE(lock$require_authorization) && !isTRUE(allow_unauthorized)) {
-      stop(caller, "(): this lock requires an `audit` to record outcome ",
-           "authorisation from the pre-outcome gate. Supply audit = , ",
-           "or pass allow_unauthorized = TRUE to force.", call. = FALSE)
-    }
-    if (isTRUE(lock$require_authorization)) {
-      warning(caller, "(): outcome authorisation forced without an audit ",
-              "(allow_unauthorized = TRUE); the pre-outcome gate was not ",
-              "checked.", call. = FALSE)
-    }
-    lock$.outcome_authorized <- TRUE
-    return(lock)
-  }
-  gate <- tryCatch(authorize_outcome_analysis(audit), error = function(e) NULL)
-  authorized <- !is.null(gate) && isTRUE(gate$authorized)
-  if (!authorized) {
-    reason <- if (is.null(gate)) {
-      "could not evaluate the pre-outcome gate from `audit`"
-    } else {
-      paste0("pre-outcome gate did NOT authorise outcome analysis (decision: ",
-             gate$decision, "; rationale: ", gate$rationale, ")")
-    }
-    if (!isTRUE(allow_unauthorized)) {
-      stop(caller, "(): ", reason,
-           ". Resolve the gate before accessing the outcome, or pass ",
-           "allow_unauthorized = TRUE to force.", call. = FALSE)
-    }
-    warning(caller, "(): ", reason,
-            "; forced via allow_unauthorized = TRUE.", call. = FALSE)
-  }
-  lock$.outcome_authorized <- TRUE
-  lock
-}
-
-
-#' Restore the Outcome Column from an Original Lock
+#' Restore the Outcome from an Unmasked Original
 #'
-#' Copies the outcome column from \code{original_lock} back into
-#' \code{lock}, reversing the effect of \code{\link{mask_outcome}}.
+#' Restores the outcome store (or, on a legacy lock, the outcome column)
+#' from \code{original_lock}, reversing \code{\link{mask_outcome}}, and
+#' records the unmasking in the design log. On a lock created with
+#' \code{enforce = TRUE}, unmasking requires a named \code{approved_by};
+#' the name is written into the design log's \code{decided_by} column
+#' and the lock is stamped as authorised for estimation. This explicit,
+#' logged step is the single institutional switch: there is no token and
+#' no gate object, only a person on the record.
 #'
 #' @section Clean-room stage: Pre-estimation (outcome unblinding).
 #'
-#' @param lock A \code{cleanroom_lock} whose outcome column is masked.
-#' @param original_lock The original \code{cleanroom_lock} holding the
-#'   true outcome values.
-#' @param audit Audit log (from \code{\link{create_audit_log}}) carrying the
-#'   recorded checkpoints. On a cleanroom-enabled lock the pre-outcome gate is
-#'   checked via \code{\link{authorize_outcome_analysis}} before the outcome is
-#'   revealed; a non-authorising gate raises an error unless
-#'   \code{allow_unauthorized = TRUE}. When \code{NULL} (the default) a
-#'   cleanroom lock errors unless \code{allow_unauthorized = TRUE}.
-#' @param allow_unauthorized Logical; if \code{TRUE}, force unmasking even when
-#'   the gate does not authorise or no \code{audit} is supplied (a warning is
-#'   raised). Use for simulation studies or forced re-analysis. Default
-#'   \code{FALSE}.
+#' @param lock A \code{cleanroom_lock}, normally masked.
+#' @param original_lock An unmasked \code{cleanroom_lock} over the same
+#'   data, holding the true outcome values.
+#' @param approved_by Character; the person or role authorising the
+#'   unmasking. Required when the lock was created with
+#'   \code{enforce = TRUE}; recorded in the design log whenever given.
+#' @param allow_unauthorized Deprecated (the audit gate it bypassed was
+#'   removed in 0.3.0). \code{TRUE} is accepted with a warning and
+#'   behaves as an unnamed forced approval, so old scripts keep running.
 #'
-#' @return A modified \code{cleanroom_lock} with the outcome column restored,
-#'   \code{lock$.outcome_masked} set to \code{FALSE}, and
-#'   \code{lock$.outcome_authorized} set to \code{TRUE}.
+#' @return A modified \code{cleanroom_lock} with the outcome restored,
+#'   \code{lock$.outcome_masked} set to \code{FALSE},
+#'   \code{lock$.outcome_authorized} set to \code{TRUE}, and the
+#'   unmasking recorded in \code{lock$design_log}.
 #'
 #' @examples
-#' dat          <- sim_func1(n = 200, seed = 1)
-#' lock         <- create_analysis_lock(dat, "treatment", "event_24",
-#'                                      c("age", "sex", "biomarker"), seed = 1)
-#' masked       <- mask_outcome(lock)
-#' # Force unmasking outside a full gate flow (e.g. a demo or simulation):
-#' unmasked     <- unmask_outcome(masked, lock, allow_unauthorized = TRUE)
-#' identical(unmasked$data[["event_24"]], lock$data[["event_24"]])  # TRUE
+#' dat    <- sim_func1(n = 200, seed = 1)
+#' lock   <- create_analysis_lock(dat, "treatment", "event_24",
+#'                                c("age", "sex", "biomarker"), seed = 1)
+#' masked <- mask_outcome(lock)
+#' unmasked <- unmask_outcome(masked, lock, approved_by = "review team")
+#' identical(cleanTMLE:::.outcome_vector(unmasked),
+#'           cleanTMLE:::.outcome_vector(lock))  # TRUE
 #'
 #' @export
-unmask_outcome <- function(lock, original_lock, audit = NULL,
-                           allow_unauthorized = FALSE) {
+unmask_outcome <- function(lock, original_lock, approved_by = NULL,
+                           allow_unauthorized = NULL) {
   if (!inherits(lock, "cleanroom_lock"))
     stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
   if (!inherits(original_lock, "cleanroom_lock"))
     stop("`original_lock` must be a cleanroom_lock object.", call. = FALSE)
 
-  outcome_col <- lock$outcome
-  if (!outcome_col %in% names(original_lock$data))
-    stop("Outcome column '", outcome_col,
-         "' not found in original_lock$data.", call. = FALSE)
+  if (!is.null(allow_unauthorized)) {
+    rlang::warn(paste(
+      "unmask_outcome(allow_unauthorized = ) is deprecated: the audit gate",
+      "it bypassed was removed in 0.3.0. Unmasking is now recorded in the",
+      "design log; pass approved_by = to name the approver."),
+      .frequency = "once", .frequency_id = "unmask_allow_unauthorized")
+    if (isTRUE(allow_unauthorized) && is.null(approved_by))
+      approved_by <- "(forced; legacy allow_unauthorized argument)"
+  }
 
-  # Verify and record outcome authorisation BEFORE revealing the outcome. This
-  # errors on a cleanroom lock unless the gate authorises (or the caller forces
-  # with allow_unauthorized = TRUE).
-  lock <- .authorize_outcome_lock(lock, audit, allow_unauthorized,
-                                  caller = "unmask_outcome")
+  y <- .outcome_vector(original_lock)
+  if (is.null(y) || all(is.na(y)))
+    stop("`original_lock` holds no readable outcome '", lock$outcome,
+         "'; unmask from the lock created over the full data.",
+         call. = FALSE)
+  if (length(y) != nrow(lock$data))
+    stop("`original_lock` outcome has ", length(y), " rows; the lock ",
+         "data has ", nrow(lock$data), ".", call. = FALSE)
 
-  lock$data[[outcome_col]] <- original_lock$data[[outcome_col]]
+  if (isTRUE(lock$cleanroom_enabled) &&
+      isTRUE(lock$require_authorization) &&
+      (is.null(approved_by) || !nzchar(trimws(approved_by)))) {
+    stop("unmask_outcome(): this lock was created with enforce = TRUE; ",
+         "unmasking requires a named `approved_by`, which is written ",
+         "into the design log.", call. = FALSE)
+  }
+
+  if (.lock_has_store_format(lock)) {
+    lock$outcome_store <- .new_outcome_store(y, lock$outcome,
+                                             lock$lock_hash)
+  } else {
+    lock$data[[lock$outcome]] <- y
+  }
   lock$.outcome_masked     <- FALSE
+  lock$.outcome_authorized <- TRUE
+  lock <- .log_design_decision(
+    lock, "outcome_unmasked",
+    sprintf("Outcome '%s' unmasked for estimation.", lock$outcome),
+    stage = "Stage 4 (unmasking)",
+    decision = "unmask and authorise estimation",
+    decided_by = approved_by %||% NA_character_)
   lock
 }

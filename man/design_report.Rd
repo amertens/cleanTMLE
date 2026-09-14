@@ -37,6 +37,10 @@ the locked-threshold verdict, that verdict enters the
 recommendation (for the locked candidate when one is on the lock,
 else the worst candidate).}
 
+\item{protocol}{Optional named character vector with the target
+trial's protocol entries, rendered as the two-column TARGET
+emulation table in the report.}
+
 \item{extra}{Optional named list of additional design-stage objects to
 carry (for example a \code{\link[=check_process_indicators]{check_process_indicators()}} table).}
 }

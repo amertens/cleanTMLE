@@ -147,7 +147,7 @@ print.contrast_locks <- function(x, ...) {
 #'   carries `verdict`, the Check Point 3 reading computed by
 #'   [nc_ladder_verdict()] from the locked criteria and nothing else;
 #'   without declared criteria the ladder reports estimates only.
-#' @export
+#' @keywords internal
 run_negative_control_ladder <- function(lock, restrictions,
                                         negative_controls = NULL,
                                         method = c("tmle", "unadjusted"),

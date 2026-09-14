@@ -28,9 +28,11 @@
 #' @return Integer effective sample size.
 #'
 #' @examples
+#' \dontrun{
 #' y <- rbinom(500, 1, 0.1)
 #' compute_n_eff(y, family = "binomial")
 #'
+#' }
 #' @references Phillips RV, et al. (2023) Practical considerations
 #'   for specifying a super learner. *Statistics in Medicine*.
 #'
@@ -61,8 +63,10 @@ compute_n_eff <- function(y, family = "binomial") {
 #' @return Integer V.
 #'
 #' @examples
+#' \dontrun{
 #' recommend_cv_V(compute_n_eff(rbinom(200, 1, 0.1)))
 #'
+#' }
 #' @keywords internal
 recommend_cv_V <- function(n_eff) {
   if (n_eff < 30L)    return(max(n_eff - 1L, 2L))
@@ -106,6 +110,10 @@ recommend_cv_V <- function(n_eff) {
 #'
 #' @param role One of `"Q"`, `"g"`, `"Delta"`.
 #' @param n_eff Effective sample size (from [compute_n_eff()]).
+#' @param y Optional vector the model predicts (the outcome for role
+#'   `"Q"`, the treatment for role `"g"`); when `n_eff` is not
+#'   supplied it is computed from `y` as `min(n, 5 * n_rare)` for a
+#'   binary vector (Phillips et al. 2023).
 #' @param p Number of candidate predictors.
 #' @param preset One of `"auto"`, `"small_n"`, `"default"`, `"rich"`,
 #'   `"very_rich"`.
@@ -338,9 +346,11 @@ run_positivity_diagnostics <- function(ps_fit, truncation = NULL) {
 #' @return A list with `g_value`, `direction`, and the CI bounds used.
 #'
 #' @examples
+#' \dontrun{
 #' compute_G_value(estimate = 0.031, se = 0.016)
 #' compute_G_value(estimate = 0.031, ci_lower = -0.001, ci_upper = 0.063)
 #'
+#' }
 #' @references Gruber S, et al. (2023) *Evaluating and improving RWE
 #'   with Targeted Learning*.
 #'

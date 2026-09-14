@@ -18,6 +18,11 @@ build_sl_library(
 
 \item{n_eff}{Effective sample size (from \code{\link[=compute_n_eff]{compute_n_eff()}}).}
 
+\item{y}{Optional vector the model predicts (the outcome for role
+\code{"Q"}, the treatment for role \code{"g"}); when \code{n_eff} is not
+supplied it is computed from \code{y} as \code{min(n, 5 * n_rare)} for a
+binary vector (Phillips et al. 2023).}
+
 \item{p}{Number of candidate predictors.}
 
 \item{preset}{One of \code{"auto"}, \code{"small_n"}, \code{"default"}, \code{"rich"},

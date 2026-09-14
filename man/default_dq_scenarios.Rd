@@ -30,7 +30,9 @@ tunable by preset.  Saves the user from constructing the verbose
 nested list by hand for routine cases.
 }
 \examples{
+\dontrun{
 default_dq_scenarios()
 default_dq_scenarios("exploratory")
+}
 }
 \keyword{internal}

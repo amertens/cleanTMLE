@@ -1,9 +1,124 @@
-# cleanTMLE 0.3.0 (development)
+# cleanTMLE 0.3.0
 
-Blinding and gate corrections (revision WP1). The blinding contract is
-now a tested invariant: `tests/testthat/test-blinding.R` asserts that
-every design-stage verb returns identical output on a masked lock and
-under a permuted outcome.
+The workflow surface is sixteen exported verbs; the superseded
+checkpoint, gate-token, and audit layer is deleted; the lock's data
+frame holds design data only, with the primary outcome in a separate
+store that Stage 4 joins back; and `enforce = TRUE` with a named
+unmasking approver is the single institutional switch. The blinding
+contract is a tested invariant: `tests/testthat/test-blinding.R`
+asserts that every design-stage verb returns identical output on a
+masked lock and under a permuted outcome.
+
+## The sixteen-verb surface (breaking renames)
+
+Five entry points are renamed; the old names are removed from the
+export list and remain only as internal engines (reachable via `:::`
+for legacy scripts, without deprecation shims):
+
+* `declare_negative_controls()` replaces exported use of
+  `define_negative_control()`: it registers one or more controls with
+  their Muntner et al. (2024) domains, writes the declaration into the
+  design log, and accepts `nc_criteria` declared after lock creation
+  (recorded in the design log; criteria declared at creation stay in
+  the fingerprint, and the new `declared_at_creation` flags keep
+  validation exact in both cases).
+* `define_candidates()` replaces `tmle_candidate()` (single
+  candidate) and wraps the factorial grid (`grid = `). It returns a
+  `ct_candidates` set with `print()` and `as.data.frame()` methods; a
+  length-one set is accepted anywhere a single specification is.
+* `stress_test()` replaces both `run_plasmode_feasibility()` and
+  `run_plasmode_dq_stress()`: with `threats = NULL` it is the
+  clean-data baseline used for candidate selection, with a threat
+  list or preset it adds the data-quality sweep, and its result
+  (class `ct_stress`) carries the fitted candidate set, the locked
+  verdict, and the tipping points. `max_fit_seconds` bounds each
+  replicate's candidate fits in a killable subprocess; `parallel =
+  TRUE` runs replicates under the caller's `future::plan()` via
+  furrr, with per-replicate seeds derived from the lock seed so
+  parallel and sequential runs are identical.
+* `select_candidate()` replaces `select_tmle_candidate()` and reads a
+  `stress_test()` result directly (baseline rows for the baseline
+  rules; the degraded rows for `"min_max_rmse"`).
+* `negative_control_ladder()` replaces
+  `run_negative_control_ladder()`.
+
+Removed exports, in full: `tmle_candidate`, `select_tmle_candidate`,
+`run_plasmode_feasibility`, `run_plasmode_dq_stress`,
+`run_negative_control_ladder`. New exports:
+`declare_negative_controls`, `define_candidates`, `stress_test`,
+`select_candidate`, `negative_control_ladder`,
+`bootstrap_rd_variance` (the matched-estimator bootstrap, previously
+internal), and the five governance-note formatters listed below.
+
+## The superseded layer is deleted
+
+0.2.0 unexported the checkpoint, gate-token, audit-log, old
+decision-log, and threshold families but kept them as internals.
+0.3.0 deletes them; a script reaching them through `:::` stops
+working. Deleted internals: `authorize_outcome_analysis`,
+`assert_outcome_authorized`, `create_audit_log`, `record_checkpoint`,
+`record_stage`, `save_audit`, `load_audit`, `export_audit_trail`,
+`new_checkpoint`, `checkpoint_cohort_adequacy`, `checkpoint_balance`,
+`checkpoint_residual_bias`, `checkpoint_weights`, `gate_all`,
+`gate_check`, `gate_dq`, `decision_thresholds`,
+`attach_decision_thresholds`, `dt_dq`, `dt_nco`, `dt_plasmode`,
+`dt_balance`, `dt_cohort`, `record_decision_log_entry`,
+`export_decision_log`, `run_clean_tmle_preoutcome`,
+`run_clean_tmle_primary`, `build_dossier`, `run_negative_control`,
+`run_residual_confounding_stage`, `sensitivity_truncation`,
+`print_locked_spec`, and `fit_ps_parallel` (the furrr path in
+`stress_test()` is the package's one parallel mechanism), with their
+print and `as.data.frame` methods. The small `init_decision_log` /
+`log_decision_entry` / `save_decision_log` helpers survive as
+undocumented internals of `run_clean_tmle()`'s result record. What they recorded lives in the
+lock's design log, the verdicts on result objects, and
+`export_design_log()`.
+
+## The outcome store (breaking for code that read `lock$data`)
+
+`create_analysis_lock()` now splits its input: `lock$data` holds
+design data only (covariates, treatment, indicators, negative
+controls) and never the primary outcome column, which lives in
+`lock$outcome_store`, a sealed store that only the Stage 4 estimators
+join back after the outcome guard. `mask_outcome()` removes the store
+from its copy, so a masked lock is physically outcome-free.
+`unmask_outcome(lock, original_lock, approved_by = )` restores it and
+writes the unmasking into the design log; on an `enforce = TRUE` lock
+a named `approved_by` is required, and estimation refuses to run until
+it is on the record. `unmask_outcome(allow_unauthorized = )` is
+deprecated (accepted with a warning as an unnamed forced approval).
+The creation fingerprint is computed over the full input data, and
+store-format locks validate by reconstructing the input dimensions, so
+masking and unmasking leave the hash unchanged; locks from earlier
+versions load and validate against the fingerprint of their era.
+
+## cleanroomGov folds back
+
+The short-lived companion package is dissolved. `attach_estimand()`
+and `declare_sensitivity_plan()` become `create_analysis_lock()`
+arguments (`estimand = `, `sensitivity_plans = `; metadata, not part
+of the fingerprint). The governance-note formatters return as
+exports: `clean_event_process_table()`,
+`clean_check_event_processes()`, `clean_target_population()`,
+`clean_missing_data_plan()`, `clean_risk_report_table()`.
+`build_stage_manifest()` and `summarize_stage_path()` do not return:
+they consumed the deleted audit-log objects. cleanroomGov is removed
+from Suggests.
+
+## Seeds, templates, and articles
+
+* Every internal `set.seed()` is replaced with
+  `withr::local_seed()` / `withr::with_seed()` (withr moves to
+  Imports): the same draws, with the caller's RNG state restored.
+* `inst/templates/decision_log_template.csv` ships the Muntner et al.
+  (2024) Table S1 decision-log columns, and the SAP template is
+  rewritten to the sixteen-verb surface.
+* The *Get started* vignette runs five verbs on `sim_func1()`; the
+  staged vignette becomes the *Full workflow* article on the new
+  verbs; the function-index vignette is retired to `attic/` in favour
+  of the grouped pkgdown reference index.
+* Snapshot tests pin the printed `design_report()` and the
+  Muntner-format `export_design_log()`.
 
 ## Blinding corrections (breaking)
 

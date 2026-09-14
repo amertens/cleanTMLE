@@ -4,65 +4,59 @@ template:
   bootstrap: 5
 
 reference:
-  - title: The workflow
+  - title: The sixteen workflow verbs
     desc: >
-      Lock the specification, declare the estimand ladder, fit the
-      propensity, assess support, map which estimands the design can
-      deliver, simulate outcome-blind, estimate, report.
+      The exported workflow surface, in stage order. Everything before
+      estimate_effect() runs without reading the primary outcome.
+
+  - subtitle: Stage 1 - lock and declarations
     contents:
       - create_analysis_lock
+      - declare_negative_controls
       - declare_estimand_ladder
+
+  - subtitle: Stage 2 - design-stage estimability
+    contents:
       - fit_ps
       - assess_support
       - estimand_feasibility
       - simulate_support
+
+  - subtitle: Stage 2b - candidates and the data-quality stress test
+    contents:
+      - define_candidates
+      - select_candidate
+      - stress_test
+
+  - subtitle: Stage 3 - residual-confounding and process checks
+    contents:
+      - negative_control_ladder
+      - check_process_indicators
+
+  - subtitle: Review - what the review team reads
+    contents:
+      - design_report
+      - export_design_log
+
+  - subtitle: Stage 4 - estimation
+    contents:
       - estimate_effect
       - run_estimand_ladder
+
+  - title: Estimator layer
+    desc: >
+      The classic single-call wrapper, the variance methods, and the
+      internal modular TMLE steps reachable through
+      estimate_effect(return_steps = TRUE).
+    contents:
       - run_clean_tmle
-      - design_report
-      - create_contrast_locks
-
-  - title: Design checks
-    contents:
-      - run_negative_control_ladder
-      - check_process_indicators
-      - estimate_design_precision
-
-  - title: Outcome-blind candidate selection
-    contents:
-      - tmle_candidate
-      - run_plasmode_feasibility
-      - run_plasmode_dq_stress
-      - select_tmle_candidate
       - select_variance_method
+      - bootstrap_rd_variance
+      - fit_tmle_treatment_mechanism
+      - fit_tmle_outcome_mechanism
+      - fit_tmle_candidate_set
 
-  - title: Sensitivity
-    contents:
-      - compute_evalue
-      - run_delta_sensitivity
-
-  - title: Nuisance models and learners
-    contents:
-      - build_sl_library
-      - resolve_truncation_rule
-      - sanitize_covariates
-      - SL.glmnet.bounded
-      - SL.glm.pca
-      - SL.glm.pca5
-      - SL.glm.pca10
-      - SL.glmnet.ridge
-      - SL.glmnet.enet
-
-  - title: Plots and tables
-    contents:
-      - love_plot
-      - forest_plot
-      - clean_weight_diagnostics
-      - make_table1
-      - make_table2
-      - attrition_table
-
-  - title: Cumulative-risk grammar
+  - subtitle: Cumulative-risk grammar (experimental)
     desc: The specify, identify, estimate pipeline for time-to-event risks.
     contents:
       - specify_models
@@ -79,10 +73,50 @@ reference:
       - estimate_surv_tmle
       - estimate_lmtp
 
-  - title: Locks, masking, persistence, data
+  - title: Learners and nuisance helpers
+    contents:
+      - build_sl_library
+      - resolve_truncation_rule
+      - sanitize_covariates
+      - SL.glmnet.bounded
+      - SL.glm.pca
+      - SL.glm.pca5
+      - SL.glm.pca10
+      - SL.glmnet.ridge
+      - SL.glmnet.enet
+
+  - title: Lock utilities
     contents:
       - mask_outcome
       - unmask_outcome
       - save_lock
       - load_lock
+      - create_contrast_locks
       - sim_func1
+
+  - title: Reporting and diagnostics
+    contents:
+      - estimate_design_precision
+      - event_support_by_arm
+      - dq_locked_verdict
+      - dq_tipping_points
+      - nc_ladder_verdict
+      - clean_weight_diagnostics
+      - compute_evalue
+      - run_delta_sensitivity
+      - love_plot
+      - forest_plot
+      - make_table1
+      - make_table2
+      - attrition_table
+
+  - subtitle: Governance notes
+    desc: >
+      Base-R formatters that record the analytic specification a
+      clean-room review requires; they estimate nothing.
+    contents:
+      - clean_event_process_table
+      - clean_check_event_processes
+      - clean_target_population
+      - clean_missing_data_plan
+      - clean_risk_report_table

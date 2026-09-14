@@ -16,10 +16,12 @@ NULL
 #' @return Numeric vector of probabilities in (0, 1).
 #'
 #' @examples
+#' \dontrun{
 #' expit(0)    # 0.5
 #' expit(2)    # ~0.88
 #' expit(-Inf) # 0
 #'
+#' }
 #' @seealso [logit()] for the inverse operation.
 #' @keywords internal
 expit <- function(x) {
@@ -37,9 +39,11 @@ expit <- function(x) {
 #' @return Numeric vector of log-odds values.
 #'
 #' @examples
+#' \dontrun{
 #' logit(0.5)  # 0
 #' logit(0.9)  # ~2.20
 #'
+#' }
 #' @seealso [expit()] for the inverse operation.
 #' @keywords internal
 logit <- function(p) {
