@@ -1338,9 +1338,9 @@ plot.plasmode_dq_results <- function(x, metric = c("rmse", "bias", "coverage"),
                       bias     = "|Bias|",
                       coverage = "Coverage")
 
-  p <- ggplot2::ggplot(m, ggplot2::aes_string(x = "level", y = "y",
-                                                colour = "candidate",
-                                                group = "candidate")) +
+  p <- ggplot2::ggplot(m, ggplot2::aes(x = .data$level, y = .data$y,
+                                         colour = .data$candidate,
+                                         group = .data$candidate)) +
     ggplot2::geom_point(size = 2.2) +
     ggplot2::geom_line(linewidth = 0.7) +
     ggplot2::facet_wrap(~ scenario, scales = "free_x") +

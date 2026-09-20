@@ -120,12 +120,15 @@ from Suggests.
 * Snapshot tests pin the printed `design_report()` and the
   Muntner-format `export_design_log()`.
 
-## Bug fix
+## Bug fixes
 
 * A threat list that named `covariate_missingness_mnar` (or `_mar`)
   without `covariate_missingness` also ran the MCAR sweep, because the
   scenario list was read with `$` and partially matched. Lookups are
   exact now; only the declared mechanisms run.
+* `plot()` on a stress-test result no longer emits the ggplot2
+  `aes_string()` deprecation warning; the aesthetics use `.data`
+  like the package's other plots. No change to the figure.
 
 ## Blinding corrections (breaking)
 
