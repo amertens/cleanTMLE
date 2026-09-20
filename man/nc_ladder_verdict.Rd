@@ -8,7 +8,7 @@ nc_ladder_verdict(nc_ladder, criteria)
 }
 \arguments{
 \item{nc_ladder}{An \code{nc_ladder} object from
-\code{\link[=run_negative_control_ladder]{run_negative_control_ladder()}}, or its table.}
+\code{\link[=negative_control_ladder]{negative_control_ladder()}}, or its table.}
 
 \item{criteria}{The locked \code{nc_criteria} list (see
 \code{\link[=create_analysis_lock]{create_analysis_lock()}}).}

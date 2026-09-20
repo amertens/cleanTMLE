@@ -7,7 +7,8 @@
 summarize_plasmode_results(x, ...)
 }
 \arguments{
-\item{x}{A \code{plasmode_results} object from \code{\link[=run_plasmode_feasibility]{run_plasmode_feasibility()}}.}
+\item{x}{A \code{plasmode_results} object from a baseline \code{\link[=stress_test]{stress_test()}}
+run (or the internal engine \code{run_plasmode_feasibility()}).}
 
 \item{...}{Currently unused.}
 }
@@ -16,6 +17,6 @@ Invisibly returns \code{x}.
 }
 \description{
 Convenience function that prints and invisibly returns the performance
-metrics from \code{\link[=run_plasmode_feasibility]{run_plasmode_feasibility()}}.
+metrics from a baseline \code{\link[=stress_test]{stress_test()}} run.
 }
 \keyword{internal}

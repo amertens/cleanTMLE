@@ -28,11 +28,11 @@ carries no individual-level rows or vectors.}
 
 \item{simulation}{Optional \code{\link[=simulate_support]{simulate_support()}} result.}
 
-\item{nc_ladder}{Optional \code{\link[=run_negative_control_ladder]{run_negative_control_ladder()}} result;
+\item{nc_ladder}{Optional \code{\link[=negative_control_ladder]{negative_control_ladder()}} result;
 when it carries the locked-criteria verdict, that verdict enters
 the recommendation.}
 
-\item{dq}{Optional \code{\link[=run_plasmode_dq_stress]{run_plasmode_dq_stress()}} result; when it carries
+\item{dq}{Optional \code{\link[=stress_test]{stress_test()}} result; when it carries
 the locked-threshold verdict, that verdict enters the
 recommendation (for the locked candidate when one is on the lock,
 else the worst candidate).}

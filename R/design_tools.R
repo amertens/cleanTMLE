@@ -291,7 +291,7 @@ run_negative_control_ladder <- function(lock, restrictions,
 #' FLAG when any domain is insufficient, and GO otherwise.
 #'
 #' @param nc_ladder An `nc_ladder` object from
-#'   [run_negative_control_ladder()], or its table.
+#'   [negative_control_ladder()], or its table.
 #' @param criteria The locked `nc_criteria` list (see
 #'   [create_analysis_lock()]).
 #' @return A list with `by_domain` (one row per rung per domain),

@@ -61,8 +61,8 @@ design log. This is the single institutional switch. Default
 \code{FALSE}.}
 
 \item{dgp_mode}{Character; the plasmode outcome-generator mode, a
-locked field read by \code{\link[=run_plasmode_feasibility]{run_plasmode_feasibility()}} and
-\code{\link[=run_plasmode_dq_stress]{run_plasmode_dq_stress()}}. \code{"hybrid"} (default) fits the
+locked field read by \code{\link[=stress_test]{stress_test()}} (and the plasmode engines
+behind it). \code{"hybrid"} (default) fits the
 generator's baseline outcome model Q0(W) on the lock's real outcome
 (covariate-only; the treatment-outcome association is never used);
 \code{"external_pilot"} requires the caller to supply Q0 predictions
@@ -76,15 +76,15 @@ optionally \code{scale} (\code{"rd"}, the default, or \code{"ratio"}), \code{rul
 (\code{"point_in_band"}, the default, or \code{"ci_in_band"}),
 \code{min_per_domain} (default 1), and \code{consistency}
 (\code{"all_within_band"}, the default, or \code{"majority_within_band"}).
-Read by \code{\link[=run_negative_control_ladder]{run_negative_control_ladder()}}, which refuses to grade
+Read by \code{\link[=negative_control_ladder]{negative_control_ladder()}}, which refuses to grade
 controls without them.}
 
 \item{dq_thresholds}{Optional prespecified data-quality decision
 thresholds, declared before outcome access and fingerprinted: a
 list with \code{max_abs_bias}, \code{min_coverage}, \code{max_rmse_ratio}, and
 optionally \code{flag_coverage} and \code{flag_rmse_ratio}. Read by
-\code{\link[=run_plasmode_dq_stress]{run_plasmode_dq_stress()}}, whose verdict and tipping points are a
-pure function of these thresholds and the declared threat grid.}
+\code{\link[=stress_test]{stress_test()}}, whose verdict and tipping points are a pure
+function of these thresholds and the declared threat grid.}
 
 \item{roles}{Optional named list or character vector recording the
 personnel structure (for example \code{programmer}, \code{analyst},

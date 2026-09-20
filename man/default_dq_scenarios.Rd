@@ -14,8 +14,9 @@ moderate severities; the default), \code{"exploratory"} (lighter, faster),
 or \code{"stress"} (heavier severities).}
 }
 \value{
-A named list suitable for the \code{data_quality_scenarios}
-argument of \code{\link[=run_plasmode_dq_stress]{run_plasmode_dq_stress()}}. Every preset returns the
+A named list suitable for the \code{threats} argument of
+\code{\link[=stress_test]{stress_test()}} (the \code{data_quality_scenarios} argument of the
+internal engine). Every preset returns the
 same five threats: \code{covariate_missingness}, \code{treatment_misclass},
 \code{outcome_misclass}, \code{unmeasured_confounding}, and \code{near_positivity}.
 The \code{near_positivity} element carries a \code{slopes} vector of
@@ -25,7 +26,8 @@ estimated propensity scores reach the boundary. This is the same
 covariate-to-treatment amplification used by the divergence study.
 }
 \description{
-Returns a recommended scenario list for \code{\link[=run_plasmode_dq_stress]{run_plasmode_dq_stress()}},
+Returns a recommended scenario list for the \code{threats} argument of
+\code{\link[=stress_test]{stress_test()}},
 tunable by preset.  Saves the user from constructing the verbose
 nested list by hand for routine cases.
 }

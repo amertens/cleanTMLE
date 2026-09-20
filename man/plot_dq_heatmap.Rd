@@ -17,7 +17,7 @@ plot_dq_heatmap(
 )
 }
 \arguments{
-\item{x}{A \code{plasmode_dq_results} object from \code{\link[=run_plasmode_dq_stress]{run_plasmode_dq_stress()}}.}
+\item{x}{A \code{plasmode_dq_results} object from \code{\link[=stress_test]{stress_test()}}.}
 
 \item{metric}{Character; metric to display. One of \code{"rmse"} (default),
 \code{"bias"}, \code{"coverage"}, \code{"emp_sd"}, or \code{"se_cal"}.}
@@ -46,19 +46,19 @@ A ggplot object.
 }
 \description{
 Plots a tile grid showing RMSE, bias, coverage, or another operating
-characteristic from a \code{\link[=run_plasmode_dq_stress]{run_plasmode_dq_stress()}} result. Candidates run
+characteristic from a \code{\link[=stress_test]{stress_test()}} result. Candidates run
 along the x-axis; scenario-by-severity combinations run along the y-axis,
 with the undisturbed baseline row at the top so degradation is immediately
 visible.
 }
 \examples{
 \dontrun{
-dq <- run_plasmode_dq_stress(lock, tmle_candidates, reps = 20)
+dq <- stress_test(lock, candidates, threats = "exploratory", reps = 20)
 cleanTMLE:::plot_dq_heatmap(dq)
 }
 
 }
 \seealso{
-\code{\link[=run_plasmode_dq_stress]{run_plasmode_dq_stress()}}, \code{\link[=summarize_dq_degradation]{summarize_dq_degradation()}}
+\code{\link[=stress_test]{stress_test()}}, \code{\link[=summarize_dq_degradation]{summarize_dq_degradation()}}
 }
 \keyword{internal}

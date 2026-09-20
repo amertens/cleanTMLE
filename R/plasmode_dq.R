@@ -16,15 +16,17 @@ NULL
 
 #' Default DQ Stress Scenario Configurations
 #'
-#' Returns a recommended scenario list for [run_plasmode_dq_stress()],
+#' Returns a recommended scenario list for the `threats` argument of
+#' [stress_test()],
 #' tunable by preset.  Saves the user from constructing the verbose
 #' nested list by hand for routine cases.
 #'
 #' @param preset Character; one of `"regulatory_standard"` (five threats,
 #'   moderate severities; the default), `"exploratory"` (lighter, faster),
 #'   or `"stress"` (heavier severities).
-#' @return A named list suitable for the `data_quality_scenarios`
-#'   argument of [run_plasmode_dq_stress()]. Every preset returns the
+#' @return A named list suitable for the `threats` argument of
+#'   [stress_test()] (the `data_quality_scenarios` argument of the
+#'   internal engine). Every preset returns the
 #'   same five threats: `covariate_missingness`, `treatment_misclass`,
 #'   `outcome_misclass`, `unmeasured_confounding`, and `near_positivity`.
 #'   The `near_positivity` element carries a `slopes` vector of

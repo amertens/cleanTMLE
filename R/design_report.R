@@ -22,10 +22,10 @@
 #'   carries no individual-level rows or vectors.
 #' @param feasibility An [estimand_feasibility()] result.
 #' @param simulation Optional [simulate_support()] result.
-#' @param nc_ladder Optional [run_negative_control_ladder()] result;
+#' @param nc_ladder Optional [negative_control_ladder()] result;
 #'   when it carries the locked-criteria verdict, that verdict enters
 #'   the recommendation.
-#' @param dq Optional [run_plasmode_dq_stress()] result; when it carries
+#' @param dq Optional [stress_test()] result; when it carries
 #'   the locked-threshold verdict, that verdict enters the
 #'   recommendation (for the locked candidate when one is on the lock,
 #'   else the worst candidate).

@@ -146,8 +146,8 @@ NULL
 #'   design log. This is the single institutional switch. Default
 #'   `FALSE`.
 #' @param dgp_mode Character; the plasmode outcome-generator mode, a
-#'   locked field read by [run_plasmode_feasibility()] and
-#'   [run_plasmode_dq_stress()]. `"hybrid"` (default) fits the
+#'   locked field read by [stress_test()] (and the plasmode engines
+#'   behind it). `"hybrid"` (default) fits the
 #'   generator's baseline outcome model Q0(W) on the lock's real outcome
 #'   (covariate-only; the treatment-outcome association is never used);
 #'   `"external_pilot"` requires the caller to supply Q0 predictions
@@ -160,14 +160,14 @@ NULL
 #'   (`"point_in_band"`, the default, or `"ci_in_band"`),
 #'   `min_per_domain` (default 1), and `consistency`
 #'   (`"all_within_band"`, the default, or `"majority_within_band"`).
-#'   Read by [run_negative_control_ladder()], which refuses to grade
+#'   Read by [negative_control_ladder()], which refuses to grade
 #'   controls without them.
 #' @param dq_thresholds Optional prespecified data-quality decision
 #'   thresholds, declared before outcome access and fingerprinted: a
 #'   list with `max_abs_bias`, `min_coverage`, `max_rmse_ratio`, and
 #'   optionally `flag_coverage` and `flag_rmse_ratio`. Read by
-#'   [run_plasmode_dq_stress()], whose verdict and tipping points are a
-#'   pure function of these thresholds and the declared threat grid.
+#'   [stress_test()], whose verdict and tipping points are a pure
+#'   function of these thresholds and the declared threat grid.
 #' @param roles Optional named list or character vector recording the
 #'   personnel structure (for example `programmer`, `analyst`,
 #'   `analytic_advisor`, `review_team`). Recorded and printed in the
@@ -3078,9 +3078,10 @@ summarize_cleanroom_results <- function(fits, ...) {
 #' Summarize Plasmode Results
 #'
 #' Convenience function that prints and invisibly returns the performance
-#' metrics from [run_plasmode_feasibility()].
+#' metrics from a baseline [stress_test()] run.
 #'
-#' @param x A `plasmode_results` object from [run_plasmode_feasibility()].
+#' @param x A `plasmode_results` object from a baseline [stress_test()]
+#'   run (or the internal engine `run_plasmode_feasibility()`).
 #' @param ... Currently unused.
 #'
 #' @return Invisibly returns `x`.

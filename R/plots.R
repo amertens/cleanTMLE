@@ -267,12 +267,12 @@ hist.ipw <- function(x, type = c("ps", "weights"), ...) {
 #' Heatmap of candidate performance across data-quality threats
 #'
 #' Plots a tile grid showing RMSE, bias, coverage, or another operating
-#' characteristic from a [run_plasmode_dq_stress()] result. Candidates run
+#' characteristic from a [stress_test()] result. Candidates run
 #' along the x-axis; scenario-by-severity combinations run along the y-axis,
 #' with the undisturbed baseline row at the top so degradation is immediately
 #' visible.
 #'
-#' @param x A `plasmode_dq_results` object from [run_plasmode_dq_stress()].
+#' @param x A `plasmode_dq_results` object from [stress_test()].
 #' @param metric Character; metric to display. One of `"rmse"` (default),
 #'   `"bias"`, `"coverage"`, `"emp_sd"`, or `"se_cal"`.
 #' @param effect_size Numeric scalar; which effect size to display. `NULL`
@@ -291,11 +291,11 @@ hist.ipw <- function(x, type = c("ps", "weights"), ...) {
 #'
 #' @return A ggplot object.
 #'
-#' @seealso [run_plasmode_dq_stress()], [summarize_dq_degradation()]
+#' @seealso [stress_test()], [summarize_dq_degradation()]
 #'
 #' @examples
 #' \dontrun{
-#' dq <- run_plasmode_dq_stress(lock, tmle_candidates, reps = 20)
+#' dq <- stress_test(lock, candidates, threats = "exploratory", reps = 20)
 #' cleanTMLE:::plot_dq_heatmap(dq)
 #' }
 #'
