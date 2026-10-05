@@ -10,7 +10,7 @@
   X
 }
 
-.cross_fit <- function(X, y, learners, folds, V, seed, newX_fun) {
+.cross_fit <- function(X, y, learners, folds, V, seed, newX_fun, groups = NULL) {
   K <- max(folds)
   n <- nrow(X)
   out <- NULL
@@ -20,7 +20,7 @@
     tr <- if (K == 1L) rep(TRUE, n) else !va
     if (!any(va)) next
     sl <- .super_learner(X[tr, , drop = FALSE], y[tr], learners, newX_fun(which(va)),
-                         V, seed + 1000L * k)
+                         V, seed + 1000L * k, groups[tr])
     if (is.null(out)) out <- lapply(sl$pred, function(p) rep(NA_real_, n))
     for (j in seq_along(out)) out[[j]][va] <- sl$pred[[j]]
     risks[[length(risks) + 1L]] <- cbind(fold = k, sl$risks)
@@ -28,20 +28,20 @@
   list(pred = out, risks = do.call(rbind, risks))
 }
 
-.fit_g <- function(X, A, ps_library, folds, V, seed) {
+.fit_g <- function(X, A, ps_library, folds, V, seed, groups = NULL) {
   cf <- .cross_fit(X, A, ps_library, folds, V, seed,
-                   function(rows) list(X[rows, , drop = FALSE]))
+                   function(rows) list(X[rows, , drop = FALSE]), groups)
   list(g = cf$pred[[1]], risks = cbind(nuisance = "g", cf$risks),
        folds = folds, seed = seed)
 }
 
-.fit_Q <- function(X, A, Y, q_library, folds, V, seed) {
+.fit_Q <- function(X, A, Y, q_library, folds, V, seed, groups = NULL) {
   XA <- cbind(.trt = A, X)
   cf <- .cross_fit(XA, Y, q_library, folds, V, seed, function(rows) {
     x1 <- XA[rows, , drop = FALSE]; x1[, ".trt"] <- 1
     x0 <- XA[rows, , drop = FALSE]; x0[, ".trt"] <- 0
     list(x1, x0)
-  })
+  }, groups)
   list(Q1 = cf$pred[[1]], Q0 = cf$pred[[2]], risks = cbind(nuisance = "Q", cf$risks))
 }
 
@@ -153,9 +153,9 @@
 }
 
 .fit_and_target <- function(X, A, Y, q_library, estimands, truncations, plan, folds,
-                            seed, g_fit = NULL) {
-  if (is.null(g_fit)) g_fit <- .fit_g(X, A, plan$ps_library, folds, plan$V, seed)
-  Qf <- .fit_Q(X, A, Y, q_library, folds, plan$V, seed + 1L)
+                            seed, g_fit = NULL, groups = NULL) {
+  if (is.null(g_fit)) g_fit <- .fit_g(X, A, plan$ps_library, folds, plan$V, seed, groups)
+  Qf <- .fit_Q(X, A, Y, q_library, folds, plan$V, seed + 1L, groups)
   one <- function(e, t) {
     r <- tryCatch(.target(Y, A, X, g_fit$g, Qf$Q1, Qf$Q0, e, t, plan$trim_band),
                   error = function(err) conditionMessage(err))

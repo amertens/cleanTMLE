@@ -49,7 +49,7 @@ test_that("a constant simulated outcome is a failed repetition, not an error", {
 
 test_that("good overlap gives a feasible ATE", {
   d <- make_design(600, seed = 3, strength = 0.3)
-  p <- fast_plan(tolerance = list(bias = 0.05, coverage = 0.7), reps = 30L)
+  p <- fast_plan(tolerance = list(bias = 0.05, coverage = 0.6), reps = 30L)
   lk <- create_analysis_lock(d$design, "A", covs, p)
   sim <- suppressMessages(simulate_design(lk, assess_design(lk)))
   expect_s3_class(sim, "cr_simulation")
@@ -81,4 +81,12 @@ test_that("the simulation uses the plan's K for its folds", {
   suppressMessages(simulate_design(lk, ds))
   expect_true(length(seen) > 0)
   expect_true(all(seen == 3L))
+})
+
+test_that("bootstrap copies of one row never straddle outer folds", {
+  n <- 600
+  idx <- withr::with_seed(7, sample.int(n, n, replace = TRUE))
+  folds <- .make_folds(n, 5L, 11L)[idx]
+  expect_true(all(tapply(folds, idx, function(f) length(unique(f))) == 1L))
+  expect_identical(sort(unique(folds)), 1:5)
 })

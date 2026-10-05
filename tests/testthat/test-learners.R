@@ -81,3 +81,23 @@ test_that(".nnloglik returns the simplex minimizer of the cross-validated log-lo
   expect_lte(ll(w), ll(c(0, 1)) + 1e-6)
   expect_lte(ll(w), ll(c(0.5, 0.5)) + 1e-6)
 })
+
+test_that("grouped inner folds keep copies of one row together", {
+  withr::local_seed(5)
+  idx <- sample.int(200, 200, replace = TRUE)
+  inner <- .inner_folds(200L, 5L, 3L, groups = idx)
+  expect_length(inner, 200L)
+  expect_true(all(tapply(inner, idx, function(f) length(unique(f))) == 1L))
+  expect_identical(.inner_folds(50L, 3L, 3L), .make_folds(50L, 3L, 3L))
+})
+
+test_that("the super learner accepts groups and fails cleanly when a split has no data", {
+  d <- sim_xy(200)
+  idx <- withr::with_seed(2, sample.int(200, 200, replace = TRUE))
+  sl <- .super_learner(d$X[idx, ], d$y[idx], c("glm", "glmnet"), list(d$X[1:5, ]),
+                       V = 3L, seed = 1L, groups = idx)
+  expect_true(all(sl$pred[[1]] > 0 & sl$pred[[1]] < 1))
+  expect_error(.super_learner(d$X[rep(1, 50), ], rep(0:1, 25), c("glm", "glmnet"),
+                              list(d$X[1:5, ]), V = 3L, seed = 1L, groups = rep(1, 50)),
+               "Every learner failed")
+})

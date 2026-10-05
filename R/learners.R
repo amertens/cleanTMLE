@@ -114,13 +114,21 @@
     .logloss(y_eval, .learner_predict(m, s, X_eval, 1L)))
 }
 
+.inner_folds <- function(n, V, seed, groups = NULL) {
+  if (is.null(groups)) return(.make_folds(n, V, seed))
+  ug <- unique(groups)
+  .make_folds(length(ug), V, seed)[match(groups, ug)]
+}
+
 .cv_setting <- function(s, X, y, inner, newX, seed) {
-  V <- max(inner)
+  vs <- sort(unique(inner))
   n <- nrow(X)
+  if (length(vs) < 2L)
+    stop("Fewer than two non-empty inner folds.", call. = FALSE)
   s <- .prepare_setting(s, X, y)
-  fits <- vector("list", V)
+  fits <- vector("list", max(vs))
   loss <- 0
-  for (v in seq_len(V)) {
+  for (v in vs) {
     va <- inner == v
     fits[[v]] <- .learner_fit(s, X[!va, , drop = FALSE], y[!va],
                               X[va, , drop = FALSE], y[va], seed = seed + v)
@@ -129,7 +137,7 @@
   loss <- loss / n
   k <- which.min(loss)
   z <- numeric(n)
-  for (v in seq_len(V)) {
+  for (v in vs) {
     va <- inner == v
     z[va] <- .learner_predict(fits[[v]], s, X[va, , drop = FALSE], k)
   }
@@ -171,7 +179,7 @@
   softmax(a)
 }
 
-.super_learner <- function(X, y, learners, newX, V, seed) {
+.super_learner <- function(X, y, learners, newX, V, seed, groups = NULL) {
   if (length(unique(y)) < 2L)
     stop("The outcome is constant in a training set.", call. = FALSE)
   settings <- .settings(learners)
@@ -182,7 +190,7 @@
     return(list(pred = lapply(newX, function(nx) .learner_predict(m, settings[[1]], nx, 1L)),
                 weights = c(glm = 1), risks = rk))
   }
-  inner <- .make_folds(nrow(X), V, seed)
+  inner <- .inner_folds(nrow(X), V, seed, groups)
   res <- lapply(settings, function(s)
     tryCatch(.cv_setting(s, X, y, inner, newX, seed),
              error = function(e) conditionMessage(e)))

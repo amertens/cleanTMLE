@@ -63,15 +63,19 @@
     list(idx = idx, a = a, ys = ys)
   })
   Xs <- X[draw$idx, , drop = FALSE]
-  folds <- .make_folds(n, plan$K, seed)
-  g_fit <- tryCatch(.fit_g(Xs, draw$a, plan$ps_library, folds, plan$V, seed),
+  # Folds are assigned per original row so that copies of one row never sit on
+  # both sides of a split; the inner folds are grouped the same way.
+  folds <- .make_folds(n, plan$K, seed)[draw$idx]
+  g_fit <- tryCatch(.fit_g(Xs, draw$a, plan$ps_library, folds, plan$V, seed,
+                           groups = draw$idx),
                     error = function(e) conditionMessage(e))
   rows <- list()
   risks <- list()
   for (sn in names(surfaces)) for (lib in names(plan$candidates$library)) {
     res <- if (is.character(g_fit)) .failed_rows(plan, g_fit) else tryCatch(
       .fit_and_target(Xs, draw$a, draw$ys[[sn]], plan$candidates$library[[lib]],
-                      plan$estimands, plan$candidates$truncation, plan, folds, seed, g_fit),
+                      plan$estimands, plan$candidates$truncation, plan, folds, seed, g_fit,
+                      groups = draw$idx),
       error = function(e) .failed_rows(plan, conditionMessage(e)))
     rk <- attr(res, "risks")
     if (!is.null(rk)) {
