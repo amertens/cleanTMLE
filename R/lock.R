@@ -44,6 +44,13 @@ create_analysis_lock <- function(design_data, treatment, covariates, plan,
   if (length(miss))
     stop("Negative-control or restriction column(s) not in `design_data`: ",
          paste(miss, collapse = ", "), ".", call. = FALSE)
+  bad_nc <- nc_cols[!vapply(nc_cols, function(v) {
+    x <- design_data[[v]]
+    (is.numeric(x) || is.integer(x)) && all(x[!is.na(x)] %in% c(0, 1))
+  }, logical(1))]
+  if (length(bad_nc))
+    stop("Negative-control column(s) must be coded 0/1: ",
+         paste(bad_nc, collapse = ", "), ".", call. = FALSE)
   if (!is.null(plan$surfaces$q0) && length(plan$surfaces$q0) != nrow(design_data))
     stop("`surfaces$q0` must have one value per row of `design_data`.", call. = FALSE)
 

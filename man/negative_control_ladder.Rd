@@ -18,5 +18,8 @@ A \code{cr_nc_ladder}.
 Estimates each declared negative-control outcome on the full cohort and
 on each declared restriction, with the main-terms GLM candidate and the
 same fitter as the analysis, and grades the result against the plan's
-\code{nc_criteria}. The verdict is the most restricted rung's.
+\code{nc_criteria}. Within a rung, a domain reads "fail" if any estimable control is out of
+the band (even when too few controls are estimable), otherwise "insufficient" if fewer than
+\code{min_per_domain} controls are estimable, otherwise "pass". A rung is STOP if any domain fails,
+FLAG if any is insufficient, and GO otherwise. The verdict is the most restricted rung's.
 }

@@ -11,8 +11,8 @@
   by_domain <- do.call(rbind, lapply(seq_len(nrow(keys)), function(i) {
     d <- tab[tab$rung == keys$rung[i] & tab$domain == keys$domain[i], , drop = FALSE]
     n_est <- sum(d$status == "estimated")
-    reading <- if (n_est < crit$min_per_domain) "insufficient" else
-      if (any(!d$in_band, na.rm = TRUE)) "fail" else "pass"
+    reading <- if (any(!d$in_band, na.rm = TRUE)) "fail" else
+      if (n_est < crit$min_per_domain) "insufficient" else "pass"
     data.frame(rung = keys$rung[i], domain = keys$domain[i], n_estimable = n_est,
                reading = reading, stringsAsFactors = FALSE)
   }))
@@ -29,7 +29,10 @@
 #' Estimates each declared negative-control outcome on the full cohort and
 #' on each declared restriction, with the main-terms GLM candidate and the
 #' same fitter as the analysis, and grades the result against the plan's
-#' `nc_criteria`. The verdict is the most restricted rung's.
+#' `nc_criteria`. Within a rung, a domain reads "fail" if any estimable control is out of
+#' the band (even when too few controls are estimable), otherwise "insufficient" if fewer than
+#' `min_per_domain` controls are estimable, otherwise "pass". A rung is STOP if any domain fails,
+#' FLAG if any is insufficient, and GO otherwise. The verdict is the most restricted rung's.
 #'
 #' @param lock A `cr_lock`.
 #' @param design The [assess_design()] result for `lock`.

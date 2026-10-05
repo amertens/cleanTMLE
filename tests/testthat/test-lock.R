@@ -77,3 +77,15 @@ test_that(".check_stamp recomputes the lock hash, so an edited lock fails", {
   lk$plan$tolerance$bias <- 0.5
   expect_error(.check_stamp(lk, obj, "obj"), "hash mismatch")
 })
+
+test_that("negative-control columns must be coded 0/1", {
+  d <- make_design()
+  covs <- c("w1", "w2", "w3")
+  p <- fast_plan(negative_controls = c(nc_visit = "care use"))
+  f <- d$design; f$nc_visit <- factor(ifelse(f$nc_visit == 1, "yes", "no"))
+  expect_error(create_analysis_lock(f, "A", covs, p), "must be coded 0/1: nc_visit")
+  o <- d$design; o$nc_visit <- o$nc_visit + 1L
+  expect_error(create_analysis_lock(o, "A", covs, p), "must be coded 0/1: nc_visit")
+  m <- d$design; m$nc_visit[1:5] <- NA
+  expect_s3_class(create_analysis_lock(m, "A", covs, p), "cr_lock")
+})
