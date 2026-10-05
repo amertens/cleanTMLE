@@ -102,6 +102,9 @@ load_lock <- function(path) {
 }
 
 .check_stamp <- function(lock, obj, what) {
+  if (!identical(.lock_hash(lock), lock$lock_hash))
+    stop("Lock hash mismatch: the plan, the design data or another locked field ",
+         "changed after the lock was created.", call. = FALSE)
   if (is.null(obj$stamp) || !identical(obj$stamp$lock_hash, lock$lock_hash))
     stop("`", what, "` was not computed from this lock.", call. = FALSE)
   if (!identical(.stamp(lock, obj)$hash, obj$stamp$hash))

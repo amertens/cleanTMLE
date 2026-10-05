@@ -1,10 +1,27 @@
 `%||%` <- function(x, y) if (is.null(x)) y else x
 
-.hashable <- function(x) {
-  if (is.function(x)) return(paste(deparse(x), collapse = "\n"))
+.hashable <- function(x, descend = TRUE) {
+  if (is.function(x)) {
+    out <- list(text = paste(deparse(x), collapse = "\n"))
+    env <- environment(x)
+    # Hash a closure's captured variables, but not the global, base or empty
+    # environments or a package namespace. A function held inside a captured
+    # environment contributes only its text, which stops any recursion.
+    if (descend && is.environment(env) &&
+        !identical(env, globalenv()) && !identical(env, baseenv()) &&
+        !identical(env, emptyenv()) && !isNamespace(env)) {
+      vars <- as.list(env, all.names = TRUE)
+      if (length(vars)) {
+        vars <- vars[order(names(vars))]
+        out$env <- lapply(vars, .hashable, descend = FALSE)
+      }
+    }
+    return(if (length(out) == 1L) out$text else out)
+  }
   if (inherits(x, "formula")) return(paste(deparse(x), collapse = " "))
+  if (is.environment(x)) return("<environment>")
   if (is.list(x)) {
-    y <- lapply(x, .hashable)
+    y <- lapply(x, .hashable, descend = descend)
     attributes(y) <- NULL
     names(y) <- names(x)
     return(y)

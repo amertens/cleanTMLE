@@ -57,3 +57,23 @@ test_that("stamps detect a foreign lock and a modified object", {
   obj$a[1] <- 9L
   expect_error(.check_stamp(lk, obj, "obj"), "modified")
 })
+
+test_that("a captured variable or a function body in the plan changes the lock hash", {
+  d <- make_design()
+  lock_with <- function(plan) create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), plan)
+  mk <- function(delta) function(a, X) stats::plogis(delta * a)
+  h <- function(f) lock_with(fast_plan(surfaces = list(custom = list(s = f))))$lock_hash
+  expect_identical(h(mk(0.5)), h(mk(0.5)))
+  expect_false(identical(h(mk(0.5)), h(mk(0.6))))
+  expect_false(identical(
+    lock_with(fast_plan(select = function(m) "a"))$lock_hash,
+    lock_with(fast_plan(select = function(m) "b"))$lock_hash))
+})
+
+test_that(".check_stamp recomputes the lock hash, so an edited lock fails", {
+  d <- make_design()
+  lk <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), fast_plan())
+  obj <- list(a = 1:3); obj$stamp <- .stamp(lk, obj)
+  lk$plan$tolerance$bias <- 0.5
+  expect_error(.check_stamp(lk, obj, "obj"), "hash mismatch")
+})

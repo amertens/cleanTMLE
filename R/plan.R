@@ -65,7 +65,12 @@ analysis_plan <- function(outcome, estimands,
                           restrictions = NULL,
                           select = NULL,
                           K = 5L, V = 5L, reps = 200L, seed = 1L) {
-  stop_if <- function(cond, ...) if (isTRUE(cond)) stop(..., call. = FALSE)
+  # Anything but a clean FALSE stops, so an NA condition is an error, not a pass.
+  stop_if <- function(cond, ...) if (!isFALSE(cond)) stop(..., call. = FALSE)
+  whole <- function(x) is.numeric(x) && length(x) == 1L && !is.na(x) &&
+    is.finite(x) && x == round(x) && abs(x) <= .Machine$integer.max
+  for (arg in c("K", "V", "reps", "seed"))
+    stop_if(!whole(get(arg)), "`", arg, "` must be a single whole number.")
 
   stop_if(!is.character(outcome) || !length(outcome) %in% 1:2,
           "`outcome` must be a column name, or c(time = , event = ).")
@@ -114,6 +119,9 @@ analysis_plan <- function(outcome, estimands,
                                      forms = c("linear", "nonlinear")), surfaces)
   stop_if(surfaces$baseline_risk <= 0 || surfaces$baseline_risk >= 1,
           "`surfaces$baseline_risk` must lie in (0, 1).")
+  stop_if(!is.numeric(surfaces$log_or) || length(surfaces$log_or) != 1L ||
+            !is.finite(surfaces$log_or),
+          "`surfaces$log_or` must be a single finite number.")
   stop_if(surfaces$heterogeneity < 0, "`surfaces$heterogeneity` must be >= 0.")
   stop_if(!length(surfaces$forms) || !all(surfaces$forms %in% c("linear", "nonlinear")),
           "`surfaces$forms` must be from: linear, nonlinear.")

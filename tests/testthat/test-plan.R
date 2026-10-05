@@ -35,3 +35,14 @@ test_that(".candidates crosses libraries with truncation levels", {
   ids <- vapply(.candidates(p), `[[`, "", "id")
   expect_identical(ids, c("glm_t0.01", "glm_t0.05", "sl_t0.01", "sl_t0.05"))
 })
+
+test_that("missing or non-whole numbers are refused, not passed through", {
+  expect_error(analysis_plan("y", "ATE", K = NA), "`K`")
+  expect_error(analysis_plan("y", "ATE", seed = NA), "`seed`")
+  expect_error(analysis_plan("y", "ATE", K = 2.7), "whole number")
+  expect_error(analysis_plan("y", "ATE", V = NA_integer_), "`V`")
+  expect_error(analysis_plan("y", "ATE", reps = c(10, 20)), "`reps`")
+  expect_error(analysis_plan("y", "ATE", K = 0), "K >= 1")
+  expect_error(analysis_plan("y", "ATE", tolerance = list(bias = NA)), "tolerance")
+  expect_error(analysis_plan("y", "ATE", surfaces = list(log_or = NA_real_)), "log_or")
+})

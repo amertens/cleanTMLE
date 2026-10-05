@@ -18,3 +18,14 @@ test_that(".make_folds is balanced and seeded, and K = 1 gives one fold", {
 test_that(".bound keeps probabilities inside (eps, 1 - eps)", {
   expect_equal(.bound(c(0, 0.5, 1), 0.01), c(0.01, 0.5, 0.99))
 })
+
+test_that(".hash sees a function's body and its captured variables", {
+  expect_false(identical(.hash(function(x) x + 1), .hash(function(x) x + 2)))
+  mk <- function(delta) function(a, X) stats::plogis(delta * a)
+  expect_identical(.hash(mk(1)), .hash(mk(1)))
+  expect_false(identical(.hash(mk(1)), .hash(mk(2))))
+  # a captured function contributes its text only, so a self-reference cannot recurse
+  mk2 <- function(g) function(a) g(a)
+  expect_identical(.hash(mk2(function(z) z)), .hash(mk2(function(z) z)))
+  expect_false(identical(.hash(mk2(function(z) z)), .hash(mk2(function(z) z + 1))))
+})
