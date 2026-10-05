@@ -63,3 +63,21 @@ test_that("the edge check flags a setting that keeps winning on a grid edge", {
   expect_true(row$consistent)
   expect_true(e$consistent[e$edge == "number of trees at the cap"])
 })
+
+test_that(".nnloglik returns the simplex minimizer of the cross-validated log-loss", {
+  withr::with_seed(11, {
+    n <- 5000L
+    eta <- stats::rnorm(n, 0, 1.5)
+    y <- stats::rbinom(n, 1, stats::plogis(eta))
+    Z <- cbind(shrunk = stats::plogis(0.5 * eta),
+               noisy = stats::plogis(eta + stats::rnorm(n, 0, 1)))
+  })
+  w <- .nnloglik(Z, y)
+  L <- stats::qlogis(.bound(Z, 1e-6))
+  ll <- function(b) .logloss(y, stats::plogis(drop(L %*% b)))
+  expect_true(all(w >= 0))
+  expect_equal(sum(w), 1)
+  expect_lte(ll(w), ll(c(1, 0)) + 1e-6)
+  expect_lte(ll(w), ll(c(0, 1)) + 1e-6)
+  expect_lte(ll(w), ll(c(0.5, 0.5)) + 1e-6)
+})

@@ -152,14 +152,23 @@
   L <- stats::qlogis(.bound(Z, 1e-6))
   J <- ncol(L)
   if (J == 1L) return(1)
-  obj <- function(b) .logloss(y, stats::plogis(drop(L %*% b)))
-  grad <- function(b) {
-    p <- stats::plogis(drop(L %*% b))
-    -drop(crossprod(L, y - p)) / length(y)
+  # Optimize on the simplex directly through a softmax parameterization, so
+  # the returned weights are the convex combination with the smallest
+  # cross-validated log-loss (rescaling a nonnegative fit would change the
+  # logit-scale predictions).
+  softmax <- function(a) {
+    e <- exp(a - max(a))
+    e / sum(e)
   }
-  w <- stats::optim(rep(1 / J, J), obj, grad, method = "L-BFGS-B", lower = 0)$par
-  if (sum(w) <= 0) w <- rep(1 / J, J)
-  w / sum(w)
+  obj <- function(a) .logloss(y, stats::plogis(drop(L %*% softmax(a))))
+  grad <- function(a) {
+    w <- softmax(a)
+    p <- stats::plogis(drop(L %*% w))
+    g <- -drop(crossprod(L, y - p)) / length(y)
+    w * (g - sum(w * g))
+  }
+  a <- stats::optim(rep(0, J), obj, grad, method = "BFGS")$par
+  softmax(a)
 }
 
 .super_learner <- function(X, y, learners, newX, V, seed) {
