@@ -34,6 +34,7 @@ assess_design <- function(lock) {
   share <- mean(outside)
   grade <- if (share < 0.05) "good" else if (share < 0.20) "moderate" else "poor"
   Xdf <- as.data.frame(X)
+  colnames(Xdf) <- make.names(colnames(Xdf), unique = TRUE)  # cobalt parses names as formula terms
   ess <- do.call(rbind, lapply(p$estimands, function(e) {
     w <- .estimand_weights(g, A, e, band)
     data.frame(estimand = e, ess_treated = .ess(w[A == 1]), ess_control = .ess(w[A == 0]))
