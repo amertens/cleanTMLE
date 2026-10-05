@@ -23,3 +23,27 @@ fast_plan <- function(...) {
                    K = 2L, V = 2L, reps = 20L, seed = 11L)
   do.call(analysis_plan, utils::modifyList(defaults, list(...)))
 }
+
+fixture_pipeline <- function(strength = 0.8, n = 400, nc = c(nc_visit = "care use"),
+                             seed = 11L) {
+  d <- make_design(n, seed = 2, strength = strength)
+  plan <- fast_plan(negative_controls = nc,
+                    nc_criteria = if (is.null(nc)) NULL else list(null_band = c(-0.1, 0.1)),
+                    tolerance = list(bias = 0.1, coverage = 0.5), reps = 10L, seed = seed)
+  lock <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), plan)
+  design <- assess_design(lock)
+  sim <- suppressMessages(simulate_design(lock, design))
+  ncl <- negative_control_ladder(lock, design)
+  list(d = d, plan = plan, lock = lock, design = design, sim = sim, nc = ncl,
+       dossier = design_report(lock, design, sim, ncl))
+}
+
+contains_outcome <- function(obj, name, y) {
+  if (is.environment(obj) || is.function(obj)) return(FALSE)
+  if (is.list(obj)) {
+    if (name %in% names(obj)) return(TRUE)
+    return(any(vapply(obj, contains_outcome, logical(1), name = name, y = y)))
+  }
+  is.numeric(obj) && length(obj) == length(y) &&
+    isTRUE(all.equal(as.numeric(obj), as.numeric(y), check.attributes = FALSE))
+}

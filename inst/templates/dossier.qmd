@@ -1,0 +1,69 @@
+---
+title: "Design dossier"
+params:
+  dossier: ""
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+---
+
+```{r}
+d <- readRDS(params$dossier)
+kt <- function(x) knitr::kable(x, digits = 3, row.names = FALSE)
+```
+
+Lock `r substr(d$lock_hash, 1, 12)`, dossier `r substr(d$dossier_hash, 1, 12)`,
+cleanTMLE `r d$version`, built `r d$created`.
+
+## Decision
+
+Primary estimand: **`r if (is.na(d$decision$primary)) "none feasible" else d$decision$primary`**.
+Negative-control verdict: **`r d$decision$nc_verdict`**.
+
+```{r}
+kt(data.frame(estimand = names(d$decision$status), status = unlist(d$decision$status)))
+```
+
+```{r}
+if (length(d$decision$candidates))
+  kt(do.call(rbind, lapply(names(d$decision$candidates), function(e) {
+    x <- d$decision$candidates[[e]]
+    data.frame(estimand = e, candidate = x$id, learners = paste(x$learners, collapse = ", "),
+               truncation = x$truncation)
+  })))
+```
+
+## Design
+
+Overlap grade: **`r d$design$overlap_grade`**; share outside the band:
+`r round(d$design$share_outside_band, 3)`.
+
+```{r}
+kt(d$design$overlap); kt(d$design$ess); kt(d$design$balance)
+if (!is.null(d$design$edge) && nrow(d$design$edge)) kt(d$design$edge)
+```
+
+## Simulation
+
+`r d$simulation$scope`
+
+```{r}
+kt(d$simulation$verdict)
+kt(d$simulation$metrics[c("estimand", "candidate", "surface", "bias", "coverage", "rmse",
+                          "fail_rate", "pass", "borderline")])
+```
+
+## Negative controls
+
+```{r}
+if (!is.null(d$nc$by_rung)) { kt(d$nc$by_rung); kt(d$nc$table) } else cat("None declared.")
+```
+
+## Notes
+
+```{r, results = "asis"}
+cat(paste0("- ", d$notes), sep = "\n")
+```

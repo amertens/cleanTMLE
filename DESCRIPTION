@@ -37,6 +37,7 @@ Suggests:
     future,
     future.apply,
     generics,
+    knitr,
     MatchIt,
     quarto,
     SuperLearner,
