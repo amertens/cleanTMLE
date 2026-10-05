@@ -1,3 +1,9 @@
+# cleanTMLE 0.4.0 (in development)
+
+Breaking rebuild. The 0.3.0 surface (65 exports) is removed; the tag
+`v0.3.0` keeps it installable. See the design spec in the clean-room-sim
+repository, `docs/superpowers/specs/2026-10-05-cleantmle-0.4.0-design.md`.
+
 # cleanTMLE 0.3.0
 
 The workflow surface is sixteen exported verbs; the superseded

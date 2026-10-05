@@ -13,3 +13,5 @@ vignettes/*.html
 vignettes/*_cache/
 vignettes/*_files/
 _fulltest.log
+
+attic/0.3.0-vignette-render/

@@ -1,73 +1,47 @@
 Package: cleanTMLE
-Title: Software Layer for an Outcome-Blind Staged Targeted-Learning Workflow
-Version: 0.3.0
+Title: Outcome-Blind Design and Estimand Selection for Targeted Learning
+Version: 0.4.0
 Authors@R: c(
     person("Andrew", "Mertens", role = c("aut", "cre"),
            email = "amertens@berkeley.edu"),
     person("cleanTMLE Contributors", role = "ctb"))
-Description: Software infrastructure for an outcome-blind staged workflow
-    for targeted-learning observational causal analyses on binary
-    point-treatment studies. The package implements the staged-analysis
-    framework of Muntner et al. (2024) by recording prespecification,
-    design diagnostics, and a structured pre-outcome decision before the
-    treatment-outcome association is examined. The tested scope covers
-    binary point exposure, binary outcome, and the marginal
-    risk-difference estimand, with three estimator families: propensity-
-    score matching, stabilised inverse-probability-of-treatment weighting,
-    and targeted minimum loss-based estimation (TMLE), including
-    simulation-selected TMLE via SuperLearner ensemble learning.
-    The first methodological contribution is an outcome-blind plasmode
-    candidate-selection procedure in which nuisance-parameter strategies
-    are evaluated by oracle coverage on simulated outcomes before real
-    outcome access. The second is a prespecified data-quality stress test
-    ('stress_test') that evaluates each candidate under covariate-
-    missingness, treatment-misclassification, outcome-misclassification,
-    unmeasured-confounding, and near-positivity scenarios, producing a
-    degradation gradient on the same performance scale as the baseline
-    plasmode metrics and, when decision thresholds were declared at lock
-    creation, a locked verdict with tipping points. Together, the two
-    screens produce a pre-outcome study dossier that a review team can
-    examine before authorising the primary analysis. Time-to-event
-    helpers (IPW risk curves, g-computation, augmented IPW, IPW hazard
-    ratios, survival TMLE via 'survtmle', and longitudinal TMLE via
-    'lmtp') are experimental extensions outside the tested scope.
+Description: Declares an analysis plan, locks the design data without the
+    outcome, checks by outcome-free plasmode simulation which estimands the
+    design can deliver and which targeted maximum likelihood candidate to
+    use for each, records that decision in a hashed dossier, and only then
+    admits the outcome for estimation. Weighting and matching are offered
+    as comparators.
 License: MIT + file LICENSE
 Encoding: UTF-8
-LazyData: true
-Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
-Depends:
-    R (>= 3.6.0)
+Roxygen: list(markdown = TRUE)
+Depends: R (>= 4.1)
 Imports:
-    survival,
-    stats,
-    utils,
-    ggplot2,
-    rlang,
-    sandwich,
+    cobalt,
     digest,
-    withr
-Suggests:
-    nnet,
-    tmle,
-    SuperLearner,
-    survtmle,
-    lmtp,
-    glmnet,
-    rpart,
     earth,
-    gam,
-    yaml,
-    parallel,
-    callr,
-    furrr,
+    ggplot2,
+    glmnet,
+    jsonlite,
+    nnet,
+    stats,
+    tmle,
+    utils,
+    WeightIt,
+    withr,
+    xgboost
+Suggests:
+    concrete,
+    data.table,
+    EValue,
     future,
-    testthat (>= 3.0.0),
-    knitr,
-    rmarkdown,
+    future.apply,
+    generics,
+    MatchIt,
     quarto,
-    pkgdown
+    SuperLearner,
+    testthat (>= 3.0.0)
 Config/testthat/edition: 3
-VignetteBuilder: quarto, knitr
+LazyData: true
 URL: https://github.com/amertens/cleanTMLE
 BugReports: https://github.com/amertens/cleanTMLE/issues
