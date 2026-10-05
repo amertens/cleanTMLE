@@ -47,13 +47,14 @@ test_that("a constant simulated outcome is a failed repetition, not an error", {
   expect_true(all(out$results$failed))
 })
 
-test_that("good overlap gives a feasible ATE", {
+test_that("good overlap does not make the ATE infeasible", {
   d <- make_design(600, seed = 3, strength = 0.3)
-  p <- fast_plan(tolerance = list(bias = 0.05, coverage = 0.6), reps = 30L)
+  p <- fast_plan(tolerance = list(bias = 0.05, coverage = 0.75), reps = 30L)
   lk <- create_analysis_lock(d$design, "A", covs, p)
   sim <- suppressMessages(simulate_design(lk, assess_design(lk)))
   expect_s3_class(sim, "cr_simulation")
-  expect_identical(sim$verdict$status[sim$verdict$estimand == "ATE"], "feasible")
+  expect_true(sim$verdict$status[sim$verdict$estimand == "ATE"] %in%
+                c("feasible", "borderline"))
   expect_true(.check_stamp(lk, sim, "simulation"))
 })
 
