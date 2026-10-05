@@ -44,8 +44,13 @@ assess_design <- function(lock) {
     smd <- tryCatch({
       bt <- cobalt::bal.tab(Xdf[keep, , drop = FALSE], treat = A[keep], weights = w[keep],
                             s.d.denom = "pooled", binary = "std")
-      max(abs(bt$Balance$Diff.Adj), na.rm = TRUE)
-    }, error = function(err) NA_real_)
+      d <- abs(bt$Balance$Diff.Adj)
+      if (all(is.na(d))) NA_real_ else max(d, na.rm = TRUE)
+    }, error = function(err) {
+      warning("assess_design: balance for ", e, " could not be computed (",
+              conditionMessage(err), ").", call. = FALSE)
+      NA_real_
+    })
     data.frame(estimand = e, max_abs_smd = smd)
   }))
   out <- list(g = g, folds = folds, overlap = overlap, overlap_grade = grade,

@@ -24,3 +24,19 @@ test_that("the design is stamped and refuses a modified lock", {
   lk$plan$K <- 9L
   expect_error(assess_design(lk), "hash mismatch")
 })
+
+test_that("a balance failure warns and returns NA instead of passing silently", {
+  d <- make_design(300)
+  lk <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), fast_plan())
+  testthat::local_mocked_bindings(bal.tab = function(...) stop("boom"), .package = "cobalt")
+  warns <- character()
+  ds <- withCallingHandlers(assess_design(lk), warning = function(w) {
+    warns <<- c(warns, conditionMessage(w))
+    invokeRestart("muffleWarning")
+  })
+  expect_length(warns, 4L)
+  expect_true(all(grepl("could not be computed", warns)))
+  expect_match(warns[1], "boom")
+  expect_true(all(is.na(ds$balance$max_abs_smd)))
+  expect_setequal(ds$balance$estimand, c("ATE", "trimmed_ATE", "ATT", "ATO"))
+})
