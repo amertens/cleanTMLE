@@ -1,3 +1,7 @@
+.is_text <- function(x) {
+  is.character(x) && length(x) == 1L && !is.na(x) && nzchar(trimws(x))
+}
+
 #' Admit the outcome after the review team approves the dossier
 #'
 #' @param lock A `cr_lock`.
@@ -14,7 +18,7 @@ unblind <- function(lock, dossier, outcomes, approved_by, override = NULL) {
   .verify_dossier(dossier)
   if (!identical(dossier$lock_hash, lock$lock_hash))
     stop("This dossier was built for a different lock.", call. = FALSE)
-  if (!is.character(approved_by) || length(approved_by) != 1L || !nzchar(approved_by))
+  if (!.is_text(approved_by))
     stop("`approved_by` must name who approved the dossier.", call. = FALSE)
   oc <- .outcome_columns(lock$plan)
   miss <- setdiff(c(lock$id, oc), names(outcomes))
@@ -25,12 +29,15 @@ unblind <- function(lock, dossier, outcomes, approved_by, override = NULL) {
   blocked <- c(if (is.na(dossier$decision$primary)) "no estimand is feasible",
                if (identical(dossier$decision$nc_verdict, "STOP"))
                  "the negative-control verdict is STOP")
-  has_override <- is.character(override) && length(override) == 1L && nzchar(override)
+  has_override <- .is_text(override)
   if (length(blocked) && !has_override)
     stop("unblind refused: ", paste(blocked, collapse = "; "),
          ". Supply `override` with a written reason to proceed.", call. = FALSE)
   ids <- lock$data[[lock$id]]
   m <- match(ids, outcomes[[lock$id]])
+  if (all(is.na(m)))
+    stop("No outcome id matches a design id; check the id column's type and format.",
+         call. = FALSE)
   y <- outcomes[m, oc, drop = FALSE]
   rownames(y) <- NULL
   approval <- list(approved_by = approved_by,

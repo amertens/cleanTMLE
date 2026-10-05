@@ -59,7 +59,19 @@ kt(d$simulation$metrics[c("estimand", "candidate", "surface", "bias", "coverage"
 ## Negative controls
 
 ```{r}
-if (!is.null(d$nc$by_rung)) { kt(d$nc$by_rung); kt(d$nc$table) } else cat("None declared.")
+if (is.null(d$nc)) cat("None declared.")
+```
+
+```{r}
+if (!is.null(d$nc)) kt(d$nc$by_rung)
+```
+
+```{r}
+if (!is.null(d$nc) && !is.null(d$nc$by_domain)) kt(d$nc$by_domain)
+```
+
+```{r}
+if (!is.null(d$nc)) kt(d$nc$table)
 ```
 
 ## Notes

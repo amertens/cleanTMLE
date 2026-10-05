@@ -50,6 +50,9 @@ design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
     if (!identical(nc$design_hash, design$stamp$hash))
       stop("`nc` was not run on this `design`.", call. = FALSE)
   }
+  if (!is.null(lock$plan$negative_controls) && is.null(nc))
+    stop("The plan declares negative controls, so `nc` (from negative_control_ladder()) ",
+         "is required; the dossier cannot record a verdict without it.", call. = FALSE)
   p <- lock$plan
   v <- simulation$verdict
   feas <- v[v$status == "feasible", , drop = FALSE]
@@ -92,6 +95,10 @@ design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
   fmt <- if (grepl("\\.docx$", file, ignore.case = TRUE)) "docx" else "html"
   quarto::quarto_render(file.path(work, "dossier.qmd"), output_format = fmt,
                         execute_params = list(dossier = rds), quiet = TRUE)
-  file.copy(file.path(work, paste0("dossier.", fmt)), file, overwrite = TRUE)
+  out <- file.path(work, paste0("dossier.", fmt))
+  if (!file.exists(out))
+    stop("Quarto did not produce the rendered dossier.", call. = FALSE)
+  if (!isTRUE(file.copy(out, file, overwrite = TRUE)))
+    stop("Could not write the rendered dossier to ", file, ".", call. = FALSE)
   invisible(file)
 }

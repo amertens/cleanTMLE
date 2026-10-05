@@ -52,6 +52,25 @@ test_that("STOP blocks unblinding unless an override gives a reason", {
   expect_identical(ub$approval$blocked_by, "the negative-control verdict is STOP")
 })
 
+test_that("a plan with negative controls cannot produce a dossier without nc", {
+  expect_error(design_report(fx$lock, fx$design, fx$sim), "negative controls")
+})
+
+test_that("NA and blank override or approved_by do not count", {
+  st <- fixture_pipeline(nc = c(nc_bad = "care use"))
+  for (bad in list(NA_character_, "   ", ""))
+    expect_error(unblind(st$lock, st$dossier, st$d$outcomes, "Review team", override = bad),
+                 "negative-control verdict is STOP")
+  for (bad in list(NA_character_, "   "))
+    expect_error(unblind(fx$lock, fx$dossier, fx$d$outcomes, bad), "approved_by")
+})
+
+test_that("unblind errors when no outcome id matches a design id", {
+  o <- fx$d$outcomes
+  o$id <- sprintf("%04d", o$id)
+  expect_error(unblind(fx$lock, fx$dossier, o, "Review team"), "No outcome id matches")
+})
+
 test_that("the dossier renders to HTML", {
   skip_on_cran()
   skip_if_not_installed("quarto")
@@ -59,5 +78,7 @@ test_that("the dossier renders to HTML", {
   f <- withr::local_tempfile(fileext = ".html")
   design_report(fx$lock, fx$design, fx$sim, fx$nc, file = f)
   expect_true(file.exists(f))
-  expect_match(paste(readLines(f, warn = FALSE), collapse = ""), "Decision")
+  html <- paste(readLines(f, warn = FALSE), collapse = "")
+  expect_match(html, "Decision")
+  expect_match(html, "verdict")
 })
