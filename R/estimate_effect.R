@@ -21,13 +21,18 @@
   X
 }
 
-.estimate_weighting <- function(X, A, Y, estimand, band) {
+.estimate_weighting <- function(X, A, Y, estimand, plan, K, fold_seed) {
   Xs <- .syntactic(X)
   df <- data.frame(.Y = Y, .A = A, Xs)
   f <- stats::reformulate(colnames(Xs), response = ".A")
   est <- estimand
   if (estimand == "trimmed_ATE") {
-    ps <- stats::fitted(stats::glm(f, data = df, family = stats::binomial()))
+    # The trimmed population is the one the TMLE path targets: the plan's
+    # cross-fitted ps_library score on the analysed rows, with the dossier's
+    # folds. The weights inside it are still WeightIt's logistic model.
+    band <- plan$trim_band
+    ps <- .fit_g(X, A, plan$ps_library, .make_folds(nrow(X), K, fold_seed), plan$V,
+                 fold_seed)$g
     df <- df[ps >= band[1] & ps <= band[2], , drop = FALSE]
     est <- "ATE"
   }
@@ -121,7 +126,11 @@
 #' runs the stress-tested candidate with the same fitter the simulation
 #' used; `"weighting"` (WeightIt) and `"matching"` (MatchIt, ATT only) are
 #' comparators that were not stress-tested. A time-to-event plan runs
-#' `concrete`.
+#' `concrete`. The `unblind()` result is rechecked first: the lock, the
+#' dossier, the unblind hash and the dossier's gate (an override is needed
+#' when no estimand is feasible or the negative-control verdict is STOP).
+#' For `"trimmed_ATE"`, weighting trims on the same cross-fitted propensity
+#' score as the TMLE, so both target the same population.
 #'
 #' @param unblinded A [unblind()] result.
 #' @param method `"tmle"`, `"weighting"` or `"matching"`.
@@ -131,16 +140,11 @@
 #' @export
 estimate_effect <- function(unblinded, method = c("tmle", "weighting", "matching"),
                             estimand = NULL) {
-  if (!inherits(unblinded, "cr_unblinded"))
-    stop("`unblinded` must come from unblind().", call. = FALSE)
+  .verify_unblinded(unblinded)
   method <- match.arg(method)
   lock <- unblinded$lock
   d <- unblinded$dossier
   p <- lock$plan
-  verify_lock(lock)
-  .verify_dossier(d)
-  if (!identical(d$lock_hash, lock$lock_hash))
-    stop("The dossier does not belong to this lock.", call. = FALSE)
   dec <- d$decision
   estimand <- estimand %||% dec$primary
   if (is.null(estimand) || is.na(estimand))
@@ -179,7 +183,7 @@ estimate_effect <- function(unblinded, method = c("tmle", "weighting", "matching
                          as.list(r[1, , drop = FALSE]), n = length(Y),
                          stress_tested = TRUE, note = note))
   }
-  r <- if (method == "weighting") .estimate_weighting(X, A, Y, estimand, p$trim_band) else
+  r <- if (method == "weighting") .estimate_weighting(X, A, Y, estimand, p, dec$K, dec$fold_seed) else
     .estimate_matching(X, A, Y, estimand)
   unmatched <- if (!is.null(r$n_treated) && r$n_population < r$n_treated)
     paste0("Only ", r$n_population, " of ", r$n_treated,

@@ -12,7 +12,10 @@ unblind(lock, dossier, outcomes, approved_by, override = NULL)
 \item{dossier}{The \code{\link[=design_report]{design_report()}} for \code{lock}.}
 
 \item{outcomes}{Data frame with the lock's id column and the plan's
-outcome column(s). Rows are matched by id.}
+outcome column(s). Rows are matched by id. A binary outcome must be
+numeric and coded 0/1; a time-to-event outcome needs a numeric time
+greater than 0 and a numeric event code of whole numbers >= 0
+(0 = censored). Missing values are allowed.}
 
 \item{approved_by}{Who approved the dossier.}
 
@@ -23,5 +26,7 @@ feasible or the negative-control verdict is STOP.}
 A \code{cr_unblinded}.
 }
 \description{
-Admit the outcome after the review team approves the dossier
+The result carries \code{unblind_hash}, a fingerprint of the dossier hash,
+the approval and the outcomes; \code{\link[=estimate_effect]{estimate_effect()}} and
+\code{\link[=export_design_log]{export_design_log()}} recheck it and the gate before using the object.
 }

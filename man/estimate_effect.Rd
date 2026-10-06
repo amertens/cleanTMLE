@@ -26,5 +26,9 @@ Reads the estimand and the candidate from the dossier. \code{method = "tmle"}
 runs the stress-tested candidate with the same fitter the simulation
 used; \code{"weighting"} (WeightIt) and \code{"matching"} (MatchIt, ATT only) are
 comparators that were not stress-tested. A time-to-event plan runs
-\code{concrete}.
+\code{concrete}. The \code{unblind()} result is rechecked first: the lock, the
+dossier, the unblind hash and the dossier's gate (an override is needed
+when no estimand is feasible or the negative-control verdict is STOP).
+For \code{"trimmed_ATE"}, weighting trims on the same cross-fitted propensity
+score as the TMLE, so both target the same population.
 }

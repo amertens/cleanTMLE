@@ -12,6 +12,7 @@
 #' @export
 export_design_log <- function(x, fit = NULL, file = NULL) {
   if (inherits(x, "cr_unblinded")) {
+    .verify_unblinded(x)
     d <- x$dossier
     approval <- x$approval
   } else if (inherits(x, "cr_dossier")) {

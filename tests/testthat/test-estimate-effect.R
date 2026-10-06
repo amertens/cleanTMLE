@@ -109,3 +109,34 @@ test_that("a time-to-event plan runs through concrete", {
   expect_true(is.finite(fit$estimate))
   expect_identical(fit$method, "concrete")
 })
+
+test_that("weighting and TMLE target the same trimmed population", {
+  skip_if(is.null(fx$dossier$decision$candidates$trimmed_ATE),
+          "trimmed_ATE not feasible in this fixture")
+  w <- estimate_effect(ub, method = "weighting", estimand = "trimmed_ATE")
+  t <- estimate_effect(ub, estimand = "trimmed_ATE")
+  expect_identical(as.integer(w$n_population), as.integer(t$n_population))
+})
+
+test_that("the weighting trim uses the cross-fitted ps_library score, as the TMLE does", {
+  d <- make_design(400, seed = 2, strength = 2.5)
+  X <- .design_matrix(d$design, c("w1", "w2", "w3"))
+  A <- d$design$A
+  Y <- d$outcomes$y
+  p <- fast_plan()
+  w <- .estimate_weighting(X, A, Y, "trimmed_ATE", p, p$K, p$seed)
+  t <- fit_candidate(X, A, Y, "trimmed_ATE", list(learners = "glm", truncation = 0.01), p,
+                     .make_folds(400, p$K, p$seed), p$seed)
+  expect_lt(t$n_population, 400L)
+  expect_identical(as.integer(w$n_population), as.integer(t$n_population))
+})
+
+test_that("summary does not error when a risk is zero", {
+  fit <- estimate_effect(ub)
+  fit$risk1 <- 0
+  s <- summary(fit)
+  expect_null(s$evalue)
+  expect_output(print(s), "Risks")
+  fit$risk1 <- NaN
+  expect_null(summary(fit)$evalue)
+})

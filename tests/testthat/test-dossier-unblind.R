@@ -1,4 +1,5 @@
 fx <- fixture_pipeline()
+st <- fixture_pipeline(nc = c(nc_bad = "care use"))
 
 test_that("the dossier walks the ladder and records the candidate", {
   d <- fx$dossier
@@ -9,6 +10,10 @@ test_that("the dossier walks the ladder and records the candidate", {
   expect_identical(d$decision$fold_seed, fx$plan$seed)
   expect_identical(d$decision$nc_verdict, "GO")
   expect_null(d$design$g)
+  expect_null(d$design$g_world)
+  has_g_world <- function(x) is.list(x) &&
+    ("g_world" %in% names(x) || any(vapply(x, has_g_world, logical(1))))
+  expect_false(has_g_world(unclass(d)))
 })
 
 test_that("design_report refuses objects from another lock or design", {
@@ -42,7 +47,6 @@ test_that("a dossier from another lock, or an edited one, is rejected", {
 })
 
 test_that("STOP blocks unblinding unless an override gives a reason", {
-  st <- fixture_pipeline(nc = c(nc_bad = "care use"))
   expect_identical(st$dossier$decision$nc_verdict, "STOP")
   expect_error(unblind(st$lock, st$dossier, st$d$outcomes, "Review team"),
                "negative-control verdict is STOP")
@@ -57,7 +61,6 @@ test_that("a plan with negative controls cannot produce a dossier without nc", {
 })
 
 test_that("NA and blank override or approved_by do not count", {
-  st <- fixture_pipeline(nc = c(nc_bad = "care use"))
   for (bad in list(NA_character_, "   ", ""))
     expect_error(unblind(st$lock, st$dossier, st$d$outcomes, "Review team", override = bad),
                  "negative-control verdict is STOP")
@@ -81,4 +84,86 @@ test_that("the dossier renders to HTML", {
   html <- paste(readLines(f, warn = FALSE), collapse = "")
   expect_match(html, "Decision")
   expect_match(html, "verdict")
+})
+
+test_that("unblind fingerprints the dossier, the approval and the outcomes", {
+  ub <- unblind(fx$lock, fx$dossier, fx$d$outcomes, approved_by = "Review team")
+  expect_identical(ub$unblind_hash,
+                   .hash(list(fx$dossier$dossier_hash, ub$approval, ub$outcomes)))
+  expect_true(.verify_unblinded(ub))
+})
+
+test_that("a hand-built unblinded object past STOP is refused", {
+  ub <- unblind(st$lock, st$dossier, st$d$outcomes, "Review team",
+                override = "Control judged invalid by the clinical lead")
+  expect_true(.verify_unblinded(ub))
+  # Built by hand with a consistent hash but no override: the gate is recomputed.
+  hb <- structure(list(lock = st$lock, dossier = st$dossier, outcomes = ub$outcomes,
+                       approval = utils::modifyList(ub$approval,
+                                                    list(override = NA_character_))),
+                  class = "cr_unblinded")
+  hb$unblind_hash <- .unblind_hash(hb)
+  expect_error(estimate_effect(hb, method = "weighting", estimand = "ATE"),
+               "negative-control verdict is STOP")
+  expect_error(export_design_log(hb), "negative-control verdict is STOP")
+  # Built by hand with no hash at all.
+  hb$unblind_hash <- NULL
+  expect_error(estimate_effect(hb, method = "weighting", estimand = "ATE"), "modified")
+})
+
+test_that("editing the override or an outcome after unblind is detected", {
+  ub <- unblind(st$lock, st$dossier, st$d$outcomes, "Review team",
+                override = "Control judged invalid by the clinical lead")
+  e1 <- ub
+  e1$approval$override <- "A different reason"
+  expect_error(estimate_effect(e1, method = "weighting", estimand = "ATE"), "modified")
+  expect_error(export_design_log(e1), "modified")
+  e2 <- ub
+  e2$outcomes$y[1] <- 1 - e2$outcomes$y[1]
+  expect_error(estimate_effect(e2, method = "weighting", estimand = "ATE"), "modified")
+  expect_error(export_design_log(e2), "modified")
+})
+
+test_that("unblind checks the coding of a binary outcome", {
+  o <- fx$d$outcomes
+  cont <- o
+  cont$y <- withr::with_seed(1, stats::runif(nrow(o)))
+  expect_error(unblind(fx$lock, fx$dossier, cont, "Review team"), "coded 0/1")
+  two <- o
+  two$y <- o$y + 1L
+  expect_error(unblind(fx$lock, fx$dossier, two, "Review team"), "coded 0/1")
+  chr <- o
+  chr$y <- as.character(o$y)
+  expect_error(unblind(fx$lock, fx$dossier, chr, "Review team"), "coded 0/1")
+  miss <- o
+  miss$y[1:3] <- NA
+  expect_s3_class(unblind(fx$lock, fx$dossier, miss, "Review team"), "cr_unblinded")
+})
+
+test_that("unblind checks the coding of a time-to-event outcome", {
+  d <- make_design(300, seed = 9)
+  p <- fast_plan(outcome = c(time = "t", event = "s"), estimands = "ATE",
+                 target_time = 300, hazards = list(`0` = list(Surv(t, s == 0) ~ .),
+                                                   `1` = list(Surv(t, s == 1) ~ .)),
+                 candidates = list(library = list(glm = "glm"), truncation = 0.01),
+                 surfaces = list(forms = "linear", heterogeneity = 0), reps = 2L)
+  lk <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), p)
+  ds <- assess_design(lk)
+  dr <- design_report(lk, ds, suppressMessages(simulate_design(lk, ds)))
+  oc <- data.frame(id = d$design$id, t = seq(10, 400, length.out = 300),
+                   s = rep(0:1, 150))
+  ok <- function(o) unblind(lk, dr, o, "Review team", override = "fixture")
+  expect_s3_class(ok(oc), "cr_unblinded")
+  neg <- oc
+  neg$t[1] <- -5
+  expect_error(ok(neg), "greater than 0")
+  zero <- oc
+  zero$t[2] <- 0
+  expect_error(ok(zero), "greater than 0")
+  frac <- oc
+  frac$s[3] <- 0.5
+  expect_error(ok(frac), "whole numbers")
+  negev <- oc
+  negev$s[3] <- -1
+  expect_error(ok(negev), "whole numbers")
 })

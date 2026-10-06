@@ -74,7 +74,9 @@ print.cr_estimate <- function(x, ...) {
 }
 
 .evalue <- function(x) {
-  if (!requireNamespace("EValue", quietly = TRUE) || !is.finite(x$risk0) || x$risk0 <= 0)
+  v <- c(x$risk1, x$risk0, x$ci_lower, x$ci_upper)
+  if (!requireNamespace("EValue", quietly = TRUE) || length(v) != 4L || !all(is.finite(v)) ||
+      x$risk1 <= 0 || x$risk0 <= 0)
     return(NULL)
   rr <- x$risk1 / x$risk0
   lo <- max((x$risk0 + x$ci_lower) / x$risk0, 1e-6)
