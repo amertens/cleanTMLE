@@ -53,9 +53,9 @@
   args <- list(Y = Y, A = A, W = as.data.frame(X), Q = cbind(Q0, Q1), g1W = g,
                gbound = c(truncation, 1 - truncation), family = "binomial",
                g.SL.library = "SL.glm")
-  # tmle also runs its ATT and ATC targeting on every call unless told not to;
-  # in a profile of one simulation repetition that took about 70% of the time.
-  # Only the ATT reads it.
+  # tmle also runs its ATT and ATC targeting on every call unless told not to.
+  # Skipping it where the ATT is not targeted reduces one simulation repetition
+  # from about 5.4 s to about 4.3 s. Only the ATT reads this argument.
   if (which != "ATT" && "evalATT" %in% names(formals(tmle::tmle))) args$evalATT <- FALSE
   args
 }
