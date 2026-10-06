@@ -8,6 +8,7 @@ test_that("a binary plan expands 'default' and fills defaults", {
   expect_equal(p$tolerance, list(bias = 0.02, coverage = 0.90))
   expect_equal(p$surfaces$baseline_risk, 0.10)
   expect_identical(p$K, 5L)
+  expect_identical(p$max_reps, 1000L)
 })
 
 test_that("plan validation rejects what the spec rules out", {
@@ -45,4 +46,11 @@ test_that("missing or non-whole numbers are refused, not passed through", {
   expect_error(analysis_plan("y", "ATE", K = 0), "K >= 1")
   expect_error(analysis_plan("y", "ATE", tolerance = list(bias = NA)), "tolerance")
   expect_error(analysis_plan("y", "ATE", surfaces = list(log_or = NA_real_)), "log_or")
+})
+
+test_that("max_reps is a whole number no smaller than reps", {
+  expect_error(analysis_plan("y", "ATE", reps = 50, max_reps = 40), "max_reps >= reps")
+  expect_error(analysis_plan("y", "ATE", max_reps = 300.5), "`max_reps`")
+  expect_error(analysis_plan("y", "ATE", max_reps = NA), "`max_reps`")
+  expect_identical(analysis_plan("y", "ATE", reps = 50, max_reps = 50)$max_reps, 50L)
 })

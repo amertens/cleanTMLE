@@ -21,7 +21,10 @@ fast_plan <- function(...) {
                                      truncation = c(0.01, 0.05)),
                    trim_band = c(0.05, 0.95),
                    K = 2L, V = 2L, reps = 20L, seed = 11L)
-  do.call(analysis_plan, utils::modifyList(defaults, list(...)))
+  args <- utils::modifyList(defaults, list(...))
+  # No extra repetitions unless a test asks for them, so tests stay cheap.
+  if (is.null(args$max_reps)) args$max_reps <- args$reps
+  do.call(analysis_plan, args)
 }
 
 fixture_pipeline <- function(strength = 0.8, n = 400, nc = c(nc_visit = "care use"),
