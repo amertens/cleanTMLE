@@ -4,9 +4,9 @@
 \name{cleanTMLE-package}
 \alias{cleanTMLE}
 \alias{cleanTMLE-package}
-\title{cleanTMLE: Software Layer for an Outcome-Blind Staged Targeted-Learning Workflow}
+\title{cleanTMLE: Outcome-Blind Design and Estimand Selection for Targeted Learning}
 \description{
-Software infrastructure for an outcome-blind staged workflow for targeted-learning observational causal analyses on binary point-treatment studies. The package implements the staged-analysis framework of Muntner et al. (2024) by recording prespecification, design diagnostics, and a structured pre-outcome decision before the treatment-outcome association is examined. The tested scope covers binary point exposure, binary outcome, and the marginal risk-difference estimand, with three estimator families: propensity- score matching, stabilised inverse-probability-of-treatment weighting, and targeted minimum loss-based estimation (TMLE), including simulation-selected TMLE via SuperLearner ensemble learning. The first methodological contribution is an outcome-blind plasmode candidate-selection procedure in which nuisance-parameter strategies are evaluated by oracle coverage on simulated outcomes before real outcome access. The second is a prespecified data-quality stress test ('stress_test') that evaluates each candidate under covariate- missingness, treatment-misclassification, outcome-misclassification, unmeasured-confounding, and near-positivity scenarios, producing a degradation gradient on the same performance scale as the baseline plasmode metrics and, when decision thresholds were declared at lock creation, a locked verdict with tipping points. Together, the two screens produce a pre-outcome study dossier that a review team can examine before authorising the primary analysis. Time-to-event helpers (IPW risk curves, g-computation, augmented IPW, IPW hazard ratios, survival TMLE via 'survtmle', and longitudinal TMLE via 'lmtp') are experimental extensions outside the tested scope.
+Declares an analysis plan, locks the design data without the outcome, checks by outcome-free plasmode simulation which estimands the design can deliver and which targeted maximum likelihood candidate to use for each, records that decision in a hashed dossier, and only then admits the outcome for estimation. Weighting and matching are offered as comparators.
 }
 \seealso{
 Useful links:

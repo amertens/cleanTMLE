@@ -2,93 +2,33 @@
 % Please edit documentation in R/estimate_effect.R
 \name{estimate_effect}
 \alias{estimate_effect}
-\title{Estimate a Treatment Effect for a Declared Estimand}
+\title{Estimate the effect after unblinding}
 \usage{
 estimate_effect(
-  lock,
-  ps_fit = NULL,
-  estimand = c("ATE", "trimmed_ATE", "ATT", "ATO", "matched_ATT"),
-  estimator = c("tmle", "iptw", "match", "crude"),
-  missing = c("auto", "ipcw", "complete_case"),
-  family = "binomial",
-  sl_library = NULL,
-  trim_levels = c(0.05, 0.1),
-  trim_rule = c("fixed", "crump"),
-  gbound = NULL,
-  cv_folds = 10L,
-  prescreen_g = FALSE,
-  seed = NULL,
-  caliper_sd = 0.2,
-  return_steps = FALSE,
-  allow_outcome_access = FALSE,
-  verbose = FALSE
+  unblinded,
+  method = c("tmle", "weighting", "matching"),
+  estimand = NULL
 )
 }
 \arguments{
-\item{lock}{A \code{cleanroom_lock}.}
+\item{unblinded}{A \code{\link[=unblind]{unblind()}} result.}
 
-\item{ps_fit}{A \code{ps_fit} from \code{\link[=fit_ps]{fit_ps()}}; required for every estimand
-except a plain \code{estimator = "crude"}, and optional for \code{"ATE"} with
-\code{estimator = "tmle"} (tmle::tmle fits its own g there).}
+\item{method}{\code{"tmle"}, \code{"weighting"} or \code{"matching"}.}
 
-\item{estimand}{One of \code{"ATE"}, \code{"trimmed_ATE"}, \code{"ATT"}, \code{"ATO"},
-\code{"matched_ATT"}.}
-
-\item{estimator}{For \code{estimand = "ATE"} only: \code{"tmle"} (default),
-\code{"iptw"}, \code{"match"}, or \code{"crude"}.}
-
-\item{missing}{How missing outcomes are handled for the ATE:
-\code{"auto"} (IPCW when the outcome has missing values, else complete
-case), \code{"ipcw"}, or \code{"complete_case"}. The ATT is always complete
-case by construction; see \code{\link[=run_estimand_ladder]{run_estimand_ladder()}} for why.}
-
-\item{family}{\code{"binomial"} or \code{"gaussian"}.}
-
-\item{sl_library}{SuperLearner library for the nuisance models; defaults
-to the ladder candidate's library, else the lock library.}
-
-\item{trim_levels}{Trim levels for \code{estimand = "trimmed_ATE"}, tried in
-order. Default \code{c(0.05, 0.10)}.}
-
-\item{trim_rule}{\code{"fixed"} or \code{"crump"} for the trimmed ATE.}
-
-\item{gbound, cv_folds, prescreen_g, seed, caliper_sd}{Passed to the
-underlying machinery; see the package vignette.}
-
-\item{return_steps}{For \verb{estimand = "ATE", estimator = "tmle", missing = "complete_case"}: also return the modular four-step pieces
-(treatment mechanism, outcome mechanism, targeting, extraction) for
-teaching and diagnostics. Default FALSE.}
-
-\item{allow_outcome_access}{Bypass the outcome guard. Default FALSE.}
-
-\item{verbose}{Print progress. Default FALSE.}
+\item{estimand}{Optional; any other declared estimand is allowed and is
+labeled as not the prespecified primary.}
 }
 \value{
-An effect-estimate object (class depends on the machinery;
-all inherit \code{cr_result}) with \code{estimate}, \code{se}, \code{ci_lower},
-\code{ci_upper}, \code{p_value}, \code{n}, the named \code{estimand}, and the
-implausibility flags.
+A \code{cr_estimate}.
 }
 \description{
-The single estimation entry point. Choose the estimand; the function
-chooses the right machinery: TMLE (optionally IPCW via the censoring
-mechanism) for the ATE, TMLE on the common-support subset with a
-propensity refit for the trimmed ATE, the complete-case ATT that never
-goes through the censoring mechanism, the augmented overlap-weighted
-estimator for the ATO, and TMLE on a caliper-matched cohort for the
-matched ATT. For the ATE, \code{estimator} selects simpler comparison
-estimators (stabilised IPTW, matched difference, crude difference) for
-side-by-side reporting. Every result carries its estimand label and the
-implausibility flags; support verdicts travel with results produced
-through \code{\link[=run_estimand_ladder]{run_estimand_ladder()}}.
-}
-\examples{
-\dontrun{
-lock <- create_analysis_lock(dat, "treatment", "outcome", covs)
-ps   <- fit_ps(lock, "glm")
-estimate_effect(lock, ps, estimand = "ATT")
-estimate_effect(lock, ps, estimand = "ATO")
-estimate_effect(lock, ps, estimand = "trimmed_ATE", trim_rule = "crump")
-estimate_effect(lock, estimand = "ATE", missing = "ipcw")
-}
+Reads the estimand and the candidate from the dossier. \code{method = "tmle"}
+runs the stress-tested candidate with the same fitter the simulation
+used; \code{"weighting"} (WeightIt) and \code{"matching"} (MatchIt, ATT only) are
+comparators that were not stress-tested. A time-to-event plan runs
+\code{concrete}. The \code{unblind()} result is rechecked first: the lock, the
+dossier, the unblind hash and the dossier's gate (an override is needed
+when no estimand is feasible or the negative-control verdict is STOP).
+For \code{"trimmed_ATE"}, weighting trims on the same cross-fitted propensity
+score as the TMLE, so both target the same population.
 }

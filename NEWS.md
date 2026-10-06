@@ -1,3 +1,54 @@
+# cleanTMLE 0.4.0
+
+Breaking rebuild; 0.3.0 remains at the tag `v0.3.0`.
+
+* Twelve exports: `analysis_plan()`, `create_analysis_lock()`,
+  `assess_design()`, `simulate_design()`, `negative_control_ladder()`,
+  `design_report()`, `unblind()`, `estimate_effect()`,
+  `export_design_log()`, `save_lock()`, `load_lock()`, `verify_lock()`.
+* The simulation and the final analysis share one fitter, so the candidate
+  the simulation selects is the one that is estimated, truncation included.
+  In the simulation the fitter assigns the copies of a bootstrapped
+  observation to a single cross-fitting fold, so copies never straddle a
+  training and a validation fold.
+* The simulated world draws treatment, builds its outcome surfaces and
+  computes its true values from a single fit of the propensity score on all
+  design rows, a function of the covariates only. The cross-fitted score
+  still grades overlap, effective sample sizes, balance and the edge check;
+  drawing treatment from it would have made each row's treatment depend on
+  its cross-fitting fold, a confounder the estimators cannot see.
+* The negative-control verdict that gates `unblind()` is the full cohort's,
+  the population `estimate_effect()` analyses. Restricted rungs remain in
+  the ladder as diagnostics and can no longer turn a STOP into FLAG or GO.
+  An estimated control with a non-finite estimate or interval counts as
+  failed.
+* `unblind()` checks the outcome coding (binary 0/1; time > 0 and event
+  codes that are whole numbers >= 0) and returns an `unblind_hash` over the
+  dossier hash, the approval and the outcomes. `estimate_effect()` and
+  `export_design_log()` recheck that hash, the lock, the dossier and the
+  dossier's gate, so an edited or hand-built object past a STOP or an
+  infeasible design is refused without a written override.
+* Weighting's `trimmed_ATE` trims on the same cross-fitted `ps_library`
+  score as the TMLE, so both methods target the same population.
+* A fit with a non-finite estimate or interval is a failed repetition in
+  the simulation, and `summary()` returns no E-value when a risk is zero or
+  not finite.
+* ATT targeting uses the tmle package, which refits the propensity score
+  with a logistic model when many controls fall below the smallest treated
+  score.
+* The lock never holds the outcome; `unblind()` admits it after checking
+  the dossier's hash.
+* Outcome surfaces come from a declared family, never from the outcome.
+* Cross-fitted super learner with its own xgboost learner (`hist`, best
+  round on the inner folds) and an edge check on every tuned grid.
+* Weighting (WeightIt) and matching (MatchIt) are comparators;
+  time-to-event outcomes run through `concrete`.
+* New dataset `cr_example`: a simulated cohort of 1,500 patients with the
+  design data and the outcome in separate data frames.
+* Removed: the data-quality threat families, the identify/estimate risk
+  families, the table helpers, the governance notes, the SuperLearner
+  wrappers and both 0.3.0 vignettes (rewritten in a later release).
+
 # cleanTMLE 0.3.0
 
 The workflow surface is sixteen exported verbs; the superseded

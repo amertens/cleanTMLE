@@ -1,194 +1,195 @@
-# estimate_effect(): the one estimation front door.
-#
-# Every point-treatment effect the package can estimate is reached from here
-# by two arguments: which estimand (ATE, trimmed ATE, ATT, ATO, matched ATT)
-# and, for the ATE, which estimator family (TMLE, IPTW, matching, crude).
-# The former sibling entry points (run_att_tmle, estimate_ato,
-# run_trimmed_tmle, run_ipcw_tmle, run_iptw_workflow, run_match_workflow,
-# run_crude_workflow, run_matched_tmle) are internal workers behind it, and
-# the implausibility guard is attached to every result.
+.new_estimate <- function(estimand, prespecified, method, candidate, r, n, stress_tested,
+                          note = NA_character_) {
+  structure(list(
+    estimand = estimand, prespecified = prespecified, method = method,
+    candidate = candidate, estimate = r$estimate, se = r$se,
+    ci_lower = r$ci_lower, ci_upper = r$ci_upper,
+    p_value = 2 * stats::pnorm(-abs(r$estimate / r$se)), n = n,
+    n_population = r$n_population, risk1 = r$risk1, risk0 = r$risk0,
+    implausible = isTRUE(r$implausible), implausible_reason = r$implausible_reason %||% NA_character_,
+    stress_tested = stress_tested, note = note), class = "cr_estimate")
+}
 
-#' Estimate a Treatment Effect for a Declared Estimand
+.no_candidate_message <- function(estimand, dec) {
+  sprintf(paste0("The dossier rated %s %s; only feasible estimands carry a stress-tested ",
+                 "candidate. Use a comparator method or another estimand."),
+          estimand, dec$status[[estimand]] %||% "not assessed")
+}
+
+.syntactic <- function(X) {
+  colnames(X) <- make.names(colnames(X), unique = TRUE)
+  X
+}
+
+.estimate_weighting <- function(X, A, Y, estimand, plan, K, fold_seed) {
+  Xs <- .syntactic(X)
+  df <- data.frame(.Y = Y, .A = A, Xs)
+  f <- stats::reformulate(colnames(Xs), response = ".A")
+  est <- estimand
+  if (estimand == "trimmed_ATE") {
+    # The trimmed population is the one the TMLE path targets: the plan's
+    # cross-fitted ps_library score on the analysed rows, with the dossier's
+    # folds. The weights inside it are still WeightIt's logistic model.
+    band <- plan$trim_band
+    ps <- .fit_g(X, A, plan$ps_library, .make_folds(nrow(X), K, fold_seed), plan$V,
+                 fold_seed)$g
+    df <- df[ps >= band[1] & ps <= band[2], , drop = FALSE]
+    est <- "ATE"
+  }
+  w <- WeightIt::weightit(f, data = df, estimand = est, method = "glm")
+  fit <- WeightIt::lm_weightit(.Y ~ .A, data = df, weightit = w)
+  b <- unname(stats::coef(fit)[".A"])
+  se <- sqrt(stats::vcov(fit)[".A", ".A"])
+  r0 <- unname(stats::coef(fit)["(Intercept)"])
+  gd <- .implausibility_check(b, df$.Y, df$.A)
+  list(estimate = b, se = se, ci_lower = b - 1.96 * se, ci_upper = b + 1.96 * se,
+       n_population = if (est == "ATT") sum(df$.A == 1) else nrow(df),
+       risk1 = r0 + b, risk0 = r0, implausible = gd$implausible, implausible_reason = gd$reason)
+}
+
+.estimate_matching <- function(X, A, Y, estimand) {
+  if (estimand != "ATT") stop("Matching estimates the ATT only.", call. = FALSE)
+  if (!requireNamespace("MatchIt", quietly = TRUE))
+    stop("method = 'matching' needs the MatchIt package.", call. = FALSE)
+  Xs <- .syntactic(X)
+  df <- data.frame(.Y = Y, .A = A, Xs)
+  f <- stats::reformulate(colnames(Xs), response = ".A")
+  # The unmatched treated units are reported through n_population and the
+  # note, so MatchIt's own warning about them is not repeated.
+  m <- withCallingHandlers(
+    MatchIt::matchit(f, data = df, method = "nearest", estimand = "ATT",
+                     distance = "glm", link = "linear.logit", caliper = 0.2,
+                     std.caliper = TRUE),
+    warning = function(w) {
+      if (grepl("Fewer control units than treated units", conditionMessage(w), fixed = TRUE))
+        invokeRestart("muffleWarning")
+    })
+  md <- MatchIt::match.data(m)
+  fit <- WeightIt::lm_weightit(.Y ~ .A, data = md, weights = weights, cluster = ~subclass)
+  b <- unname(stats::coef(fit)[".A"])
+  se <- sqrt(stats::vcov(fit)[".A", ".A"])
+  r0 <- unname(stats::coef(fit)["(Intercept)"])
+  gd <- .implausibility_check(b, md$.Y, md$.A)
+  list(estimate = b, se = se, ci_lower = b - 1.96 * se, ci_upper = b + 1.96 * se,
+       n_population = sum(md$.A == 1), n_treated = sum(A == 1), risk1 = r0 + b, risk0 = r0,
+       implausible = gd$implausible, implausible_reason = gd$reason)
+}
+
+.sl_equivalents <- function(learners) {
+  unname(c(glm = "SL.glm", glmnet = "SL.glmnet", earth = "SL.earth", nnet = "SL.nnet",
+           xgboost = "SL.xgboost")[learners])
+}
+
+.estimate_tte <- function(ub, estimand, candidate) {
+  for (pkg in c("concrete", "data.table", "SuperLearner"))
+    if (!requireNamespace(pkg, quietly = TRUE))
+      stop("Time-to-event estimation needs the ", pkg, " package.", call. = FALSE)
+  lock <- ub$lock
+  p <- lock$plan
+  X <- .syntactic(.design_matrix(lock$data, lock$covariates))
+  A <- as.integer(lock$data[[lock$treatment]])
+  tt <- ub$outcomes[[p$outcome[["time"]]]]
+  ev <- ub$outcomes[[p$outcome[["event"]]]]
+  keep <- !is.na(tt) & !is.na(ev)
+  if (estimand == "trimmed_ATE") {
+    folds <- .make_folds(nrow(X), p$K, p$seed)
+    g <- .fit_g(X, A, p$ps_library, folds, p$V, p$seed)$g
+    keep <- keep & g >= p$trim_band[1] & g <= p$trim_band[2]
+  }
+  # Keep the user's own column names: the plan's hazard formulas refer to them.
+  df <- data.frame(lock$data[[lock$id]], tt, ev, A, X)
+  names(df)[1:4] <- c(lock$id, p$outcome[["time"]], p$outcome[["event"]], lock$treatment)
+  dt <- data.table::as.data.table(df[keep, , drop = FALSE])
+  model <- c(stats::setNames(list(.sl_equivalents(p$ps_library)), lock$treatment), p$hazards)
+  args <- concrete::formatArguments(
+    DataTable = dt, EventTime = p$outcome[["time"]], EventType = p$outcome[["event"]],
+    Treatment = lock$treatment, ID = lock$id, TargetTime = p$target_time,
+    Intervention = concrete::makeITT(), Model = model,
+    MinNuisance = candidate$truncation, Verbose = FALSE)
+  # concrete reports its progress on the console even with Verbose = FALSE.
+  est <- NULL
+  utils::capture.output(suppressMessages(est <- concrete::doConcrete(args)))
+  out <- as.data.frame(concrete::getOutput(est, Estimand = c("Risk", "RD"),
+                                           Simultaneous = FALSE))
+  out <- out[out$Estimator == "tmle" & out$Event == 1, , drop = FALSE]
+  rd <- out[out$Estimand == "Risk Diff", , drop = FALSE][1, ]
+  r1 <- out[out$Estimand == "Abs Risk" & out$Intervention == "A=1", "Pt Est"][1]
+  r0 <- out[out$Estimand == "Abs Risk" & out$Intervention == "A=0", "Pt Est"][1]
+  list(estimate = rd[["Pt Est"]], se = rd[["se"]], ci_lower = rd[["CI Low"]],
+       ci_upper = rd[["CI Hi"]], n_population = sum(keep), risk1 = r1, risk0 = r0,
+       implausible = FALSE, implausible_reason = NA_character_)
+}
+
+#' Estimate the effect after unblinding
 #'
-#' The single estimation entry point. Choose the estimand; the function
-#' chooses the right machinery: TMLE (optionally IPCW via the censoring
-#' mechanism) for the ATE, TMLE on the common-support subset with a
-#' propensity refit for the trimmed ATE, the complete-case ATT that never
-#' goes through the censoring mechanism, the augmented overlap-weighted
-#' estimator for the ATO, and TMLE on a caliper-matched cohort for the
-#' matched ATT. For the ATE, `estimator` selects simpler comparison
-#' estimators (stabilised IPTW, matched difference, crude difference) for
-#' side-by-side reporting. Every result carries its estimand label and the
-#' implausibility flags; support verdicts travel with results produced
-#' through [run_estimand_ladder()].
+#' Reads the estimand and the candidate from the dossier. `method = "tmle"`
+#' runs the stress-tested candidate with the same fitter the simulation
+#' used; `"weighting"` (WeightIt) and `"matching"` (MatchIt, ATT only) are
+#' comparators that were not stress-tested. A time-to-event plan runs
+#' `concrete`. The `unblind()` result is rechecked first: the lock, the
+#' dossier, the unblind hash and the dossier's gate (an override is needed
+#' when no estimand is feasible or the negative-control verdict is STOP).
+#' For `"trimmed_ATE"`, weighting trims on the same cross-fitted propensity
+#' score as the TMLE, so both target the same population.
 #'
-#' @param lock A `cleanroom_lock`.
-#' @param ps_fit A `ps_fit` from [fit_ps()]; required for every estimand
-#'   except a plain `estimator = "crude"`, and optional for `"ATE"` with
-#'   `estimator = "tmle"` (tmle::tmle fits its own g there).
-#' @param estimand One of `"ATE"`, `"trimmed_ATE"`, `"ATT"`, `"ATO"`,
-#'   `"matched_ATT"`.
-#' @param estimator For `estimand = "ATE"` only: `"tmle"` (default),
-#'   `"iptw"`, `"match"`, or `"crude"`.
-#' @param missing How missing outcomes are handled for the ATE:
-#'   `"auto"` (IPCW when the outcome has missing values, else complete
-#'   case), `"ipcw"`, or `"complete_case"`. The ATT is always complete
-#'   case by construction; see [run_estimand_ladder()] for why.
-#' @param family `"binomial"` or `"gaussian"`.
-#' @param sl_library SuperLearner library for the nuisance models; defaults
-#'   to the ladder candidate's library, else the lock library.
-#' @param trim_levels Trim levels for `estimand = "trimmed_ATE"`, tried in
-#'   order. Default `c(0.05, 0.10)`.
-#' @param trim_rule `"fixed"` or `"crump"` for the trimmed ATE.
-#' @param gbound,cv_folds,prescreen_g,seed,caliper_sd Passed to the
-#'   underlying machinery; see the package vignette.
-#' @param return_steps For `estimand = "ATE", estimator = "tmle",
-#'   missing = "complete_case"`: also return the modular four-step pieces
-#'   (treatment mechanism, outcome mechanism, targeting, extraction) for
-#'   teaching and diagnostics. Default FALSE.
-#' @param allow_outcome_access Bypass the outcome guard. Default FALSE.
-#' @param verbose Print progress. Default FALSE.
-#' @return An effect-estimate object (class depends on the machinery;
-#'   all inherit `cr_result`) with `estimate`, `se`, `ci_lower`,
-#'   `ci_upper`, `p_value`, `n`, the named `estimand`, and the
-#'   implausibility flags.
-#' @examples
-#' \dontrun{
-#' lock <- create_analysis_lock(dat, "treatment", "outcome", covs)
-#' ps   <- fit_ps(lock, "glm")
-#' estimate_effect(lock, ps, estimand = "ATT")
-#' estimate_effect(lock, ps, estimand = "ATO")
-#' estimate_effect(lock, ps, estimand = "trimmed_ATE", trim_rule = "crump")
-#' estimate_effect(lock, estimand = "ATE", missing = "ipcw")
-#' }
+#' @param unblinded A [unblind()] result.
+#' @param method `"tmle"`, `"weighting"` or `"matching"`.
+#' @param estimand Optional; any other declared estimand is allowed and is
+#'   labeled as not the prespecified primary.
+#' @return A `cr_estimate`.
 #' @export
-estimate_effect <- function(lock, ps_fit = NULL,
-                            estimand = c("ATE", "trimmed_ATE", "ATT",
-                                         "ATO", "matched_ATT"),
-                            estimator = c("tmle", "iptw", "match", "crude"),
-                            missing = c("auto", "ipcw", "complete_case"),
-                            family = "binomial",
-                            sl_library = NULL,
-                            trim_levels = c(0.05, 0.10),
-                            trim_rule = c("fixed", "crump"),
-                            gbound = NULL,
-                            cv_folds = 10L,
-                            prescreen_g = FALSE,
-                            seed = NULL,
-                            caliper_sd = 0.2,
-                            return_steps = FALSE,
-                            allow_outcome_access = FALSE,
-                            verbose = FALSE) {
-  if (!inherits(lock, "cleanroom_lock"))
-    stop("`lock` must be a cleanroom_lock object.", call. = FALSE)
-  estimand  <- match.arg(estimand)
-  estimator <- match.arg(estimator)
-  missing   <- match.arg(missing)
-  trim_rule <- match.arg(trim_rule)
-  if (is.null(seed)) seed <- lock$seed
-  Y <- .outcome_vector(lock)
-  use_ipcw <- switch(missing, auto = isTRUE(anyNA(Y)), ipcw = TRUE,
-                     complete_case = FALSE)
-  need_ps <- estimand != "ATE" || estimator %in% c("iptw", "match")
-  if (need_ps && !inherits(ps_fit, "ps_fit"))
-    stop("estimand '", estimand, "' (or estimator '", estimator,
-         "') needs a ps_fit from fit_ps().", call. = FALSE)
+estimate_effect <- function(unblinded, method = c("tmle", "weighting", "matching"),
+                            estimand = NULL) {
+  .verify_unblinded(unblinded)
+  method <- match.arg(method)
+  lock <- unblinded$lock
+  d <- unblinded$dossier
+  p <- lock$plan
+  dec <- d$decision
+  estimand <- estimand %||% dec$primary
+  if (is.null(estimand) || is.na(estimand))
+    stop("The dossier has no primary estimand; pass `estimand =`.", call. = FALSE)
+  if (!estimand %in% p$estimands)
+    stop("`estimand` must be one the plan declared: ",
+         paste(p$estimands, collapse = ", "), ".", call. = FALSE)
+  prespecified <- identical(estimand, dec$primary)
+  note <- if (prespecified) NA_character_ else
+    "This estimand is not the prespecified primary."
+  candidate <- dec$candidates[[estimand]]
 
-  if (estimand == "ATT") {
-    if (isTRUE(use_ipcw) && identical(missing, "ipcw"))
-      warning("The ATT is estimated complete case by construction; under ",
-              "the censoring mechanism it loses double robustness. ",
-              "Ignoring missing = 'ipcw'.", call. = FALSE)
-    return(run_att_tmle(lock, family = family, sl_library = sl_library,
-                        gbound = gbound, cv_folds = cv_folds,
-                        prescreen_g = prescreen_g, seed = seed,
-                        allow_outcome_access = allow_outcome_access))
-  }
-  if (estimand == "ATO")
-    return(estimate_ato(lock, ps_fit, sl_library = sl_library,
-                        family = family,
-                        allow_outcome_access = allow_outcome_access))
-  if (estimand == "trimmed_ATE")
-    return(run_trimmed_tmle(lock, ps_fit, levels = trim_levels,
-                            rule = trim_rule, family = family,
-                            sl_library = sl_library, gbound = gbound,
-                            cv_folds = cv_folds, prescreen_g = prescreen_g,
-                            use_ipcw = use_ipcw, seed = seed,
-                            allow_outcome_access = allow_outcome_access,
-                            verbose = verbose))
-  if (estimand == "matched_ATT") {
-    g <- pmin(pmax(as.numeric(ps_fit$ps_raw %||% ps_fit$ps), 1e-6), 1 - 1e-6)
-    A <- as.integer(lock$data[[lock$treatment]])
-    withr::local_seed(seed)
-    mm <- .greedy_caliper_match(g, A, caliper_sd = caliper_sd)
-    if (length(mm$treated) < 10L)
-      stop("matched_ATT: fewer than 10 matched pairs.", call. = FALSE)
-    return(run_matched_tmle(lock, ps_fit,
-                            subset_idx = sort(c(mm$treated, mm$control)),
-                            sl_library = sl_library,
-                            override_clean_room = allow_outcome_access))
+  if (p$outcome_type == "tte") {
+    if (method != "tmle")
+      stop("Time-to-event outcomes are estimated with concrete (method = 'tmle').",
+           call. = FALSE)
+    if (is.null(candidate)) stop(.no_candidate_message(estimand, dec), call. = FALSE)
+    r <- .estimate_tte(unblinded, estimand, candidate)
+    return(.new_estimate(estimand, prespecified, "concrete", candidate$id, r,
+                         n = r$n_population, stress_tested = FALSE,
+                         note = paste(c(note, "Support and truncation were stress-tested; the hazard models were not."),
+                                      collapse = " ")))
   }
 
-  # estimand == "ATE"
-  if (estimator == "crude")
-    return(run_crude_workflow(lock,
-                              allow_outcome_access = allow_outcome_access))
-  if (estimator == "iptw")
-    return(run_iptw_workflow(lock, ps_fit,
-                             allow_outcome_access = allow_outcome_access))
-  if (estimator == "match")
-    return(run_match_workflow(lock, ps_fit,
-                              allow_outcome_access = allow_outcome_access))
-  # TMLE.
-  if (use_ipcw)
-    return(run_ipcw_tmle(lock, ps_fit = ps_fit,
-                         allow_outcome_access = allow_outcome_access))
-  if (isTRUE(return_steps)) {
-    g_fit <- fit_tmle_treatment_mechanism(lock, ps_fit = ps_fit)
-    q_fit <- fit_tmle_outcome_mechanism(lock, g_fit,
-                                        sl_library = sl_library,
-                                        allow_outcome_access =
-                                          allow_outcome_access)
-    upd <- run_tmle_targeting_step(g_fit, q_fit)
-    est <- extract_tmle_estimate(upd)
-    est$steps <- list(treatment = g_fit, outcome = q_fit, targeting = upd)
-    guard <- implausibility_check(est$estimates$ATE$estimate,
-                                  as.numeric(Y),
-                                  as.numeric(lock$data[[lock$treatment]]),
-                                  family)
-    est$implausible <- guard$implausible
-    est$implausible_reason <- guard$implausible_reason
-    est$crude_diff <- guard$crude_diff
-    est$estimand <- "ATE (complete case)"
-    return(est)
+  X <- .design_matrix(lock$data, lock$covariates)
+  A <- as.integer(lock$data[[lock$treatment]])
+  Y <- unblinded$outcomes[[p$outcome]]
+  cc <- !is.na(Y)
+  X <- X[cc, , drop = FALSE]; A <- A[cc]; Y <- Y[cc]
+  if (method == "tmle") {
+    if (is.null(candidate)) stop(.no_candidate_message(estimand, dec), call. = FALSE)
+    folds <- .make_folds(length(Y), dec$K, dec$fold_seed)
+    r <- fit_candidate(X, A, Y, estimand, candidate, p, folds, dec$fold_seed)
+    if (isTRUE(r$failed)) stop("Estimation failed: ", r$message, call. = FALSE)
+    return(.new_estimate(estimand, prespecified, "tmle", candidate$id,
+                         as.list(r[1, , drop = FALSE]), n = length(Y),
+                         stress_tested = TRUE, note = note))
   }
-  .check_outcome_access(lock, allow_outcome_access,
-                        caller = "estimate_effect")
-  args <- .tmle_delegate_args(lock, family = family, use_delta = FALSE,
-                              sl_library = sl_library, gbound = gbound,
-                              cv_folds = cv_folds,
-                              prescreen_g = prescreen_g)
-  if (!requireNamespace("tmle", quietly = TRUE))
-    stop("Package 'tmle' is required.", call. = FALSE)
-  withr::local_seed(seed)
-  f <- do.call(tmle::tmle, args)
-  est <- f$estimates$ATE
-  guard <- implausibility_check(unname(est$psi), args$Y, args$A, family)
-  out <- list(estimate = unname(est$psi), se = unname(sqrt(est$var.psi)),
-              ci_lower = unname(est$CI[1]), ci_upper = unname(est$CI[2]),
-              p_value = unname(est$pvalue),
-              estimand = "ATE (complete case)",
-              n = length(args$Y),
-              risk_treated = tryCatch(unname(f$estimates$EY1$psi),
-                                      error = function(e) NA_real_),
-              risk_control = tryCatch(unname(f$estimates$EY0$psi),
-                                      error = function(e) NA_real_),
-              crude_diff = guard$crude_diff,
-              implausible = guard$implausible,
-              implausible_reason = guard$implausible_reason,
-              tmle_fit = f, treatment = lock$treatment,
-              outcome = lock$outcome, type = "ate_tmle",
-              call = match.call())
-  class(out) <- c("tmle_fit", "cr_result")
-  out
+  r <- if (method == "weighting") .estimate_weighting(X, A, Y, estimand, p, dec$K, dec$fold_seed) else
+    .estimate_matching(X, A, Y, estimand)
+  unmatched <- if (!is.null(r$n_treated) && r$n_population < r$n_treated)
+    paste0("Only ", r$n_population, " of ", r$n_treated,
+           " treated units found a match within the caliper.") else NULL
+  .new_estimate(estimand, prespecified, method, NA_character_, r, n = length(Y),
+                stress_tested = FALSE,
+                note = paste(c(note, unmatched, "Comparator; not stress-tested."),
+                             collapse = " "))
 }
