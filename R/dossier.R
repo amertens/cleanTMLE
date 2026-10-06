@@ -87,14 +87,23 @@ design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
 .render_dossier <- function(d, file) {
   if (!requireNamespace("quarto", quietly = TRUE))
     stop("Rendering the dossier needs the quarto package.", call. = FALSE)
+  # Resolve the output path against the caller's working directory before
+  # rendering changes it.
+  file <- normalizePath(file, winslash = "/", mustWork = FALSE)
   work <- tempfile("dossier")
   dir.create(work)
-  file.copy(system.file("templates", "dossier.qmd", package = "cleanTMLE"), work)
-  rds <- file.path(work, "dossier.rds")
+  if (!isTRUE(file.copy(system.file("templates", "dossier.qmd", package = "cleanTMLE"),
+                        work)))
+    stop("Could not copy the dossier template.", call. = FALSE)
+  rds <- normalizePath(file.path(work, "dossier.rds"), winslash = "/", mustWork = FALSE)
   saveRDS(d, rds)
   fmt <- if (grepl("\\.docx$", file, ignore.case = TRUE)) "docx" else "html"
-  quarto::quarto_render(file.path(work, "dossier.qmd"), output_format = fmt,
-                        execute_params = list(dossier = rds), quiet = TRUE)
+  # Render from inside the work directory with a bare input name: given an
+  # absolute input path, Quarto can hand its R process a relative path that
+  # does not resolve (seen with a deep working directory and a nested TMPDIR).
+  withr::with_dir(work, quarto::quarto_render(
+    "dossier.qmd", output_format = fmt,
+    execute_params = list(dossier = rds), quiet = TRUE))
   out <- file.path(work, paste0("dossier.", fmt))
   if (!file.exists(out))
     stop("Quarto did not produce the rendered dossier.", call. = FALSE)
