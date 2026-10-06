@@ -25,9 +25,13 @@ each row's treatment depend on its fold, which is not a covariate. An
 estimand is feasible when some candidate meets the bias and coverage
 tolerances on every surface, judged on the point estimates. A cell whose
 95\% interval for bias, or Wilson 95\% interval for coverage, contains its
-tolerance is unresolved; unresolved cells of the estimands at or above the
-primary get further batches of \code{reps} repetitions, up to the plan's
-\code{max_reps}. Repetitions run in parallel through
+tolerance is unresolved; the unresolved cells that can change the decision
+of an estimand at or above the primary (those of its selected candidate,
+and of any candidate whose failures are all unresolved) get further batches
+of \code{reps} repetitions, up to the plan's \code{max_reps}. Because the intervals
+are recomputed after each batch, "resolved" is a stopping label, not a
+formal 95\% statement; the decisions themselves use the point estimates.
+Repetitions run in parallel through
 \code{future.apply} when a parallel \code{future} plan is set and cleanTMLE is
 installed (not only loaded with \code{devtools::load_all()}).
 }

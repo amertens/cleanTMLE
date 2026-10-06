@@ -155,15 +155,45 @@
   m
 }
 
+# One row per candidate of one estimand's metrics.
+.candidate_summary <- function(me) {
+  do.call(rbind, lapply(split(me, me$candidate), function(d) data.frame(
+    candidate = d$candidate[1], library = d$library[1], truncation = d$truncation[1],
+    pass_all = all(d$pass),
+    # Fails somewhere, but only on unresolved cells: it could still pass everywhere.
+    could_flip = !all(d$pass) && all(d$pass | d$unresolved),
+    worst_rmse = max(d$rmse), stringsAsFactors = FALSE)))
+}
+
+# The candidates whose unresolved cells can change an estimand's decision
+# (its status or its selected candidate): the selected candidate, or every
+# candidate that passes everywhere when the plan supplies its own `select`
+# rule, and every candidate whose failures are all unresolved. A candidate
+# with a resolved failure cannot pass, so its cells cannot change anything.
+.decision_candidates <- function(cs, selected, plan) {
+  chosen <- if (is.na(selected)) character() else
+    if (is.null(plan$select)) selected else cs$candidate[cs$pass_all]
+  union(chosen, cs$candidate[cs$could_flip])
+}
+
+# Logical over the rows of `metrics`: the unresolved cells that can change
+# their estimand's decision. verdict$unresolved, the extension and the
+# decision note all use this one set.
+.decision_cells <- function(metrics, verdict, plan) {
+  out <- logical(nrow(metrics))
+  for (i in seq_len(nrow(verdict))) {
+    k <- metrics$estimand == verdict$estimand[i]
+    cs <- .candidate_summary(metrics[k, , drop = FALSE])
+    cand <- .decision_candidates(cs, verdict$selected[i], plan)
+    out <- out | (k & metrics$unresolved & metrics$candidate %in% cand)
+  }
+  out
+}
+
 .sim_verdict <- function(metrics, plan) {
   do.call(rbind, lapply(plan$estimands, function(e) {
     me <- metrics[metrics$estimand == e, , drop = FALSE]
-    cs <- do.call(rbind, lapply(split(me, me$candidate), function(d) data.frame(
-      candidate = d$candidate[1], library = d$library[1], truncation = d$truncation[1],
-      pass_all = all(d$pass), unresolved_any = any(d$unresolved),
-      # Fails somewhere, but only on unresolved cells: it could still turn feasible.
-      could_flip = !all(d$pass) && all(d$pass | d$unresolved),
-      worst_rmse = max(d$rmse), stringsAsFactors = FALSE)))
+    cs <- .candidate_summary(me)
     pool <- cs[cs$pass_all, , drop = FALSE]
     status <- if (nrow(pool)) "feasible" else "infeasible"
     sel <- NA_character_
@@ -175,10 +205,11 @@
              call. = FALSE)
     }
     row <- pool[match(sel, pool$candidate), , drop = FALSE]
+    cand <- .decision_candidates(cs, sel, plan)
     data.frame(estimand = e, status = status, selected = sel,
                library = if (is.na(sel)) NA_character_ else row$library,
                truncation = if (is.na(sel)) NA_real_ else row$truncation,
-               unresolved = if (is.na(sel)) any(cs$could_flip) else row$unresolved_any,
+               unresolved = any(me$unresolved & me$candidate %in% cand),
                stringsAsFactors = FALSE)
   }))
 }
@@ -195,9 +226,13 @@
 #' estimand is feasible when some candidate meets the bias and coverage
 #' tolerances on every surface, judged on the point estimates. A cell whose
 #' 95% interval for bias, or Wilson 95% interval for coverage, contains its
-#' tolerance is unresolved; unresolved cells of the estimands at or above the
-#' primary get further batches of `reps` repetitions, up to the plan's
-#' `max_reps`. Repetitions run in parallel through
+#' tolerance is unresolved; the unresolved cells that can change the decision
+#' of an estimand at or above the primary (those of its selected candidate,
+#' and of any candidate whose failures are all unresolved) get further batches
+#' of `reps` repetitions, up to the plan's `max_reps`. Because the intervals
+#' are recomputed after each batch, "resolved" is a stopping label, not a
+#' formal 95% statement; the decisions themselves use the point estimates.
+#' Repetitions run in parallel through
 #' `future.apply` when a parallel `future` plan is set and cleanTMLE is
 #' installed (not only loaded with `devtools::load_all()`).
 #'
@@ -239,21 +274,25 @@ simulate_design <- function(lock, design) {
   results <- do.call(rbind, lapply(all_reps, `[[`, "results"))
   risks <- do.call(rbind, lapply(all_reps, `[[`, "risks"))
 
-  # Targeted extension: unresolved cells of the estimands at or above the
-  # primary get further batches of repetitions, numbered after the last one
-  # run, for their (surface, library) pairs only, until they resolve or reach
-  # max_reps. Cells of estimands below the primary keep their repetitions.
+  # Targeted extension: the unresolved cells that can change the decision
+  # (see .decision_cells()) of the estimands at or above the primary get
+  # further batches of repetitions, numbered after the last one run, for their
+  # (surface, library) pairs only, until they resolve or reach max_reps. The
+  # set is recomputed after every batch. Cells of estimands below the primary
+  # keep their repetitions.
   max_reps <- p$max_reps %||% p$reps
   last_r <- p$reps
   ext <- list()
   cell_key <- function(d) paste(d$estimand, d$surface, d$library, sep = "\r")
+  run_key <- function(d) paste(d$rep, d$surface, d$library, sep = "\r")
   repeat {
     metrics <- .sim_metrics(results, truths, p)
     verdict <- .sim_verdict(metrics, p)
     pos <- match("feasible", verdict$status)
     if (is.na(pos)) pos <- length(p$estimands)
     relevant <- p$estimands[seq_len(pos)]
-    unres <- metrics[metrics$unresolved & metrics$estimand %in% relevant, , drop = FALSE]
+    dec <- .decision_cells(metrics, verdict, p) & metrics$estimand %in% relevant
+    unres <- metrics[dec, , drop = FALSE]
     open <- unres[unres$reps < max_reps, , drop = FALSE]
     if (!nrow(open)) break
     pairs <- unique(open[c("surface", "library")])
@@ -272,7 +311,9 @@ simulate_design <- function(lock, design) {
     room[is.na(room)] <- max_reps
     nr <- nr[nr$rep - last_r <= room, , drop = FALSE]
     results <- rbind(results, nr)
-    risks <- rbind(risks, do.call(rbind, lapply(new, `[[`, "risks")))
+    # Keep the learner risks only for the repetitions and pairs whose rows were kept.
+    nk <- do.call(rbind, lapply(new, `[[`, "risks"))
+    if (!is.null(nk)) risks <- rbind(risks, nk[run_key(nk) %in% run_key(nr), , drop = FALSE])
     ext[[length(ext) + 1L]] <- data.frame(
       batch = length(ext) + 1L, reps_from = min(rs), reps_to = max(rs),
       pairs = paste(pairs$surface, pairs$library, sep = " | ", collapse = "; "),
@@ -284,10 +325,18 @@ simulate_design <- function(lock, design) {
     data.frame(batch = integer(), reps_from = integer(), reps_to = integer(),
                pairs = character(), cells_unresolved_before = integer(),
                stringsAsFactors = FALSE)
-  decision_note <- sprintf(paste0(
-    "Feasibility is judged on point estimates against the declared tolerances; cells ",
-    "whose 95%% interval contained a tolerance received extra repetitions up to ",
-    "max_reps (%d cells remain unresolved)."), nrow(unres))
+  lead <- "Feasibility is judged on point estimates against the declared tolerances; "
+  decision_note <- if (nrow(extension)) {
+    sprintf(paste0(lead, "cells whose 95%% interval contained a tolerance and that could ",
+                   "change the decision received extra repetitions up to max_reps = %d ",
+                   "(%d such cells remain unresolved)."), max_reps, nrow(unres))
+  } else if (max_reps <= p$reps && nrow(unres)) {
+    sprintf(paste0(lead, "max_reps equals reps, so no extra repetitions were run ",
+                   "(%d cells that could change the decision are unresolved)."), nrow(unres))
+  } else {
+    paste0(lead, "no cell that could change the decision had a 95% interval containing ",
+           "a tolerance, so no extra repetitions were run (0 cells unresolved).")
+  }
   scope <- sprintf(paste0("Feasibility is certified only over the declared family of %d ",
                           "outcome surfaces (%s); a design can fail outside it."),
                    length(surfaces), paste(names(surfaces), collapse = "; "))
