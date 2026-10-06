@@ -1,8 +1,31 @@
-# cleanTMLE 0.4.0 (in development)
+# cleanTMLE 0.4.0
 
-Breaking rebuild. The 0.3.0 surface (65 exports) is removed; the tag
-`v0.3.0` keeps it installable. See the design spec in the clean-room-sim
-repository, `docs/superpowers/specs/2026-10-05-cleantmle-0.4.0-design.md`.
+Breaking rebuild; 0.3.0 remains at the tag `v0.3.0`.
+
+* Twelve exports: `analysis_plan()`, `create_analysis_lock()`,
+  `assess_design()`, `simulate_design()`, `negative_control_ladder()`,
+  `design_report()`, `unblind()`, `estimate_effect()`,
+  `export_design_log()`, `save_lock()`, `load_lock()`, `verify_lock()`.
+* The simulation and the final analysis share one fitter, so the candidate
+  the simulation selects is the one that is estimated, truncation included.
+  In the simulation the fitter assigns the copies of a bootstrapped
+  observation to a single cross-fitting fold, so copies never straddle a
+  training and a validation fold.
+* ATT targeting uses the tmle package, which refits the propensity score
+  with a logistic model when many controls fall below the smallest treated
+  score.
+* The lock never holds the outcome; `unblind()` admits it after checking
+  the dossier's hash.
+* Outcome surfaces come from a declared family, never from the outcome.
+* Cross-fitted super learner with its own xgboost learner (`hist`, best
+  round on the inner folds) and an edge check on every tuned grid.
+* Weighting (WeightIt) and matching (MatchIt) are comparators;
+  time-to-event outcomes run through `concrete`.
+* New dataset `cr_example`: a simulated cohort of 1,500 patients with the
+  design data and the outcome in separate data frames.
+* Removed: the data-quality threat families, the identify/estimate risk
+  families, the table helpers, the governance notes, the SuperLearner
+  wrappers and both 0.3.0 vignettes (rewritten in a later release).
 
 # cleanTMLE 0.3.0
 

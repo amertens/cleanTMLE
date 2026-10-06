@@ -1,12 +1,10 @@
 ^.*\.Rproj$
 ^\.Rproj\.user$
-^_pkgdown\.yml$
 ^docs$
 ^pkgdown$
 ^LICENSE\.md$
 ^data-raw$
 ^\.github$
-^vignettes/.*\.pdf$
 _cache/
 _files/
 ^attic$
