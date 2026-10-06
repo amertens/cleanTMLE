@@ -104,3 +104,31 @@ test_that("a non-finite estimate or interval becomes a failed row", {
   expect_true(all(out$message == "non-finite estimate or interval"))
   expect_true(all(is.na(out$estimate)))
 })
+
+test_that("tmle's ATT step runs only when the ATT is targeted", {
+  skip_if_not("evalATT" %in% names(formals(tmle::tmle)))
+  d <- make_design(200, seed = 4)
+  X <- as.matrix(d$design[c("w1", "w2", "w3")])
+  a <- d$design$A
+  y <- d$outcomes$y
+  g <- rep(0.5, 200); q <- rep(0.3, 200)
+  expect_false(.tmle_args(y, a, X, g, q, q, 0.01, "ATE")$evalATT)
+  expect_null(.tmle_args(y, a, X, g, q, q, 0.01, "ATT")$evalATT)
+})
+
+test_that("skipping the ATT step leaves the ATE estimate and SE unchanged", {
+  skip_if_not("evalATT" %in% names(formals(tmle::tmle)))
+  d <- make_design(300, seed = 4)
+  df <- data.frame(A = d$design$A, Y = d$outcomes$y, d$design[c("w1", "w2", "w3")])
+  X <- as.matrix(df[c("w1", "w2", "w3")])
+  g <- stats::fitted(stats::glm(A ~ w1 + w2 + w3, stats::binomial(), data = df))
+  qf <- stats::glm(Y ~ A + w1 + w2 + w3, stats::binomial(), data = df)
+  Q1 <- stats::predict(qf, transform(df, A = 1), type = "response")
+  Q0 <- stats::predict(qf, transform(df, A = 0), type = "response")
+  fast <- .target_tmle(df$Y, df$A, X, g, Q1, Q0, 0.01, "ATE")
+  ref <- suppressWarnings(tmle::tmle(
+    Y = df$Y, A = df$A, W = as.data.frame(X), Q = cbind(Q0, Q1), g1W = g,
+    gbound = c(0.01, 0.99), family = "binomial", g.SL.library = "SL.glm", evalATT = TRUE))
+  expect_equal(fast$estimate, ref$estimates$ATE$psi)
+  expect_equal(fast$se, sqrt(ref$estimates$ATE$var.psi))
+})

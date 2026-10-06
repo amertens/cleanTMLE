@@ -45,17 +45,26 @@
   list(Q1 = cf$pred[[1]], Q0 = cf$pred[[2]], risks = cbind(nuisance = "Q", cf$risks))
 }
 
-.target_tmle <- function(Y, A, X, g, Q1, Q0, truncation, which) {
-  if (length(unique(A)) < 2L)
-    stop("Only one treatment arm in the target population.", call. = FALSE)
+.tmle_args <- function(Y, A, X, g, Q1, Q0, truncation, which) {
   # tmle refits a treatment model for the ATT when the overlap subset drops more
   # than a tenth of the controls, whatever g1W it was given. Its default library
   # (glm, dbarts, gam with 10 folds) takes minutes and is not cross-fitted, so
   # the refit is limited to a logistic regression.
-  f <- suppressMessages(suppressWarnings(tmle::tmle(
-    Y = Y, A = A, W = as.data.frame(X), Q = cbind(Q0, Q1), g1W = g,
-    gbound = c(truncation, 1 - truncation), family = "binomial",
-    g.SL.library = "SL.glm")))
+  args <- list(Y = Y, A = A, W = as.data.frame(X), Q = cbind(Q0, Q1), g1W = g,
+               gbound = c(truncation, 1 - truncation), family = "binomial",
+               g.SL.library = "SL.glm")
+  # tmle also runs its ATT and ATC targeting on every call unless told not to;
+  # in a profile of one simulation repetition that took about 70% of the time.
+  # Only the ATT reads it.
+  if (which != "ATT" && "evalATT" %in% names(formals(tmle::tmle))) args$evalATT <- FALSE
+  args
+}
+
+.target_tmle <- function(Y, A, X, g, Q1, Q0, truncation, which) {
+  if (length(unique(A)) < 2L)
+    stop("Only one treatment arm in the target population.", call. = FALSE)
+  f <- suppressMessages(suppressWarnings(do.call(
+    tmle::tmle, .tmle_args(Y, A, X, g, Q1, Q0, truncation, which))))
   e <- f$estimates[[which]]
   r1 <- if (which == "ATE") f$estimates$EY1$psi else mean(Y[A == 1])
   r0 <- if (which == "ATE") f$estimates$EY0$psi else r1 - e$psi
