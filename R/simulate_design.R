@@ -8,7 +8,7 @@
   lg <- stats::qlogis(.bound(g, 1e-6))
   Z <- apply(X, 2, .std)
   if (is.null(dim(Z))) Z <- matrix(Z, nrow = nrow(X))
-  dirn <- withr::with_seed(seed, stats::rnorm(ncol(Z)))
+  dirn <- .with_seed(seed, stats::rnorm(ncol(Z)))
   lin <- .std(0.5 * .std(lg) + 0.5 * .std(drop(Z %*% dirn)))
   idx <- if (!is.null(s$q0)) {
     list(steward = .std(stats::qlogis(.bound(s$q0, 1e-6))))
@@ -64,7 +64,7 @@
                          stringsAsFactors = FALSE)[c("surface", "library")]
   n <- nrow(X)
   seed <- plan$seed + r
-  draw <- withr::with_seed(seed, {
+  draw <- .with_seed(seed, {
     idx <- sample.int(n, n, replace = TRUE)
     a <- stats::rbinom(n, 1L, g[idx])
     ys <- lapply(surfaces, function(s)
@@ -84,7 +84,7 @@
     sn <- pairs$surface[i]
     lib <- pairs$library[i]
     res <- if (is.character(g_fit)) .failed_rows(plan, g_fit) else tryCatch(
-      withr::with_seed(seed, .fit_and_target(
+      .with_seed(seed, .fit_and_target(
         Xs, draw$a, draw$ys[[sn]], plan$candidates$library[[lib]],
         plan$estimands, plan$candidates$truncation, plan, folds, seed, g_fit,
         groups = draw$idx)),

@@ -151,6 +151,27 @@ test_that("a repetition's draws do not depend on which surface-library pairs run
                    ref2[order(ref2$surface, ref2$library), ], ignore_attr = TRUE)
 })
 
+test_that("seeded draws and folds do not depend on the caller's RNG kind", {
+  d <- make_design(300)
+  X <- .design_matrix(d$design, covs)
+  g <- stats::plogis(-0.2 + 0.8 * d$design$w1)
+  p <- fast_plan(estimands = c("ATE", "ATO"), surfaces = list(forms = "linear"),
+                 candidates = list(library = list(glm = "glm"), truncation = 0.05))
+  s <- .surfaces(p, X, g, p$seed)
+  ref <- withr::with_rng_version("4.4.0", list(
+    rep = .one_rep(3L, X, g, s, p), folds = .make_folds(300, 5L, 11L),
+    s = .surfaces(p, X, g, p$seed)))
+  withr::local_seed(1, .rng_kind = "L'Ecuyer-CMRG")
+  before <- RNGkind()
+  alt <- list(rep = .one_rep(3L, X, g, s, p), folds = .make_folds(300, 5L, 11L),
+              s = .surfaces(p, X, g, p$seed))
+  expect_identical(RNGkind(), before)
+  expect_identical(before[1], "L'Ecuyer-CMRG")
+  expect_identical(alt$folds, ref$folds)
+  expect_identical(alt$s, ref$s)
+  expect_identical(alt$rep$results, ref$rep$results)
+})
+
 test_that("unresolved cells at or above the primary get extra repetitions up to max_reps", {
   d <- make_design(300, seed = 5, strength = 0.5)
   # Four repetitions cannot resolve a coverage tolerance of 0.75 (the Wilson

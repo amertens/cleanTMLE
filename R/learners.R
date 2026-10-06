@@ -68,7 +68,7 @@
       sdv <- apply(X, 2, stats::sd)
       sdv[!is.finite(sdv) | sdv == 0] <- 1
       Xs <- sweep(sweep(X, 2, mu), 2, sdv, "/")
-      fit <- withr::with_seed(seed, nnet::nnet(
+      fit <- .with_seed(seed, nnet::nnet(
         x = Xs, y = y, size = .nnet_size, decay = p$decay, entropy = TRUE,
         maxit = 200L, trace = FALSE, MaxNWts = 100000L))
       list(fit = fit, mu = mu, sd = sdv)
