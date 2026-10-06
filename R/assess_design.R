@@ -8,6 +8,52 @@
 
 .ess <- function(w) if (sum(w > 0) == 0) 0 else sum(w)^2 / sum(w^2)
 
+# Smallest group whose covariate means the dossier may report.
+.min_cell <- 5L
+
+.std_shift <- function(m, ref, s) ifelse(is.finite(s) & s > 0, (m - ref) / s, 0)
+
+# Covariate means in each estimand's target population, and the standardized
+# shift from the full cohort (difference over the full-cohort SD).
+.populations <- function(X, A, g, estimands, band) {
+  mu <- colMeans(X)
+  s <- apply(X, 2, stats::sd)
+  out <- data.frame(covariate = colnames(X), cohort = unname(mu), stringsAsFactors = FALSE)
+  for (e in estimands) {
+    w <- switch(e,
+      ATE = rep(1, nrow(X)),
+      trimmed_ATE = as.numeric(g >= band[1] & g <= band[2]),
+      ATT = as.numeric(A == 1),
+      ATO = g * (1 - g))
+    m <- if (sum(w) > 0) colSums(X * w) / sum(w) else rep(NA_real_, ncol(X))
+    out[[e]] <- unname(m)
+    out[[paste0(e, "_shift")]] <- unname(.std_shift(m, mu, s))
+  }
+  out
+}
+
+# The patients a trimmed analysis no longer describes: counts by arm, and the
+# covariate means of removed and kept patients. Means of fewer than .min_cell
+# removed patients are suppressed.
+.trimmed_profile <- function(X, A, g, band) {
+  out <- g < band[1] | g > band[2]
+  s <- apply(X, 2, stats::sd)
+  mean_or_na <- function(rows) if (sum(rows) >= .min_cell) colMeans(X[rows, , drop = FALSE]) else
+    rep(NA_real_, ncol(X))
+  removed <- mean_or_na(out)
+  kept <- mean_or_na(!out)
+  list(
+    counts = data.frame(group = c("all", "treated", "control"),
+                        removed = c(sum(out), sum(out & A == 1), sum(out & A == 0)),
+                        kept = c(sum(!out), sum(!out & A == 1), sum(!out & A == 0)),
+                        stringsAsFactors = FALSE),
+    covariates = data.frame(covariate = colnames(X), removed = unname(removed),
+                            kept = unname(kept),
+                            std_diff = unname(ifelse(is.na(removed), NA_real_,
+                                                     .std_shift(removed, kept, s))),
+                            stringsAsFactors = FALSE))
+}
+
 #' Assess the design without the outcome
 #'
 #' Cross-fits the propensity score with the plan's `ps_library`, grades
@@ -61,8 +107,11 @@ assess_design <- function(lock) {
     })
     data.frame(estimand = e, max_abs_smd = smd)
   }))
+  populations <- .populations(X, A, g, p$estimands, p$trim_band)
+  trimmed_profile <- if (is.null(p$trim_band)) NULL else .trimmed_profile(X, A, g, p$trim_band)
   out <- list(g = g, g_world = g_world, folds = folds, overlap = overlap, overlap_grade = grade,
               share_outside_band = share, band = band, ess = ess, balance = balance,
+              populations = populations, trimmed_profile = trimmed_profile,
               edge = .edge_check(gf$risks), risks = gf$risks)
   out$stamp <- .stamp(lock, out)
   class(out) <- "cr_design"

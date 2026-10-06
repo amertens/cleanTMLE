@@ -78,7 +78,7 @@ design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
   d <- list(
     lock_hash = lock$lock_hash, plan = .plan_summary(p), outcome_type = p$outcome_type,
     design = design[c("overlap", "overlap_grade", "share_outside_band", "band", "ess",
-                      "balance", "edge")],
+                      "balance", "edge", "populations", "trimmed_profile")],
     simulation = simulation[c("metrics", "verdict", "truths", "scope", "decision_note",
                               "extension", "reps", "max_reps", "K", "edge")],
     nc = if (is.null(nc)) NULL else nc[c("table", "by_domain", "by_rung", "verdict")],

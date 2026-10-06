@@ -55,3 +55,62 @@ test_that("a balance failure warns and returns NA instead of passing silently", 
   expect_true(all(is.na(ds$balance$max_abs_smd)))
   expect_setequal(ds$balance$estimand, c("ATE", "trimmed_ATE", "ATT", "ATO"))
 })
+
+test_that("populations gives each estimand's covariate means and shift", {
+  X <- cbind(x = c(0, 0, 1, 1, 2, 2), z = c(1, 0, 1, 0, 1, 0))
+  A <- c(0, 0, 0, 1, 1, 1)
+  g <- c(0.1, 0.2, 0.5, 0.5, 0.8, 0.9)
+  p <- .populations(X, A, g, c("ATE", "trimmed_ATE", "ATT", "ATO"), c(0.15, 0.85))
+  expect_identical(p$covariate, c("x", "z"))
+  expect_equal(p$cohort, unname(colMeans(X)))
+  expect_equal(p$ATE, p$cohort)
+  expect_equal(p$ATE_shift, c(0, 0))
+  expect_equal(p$trimmed_ATE, unname(colMeans(X[2:5, ])))
+  expect_equal(p$ATT, unname(colMeans(X[A == 1, ])))
+  h <- g * (1 - g)
+  expect_equal(p$ATO, unname(colSums(X * h) / sum(h)))
+  expect_equal(p$ATT_shift, (p$ATT - p$cohort) / unname(apply(X, 2, stats::sd)))
+})
+
+test_that("trimmed_profile counts removed patients by arm and suppresses small groups", {
+  set.seed(3)
+  X <- cbind(x = stats::rnorm(40))
+  A <- rep(0:1, 20)
+  g <- c(rep(0.01, 6), rep(0.5, 34))           # six rows below the band
+  tp <- .trimmed_profile(X, A, g, c(0.05, 0.95))
+  expect_identical(tp$counts$group, c("all", "treated", "control"))
+  expect_identical(tp$counts$removed, c(6L, 3L, 3L))
+  expect_identical(tp$counts$kept, c(34L, 17L, 17L))
+  expect_equal(tp$covariates$removed, mean(X[1:6, 1]))
+  expect_equal(tp$covariates$std_diff,
+               (mean(X[1:6, 1]) - mean(X[7:40, 1])) / stats::sd(X[, 1]))
+  few <- .trimmed_profile(X, A, c(0.01, rep(0.5, 39)), c(0.05, 0.95))
+  expect_identical(few$counts$removed[1], 1L)
+  expect_true(is.na(few$covariates$removed))
+  expect_true(is.na(few$covariates$std_diff))
+  two <- .trimmed_profile(X, A, c(0.01, 0.99, rep(0.5, 38)), c(0.05, 0.95))
+  expect_identical(two$counts$removed[1], 2L)
+  expect_true(is.na(two$covariates$removed))
+  expect_false(is.na(two$covariates$kept))
+})
+
+test_that("assess_design carries the population tables, with and without a trim band", {
+  d <- make_design(300)
+  d$design$site <- factor(rep(c("A", "B", "C"), 100))
+  covs <- c("w1", "w2", "site")
+  ds <- assess_design(create_analysis_lock(d$design, "A", covs, fast_plan()))
+  expect_setequal(ds$populations$covariate, c("w1", "w2", "siteB", "siteC"))
+  expect_equal(ds$populations$cohort[ds$populations$covariate == "siteB"], 1 / 3)
+  expect_true(all(c("trimmed_ATE", "ATT", "ATO") %in% names(ds$populations)))
+  expect_type(ds$trimmed_profile, "list")
+  nt <- assess_design(create_analysis_lock(d$design, "A", covs,
+                                           fast_plan(estimands = c("ATE", "ATO"), trim_band = NULL)))
+  expect_false("trimmed_ATE" %in% names(nt$populations))
+  expect_null(nt$trimmed_profile)
+})
+
+test_that("the dossier carries the population tables", {
+  fx <- fixture_pipeline()
+  expect_true(is.data.frame(fx$dossier$design$populations))
+  expect_type(fx$dossier$design$trimmed_profile, "list")
+})

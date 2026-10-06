@@ -55,6 +55,28 @@ kt(d$design$overlap); kt(d$design$ess); kt(d$design$balance)
 if (!is.null(d$design$edge) && nrow(d$design$edge)) kt(d$design$edge)
 ```
 
+## Who each estimand describes
+
+Covariate means in each estimand's target population, with the standardized
+shift from the full cohort (difference over the full-cohort SD).
+
+```{r}
+kt(d$design$populations)
+```
+
+```{r, results = "asis"}
+if (is.null(d$design$trimmed_profile)) cat("No trim band was declared.\n")
+```
+
+```{r}
+if (!is.null(d$design$trimmed_profile)) {
+  kt(d$design$trimmed_profile$counts)
+  kt(d$design$trimmed_profile$covariates)
+}
+```
+
+Means of fewer than 5 removed patients are not shown.
+
 ## Simulation
 
 `r d$simulation$scope`
