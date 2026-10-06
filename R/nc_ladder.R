@@ -1,4 +1,7 @@
 .nc_grade <- function(tab, crit) {
+  bad <- tab$status == "estimated" &
+    !(is.finite(tab$estimate) & is.finite(tab$ci_lower) & is.finite(tab$ci_upper))
+  tab$status[bad] <- "failed: non-finite estimate"
   est <- tab$status == "estimated"
   band <- crit$null_band
   tab$in_band <- NA
@@ -32,7 +35,10 @@
 #' `nc_criteria`. Within a rung, a domain reads "fail" if any estimable control is out of
 #' the band (even when too few controls are estimable), otherwise "insufficient" if fewer than
 #' `min_per_domain` controls are estimable, otherwise "pass". A rung is STOP if any domain fails,
-#' FLAG if any is insufficient, and GO otherwise. The verdict is the most restricted rung's.
+#' FLAG if any is insufficient, and GO otherwise. An estimated control whose estimate or
+#' interval is not finite counts as failed, not as estimable. The verdict that gates
+#' unblinding is the full cohort's; restricted rungs show whether a restriction would
+#' remove the confounding.
 #'
 #' @param lock A `cr_lock`.
 #' @param design The [assess_design()] result for `lock`.
@@ -93,7 +99,9 @@ negative_control_ladder <- function(lock, design) {
     out$table <- gr$table
     out$by_domain <- gr$by_domain
     out$by_rung <- gr$by_rung
-    out$verdict <- gr$by_rung$verdict[nrow(gr$by_rung)]
+    # estimate_effect() analyses the full cohort, so its rung gates unblinding;
+    # the restricted rungs are diagnostics.
+    out$verdict <- gr$by_rung$verdict[gr$by_rung$rung == "full cohort"][1]
   }
   out$stamp <- .stamp(lock, out)
   class(out) <- "cr_nc_ladder"

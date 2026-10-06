@@ -96,15 +96,29 @@ test_that(".nc_grade applies the point and ci rules and the precedence of readin
   expect_identical(g7$by_rung$verdict, c("GO", "FLAG"))
 })
 
-test_that("the verdict is the last rung's, which can differ from the first rung's", {
-  # nc_bad is driven by treatment, so the full cohort stops; the second rung keeps only the
-  # untreated, so the treated arm is empty and the control cannot be estimated (FLAG).
-  nc <- ladder_for(c(nc_bad = "care use"), nc_criteria = list(null_band = c(-0.1, 0.1)),
-                   restrictions = list(untreated_only = ~ A == 0))
-  expect_identical(nc$by_rung$rung, c("full cohort", "untreated_only"))
-  expect_identical(nc$by_rung$verdict, c("STOP", "FLAG"))
-  expect_identical(nc$verdict, "FLAG")
-  expect_identical(nc$verdict, nc$by_rung$verdict[nrow(nc$by_rung)])
+test_that("the verdict is the full cohort's, whatever the restricted rungs read", {
+  # nc_sub is driven by treatment only where grp == 1, so the full cohort stops, the
+  # grp == 0 rung reads the control as null (GO), and the untreated-only rung empties the
+  # treated arm (FLAG). estimate_effect() analyses the full cohort, so the gate is STOP.
+  d <- make_design(500, seed = 5)
+  withr::with_seed(7, {
+    d$design$grp <- stats::rbinom(500, 1, 0.5)
+    d$design$nc_sub <- stats::rbinom(500, 1, stats::plogis(-1 + 3 * d$design$A * d$design$grp))
+  })
+  p <- fast_plan(negative_controls = c(nc_sub = "care use"),
+                 nc_criteria = list(null_band = c(-0.1, 0.1)),
+                 restrictions = list(grp0 = ~ grp == 0, untreated_only = ~ A == 0),
+                 tolerance = list(bias = 0.1, coverage = 0.5), reps = 10L)
+  lk <- create_analysis_lock(d$design, "A", covs, p)
+  ds <- assess_design(lk)
+  nc <- negative_control_ladder(lk, ds)
+  expect_identical(nc$by_rung$rung, c("full cohort", "grp0", "untreated_only"))
+  expect_identical(nc$by_rung$verdict, c("STOP", "GO", "FLAG"))
+  expect_identical(nc$verdict, "STOP")
+  dr <- design_report(lk, ds, suppressMessages(simulate_design(lk, ds)), nc)
+  expect_identical(dr$decision$nc_verdict, "STOP")
+  expect_error(unblind(lk, dr, d$outcomes, approved_by = "Review team"),
+               "negative-control verdict is STOP")
 })
 
 test_that("a design stamped by a different lock is rejected", {
@@ -115,4 +129,15 @@ test_that("a design stamped by a different lock is rejected", {
                                 fast_plan(negative_controls = c(nc_visit = "care use"),
                                           seed = 99L))
   expect_error(negative_control_ladder(lk, assess_design(other)), "not computed from this lock")
+})
+
+test_that(".nc_grade relabels an estimated row with a non-finite estimate as failed", {
+  tab <- data.frame(rung = "full cohort", negative_control = c("nc1", "nc2"), domain = "d",
+                    n = 100L, estimate = c(NaN, 0.01), ci_lower = c(-0.1, -0.05),
+                    ci_upper = c(0.1, NA), status = "estimated", stringsAsFactors = FALSE)
+  g <- .nc_grade(tab, list(null_band = c(-0.1, 0.1), rule = "point", min_per_domain = 1))
+  expect_identical(g$table$status, rep("failed: non-finite estimate", 2))
+  expect_identical(g$by_domain$n_estimable, 0L)
+  expect_identical(g$by_domain$reading, "insufficient")
+  expect_identical(g$by_rung$verdict, "FLAG")
 })

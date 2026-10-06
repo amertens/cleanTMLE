@@ -21,5 +21,8 @@ same fitter as the analysis, and grades the result against the plan's
 \code{nc_criteria}. Within a rung, a domain reads "fail" if any estimable control is out of
 the band (even when too few controls are estimable), otherwise "insufficient" if fewer than
 \code{min_per_domain} controls are estimable, otherwise "pass". A rung is STOP if any domain fails,
-FLAG if any is insufficient, and GO otherwise. The verdict is the most restricted rung's.
+FLAG if any is insufficient, and GO otherwise. An estimated control whose estimate or
+interval is not finite counts as failed, not as estimable. The verdict that gates
+unblinding is the full cohort's; restricted rungs show whether a restriction would
+remove the confounding.
 }
