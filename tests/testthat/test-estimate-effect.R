@@ -48,17 +48,33 @@ test_that("matching estimates the ATT only", {
 
 test_that("factor and oddly named covariates run through every backend", {
   d <- make_design(400, seed = 8)
-  d$design$site <- factor(sample(c("a", "b", "c"), 400, replace = TRUE))
-  d$design[["age group"]] <- stats::rnorm(400)
-  p <- fast_plan(tolerance = list(bias = 0.1, coverage = 0.5), reps = 4L)
+  withr::with_seed(8, {
+    d$design$site <- factor(sample(c("a", "b", "c"), 400, replace = TRUE))
+    d$design[["age group"]] <- stats::rnorm(400)
+  })
+  p <- fast_plan(tolerance = list(bias = 0.1, coverage = 0.5), reps = 20L)
   lk <- create_analysis_lock(d$design, "A", c("w1", "site", "age group"), p)
   ds <- assess_design(lk)
   dr <- design_report(lk, ds, suppressMessages(simulate_design(lk, ds)))
-  u <- unblind(lk, dr, d$outcomes, approved_by = "Review team",
-               override = if (is.na(dr$decision$primary)) "test fixture" else NULL)
+  expect_false(is.na(dr$decision$primary))
+  u <- unblind(lk, dr, d$outcomes, approved_by = "Review team")
   expect_true(is.finite(estimate_effect(u, method = "weighting", estimand = "ATE")$estimate))
-  if (!is.na(dr$decision$primary))
-    expect_true(is.finite(estimate_effect(u)$estimate))
+  expect_true(is.finite(estimate_effect(u)$estimate))
+})
+
+test_that("tmle without a candidate names the status the dossier gave the estimand", {
+  d <- make_design(300, seed = 3)
+  # A near-zero bias tolerance with few repetitions leaves no estimand feasible.
+  p <- fast_plan(tolerance = list(bias = 1e-6, coverage = 0.99), reps = 4L)
+  lk <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), p)
+  ds <- assess_design(lk)
+  dr <- design_report(lk, ds, suppressMessages(simulate_design(lk, ds)))
+  expect_true(is.na(dr$decision$primary))
+  u <- unblind(lk, dr, d$outcomes, approved_by = "Review team", override = "test fixture")
+  st <- dr$decision$status[["ATE"]]
+  expect_false(identical(st, "feasible"))
+  expect_error(estimate_effect(u, estimand = "ATE"),
+               sprintf("rated ATE %s; only feasible estimands", st))
 })
 
 test_that("summary adds an E-value and tidy returns one row", {

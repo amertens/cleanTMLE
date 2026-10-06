@@ -10,6 +10,12 @@
     stress_tested = stress_tested, note = note), class = "cr_estimate")
 }
 
+.no_candidate_message <- function(estimand, dec) {
+  sprintf(paste0("The dossier rated %s %s; only feasible estimands carry a stress-tested ",
+                 "candidate. Use a comparator method or another estimand."),
+          estimand, dec$status[[estimand]] %||% "not assessed")
+}
+
 .syntactic <- function(X) {
   colnames(X) <- make.names(colnames(X), unique = TRUE)
   X
@@ -151,9 +157,7 @@ estimate_effect <- function(unblinded, method = c("tmle", "weighting", "matching
     if (method != "tmle")
       stop("Time-to-event outcomes are estimated with concrete (method = 'tmle').",
            call. = FALSE)
-    if (is.null(candidate))
-      stop("The dossier found ", estimand, " infeasible; there is no candidate.",
-           call. = FALSE)
+    if (is.null(candidate)) stop(.no_candidate_message(estimand, dec), call. = FALSE)
     r <- .estimate_tte(unblinded, estimand, candidate)
     return(.new_estimate(estimand, prespecified, "concrete", candidate$id, r,
                          n = r$n_population, stress_tested = FALSE,
@@ -167,9 +171,7 @@ estimate_effect <- function(unblinded, method = c("tmle", "weighting", "matching
   cc <- !is.na(Y)
   X <- X[cc, , drop = FALSE]; A <- A[cc]; Y <- Y[cc]
   if (method == "tmle") {
-    if (is.null(candidate))
-      stop("The dossier found ", estimand, " infeasible; there is no stress-tested ",
-           "candidate. Use a comparator method or another estimand.", call. = FALSE)
+    if (is.null(candidate)) stop(.no_candidate_message(estimand, dec), call. = FALSE)
     folds <- .make_folds(length(Y), dec$K, dec$fold_seed)
     r <- fit_candidate(X, A, Y, estimand, candidate, p, folds, dec$fold_seed)
     if (isTRUE(r$failed)) stop("Estimation failed: ", r$message, call. = FALSE)
