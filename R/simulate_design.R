@@ -52,7 +52,16 @@
     .estimate_row(g$estimand[i], g$truncation[i], message = msg)))
 }
 
-.one_rep <- function(r, X, g, surfaces, plan) {
+# One repetition. `surfaces_run` and `libraries_run` (crossed), or an explicit
+# data frame of `pairs` (surface, library), restrict which outcome fits run.
+# The outcomes for every surface are still drawn inside the seeded block, and
+# each pair's fit runs under the repetition's seed, so repetition r gives the
+# same rows for a pair whichever other pairs run with it.
+.one_rep <- function(r, X, g, surfaces, plan, surfaces_run = names(surfaces),
+                     libraries_run = names(plan$candidates$library), pairs = NULL) {
+  if (is.null(pairs))
+    pairs <- expand.grid(library = libraries_run, surface = surfaces_run,
+                         stringsAsFactors = FALSE)[c("surface", "library")]
   n <- nrow(X)
   seed <- plan$seed + r
   draw <- withr::with_seed(seed, {
@@ -71,11 +80,14 @@
                     error = function(e) conditionMessage(e))
   rows <- list()
   risks <- list()
-  for (sn in names(surfaces)) for (lib in names(plan$candidates$library)) {
+  for (i in seq_len(nrow(pairs))) {
+    sn <- pairs$surface[i]
+    lib <- pairs$library[i]
     res <- if (is.character(g_fit)) .failed_rows(plan, g_fit) else tryCatch(
-      .fit_and_target(Xs, draw$a, draw$ys[[sn]], plan$candidates$library[[lib]],
-                      plan$estimands, plan$candidates$truncation, plan, folds, seed, g_fit,
-                      groups = draw$idx),
+      withr::with_seed(seed, .fit_and_target(
+        Xs, draw$a, draw$ys[[sn]], plan$candidates$library[[lib]],
+        plan$estimands, plan$candidates$truncation, plan, folds, seed, g_fit,
+        groups = draw$idx)),
       error = function(e) .failed_rows(plan, conditionMessage(e)))
     rk <- attr(res, "risks")
     if (!is.null(rk)) {
@@ -86,6 +98,16 @@
   }
   list(results = do.call(rbind, rows),
        risks = if (length(risks)) do.call(rbind, risks) else NULL)
+}
+
+# Wilson score interval for x successes in n trials.
+.wilson <- function(x, n, level = 0.95) {
+  if (!is.finite(n) || n < 1) return(c(NA_real_, NA_real_))
+  z <- stats::qnorm(1 - (1 - level) / 2)
+  p <- x / n
+  mid <- (p + z^2 / (2 * n)) / (1 + z^2 / n)
+  half <- z / (1 + z^2 / n) * sqrt(p * (1 - p) / n + z^2 / (4 * n^2))
+  c(max(0, mid - half), min(1, mid + half))
 }
 
 .sim_metrics <- function(results, truths, plan) {
@@ -105,20 +127,30 @@
     bias <- if (R) mean(e) else NA_real_
     coverage <- if (R) mean(cv) else NA_real_
     rmse <- if (R) sqrt(mean(e^2)) else NA_real_
+    wi <- .wilson(sum(cv), R)
     data.frame(k, reps = nrow(s), failed = nrow(s) - R, fail_rate = 1 - R / nrow(s),
                bias = bias, bias_mcse = if (R > 1) stats::sd(e) / sqrt(R) else NA_real_,
                coverage = coverage,
                coverage_mcse = if (R > 1) sqrt(coverage * (1 - coverage) / R) else NA_real_,
+               coverage_lower = wi[1], coverage_upper = wi[2],
                rmse = rmse,
                rmse_mcse = if (R > 1 && rmse > 0) stats::sd(e^2) / (2 * rmse * sqrt(R)) else NA_real_,
                stringsAsFactors = FALSE)
   }))
   tb <- plan$tolerance$bias
   tc <- plan$tolerance$coverage
-  m$pass <- !is.na(m$bias) & m$reps - m$failed > 1 & m$fail_rate <= 0.05 &
-    abs(m$bias) <= tb & m$coverage >= tc
-  m$borderline <- (!is.na(m$bias_mcse) & abs(abs(m$bias) - tb) <= 2 * m$bias_mcse) |
-    (!is.na(m$coverage_mcse) & abs(m$coverage - tc) <= 2 * m$coverage_mcse)
+  # Feasibility is judged on the point estimates: the tolerances are the
+  # declared margin, and no second margin is applied.
+  usable <- !is.na(m$bias) & m$reps - m$failed > 1 & m$fail_rate <= 0.05
+  m$pass <- usable & abs(m$bias) <= tb & m$coverage >= tc
+  # A usable cell is unresolved when the 95% interval for its bias, or the
+  # Wilson interval for its coverage, contains the tolerance. A cell that fails
+  # the failure rule is not unresolved; it fails.
+  hw <- stats::qnorm(0.975) * m$bias_mcse
+  bias_open <- !is.na(hw) & abs(m$bias) - hw <= tb & abs(m$bias) + hw > tb
+  cov_open <- !is.na(m$coverage_lower) & !is.na(m$coverage_upper) &
+    m$coverage_lower < tc & m$coverage_upper >= tc
+  m$unresolved <- usable & (bias_open | cov_open)
   rownames(m) <- NULL
   m
 }
@@ -128,12 +160,12 @@
     me <- metrics[metrics$estimand == e, , drop = FALSE]
     cs <- do.call(rbind, lapply(split(me, me$candidate), function(d) data.frame(
       candidate = d$candidate[1], library = d$library[1], truncation = d$truncation[1],
-      pass_all = all(d$pass), borderline_any = any(d$borderline),
+      pass_all = all(d$pass), unresolved_any = any(d$unresolved),
+      # Fails somewhere, but only on unresolved cells: it could still turn feasible.
+      could_flip = !all(d$pass) && all(d$pass | d$unresolved),
       worst_rmse = max(d$rmse), stringsAsFactors = FALSE)))
-    clean <- cs[cs$pass_all & !cs$borderline_any, , drop = FALSE]
-    border <- cs[cs$pass_all & cs$borderline_any, , drop = FALSE]
-    pool <- if (nrow(clean)) clean else border
-    status <- if (nrow(clean)) "feasible" else if (nrow(border)) "borderline" else "infeasible"
+    pool <- cs[cs$pass_all, , drop = FALSE]
+    status <- if (nrow(pool)) "feasible" else "infeasible"
     sel <- NA_character_
     if (nrow(pool)) {
       sel <- if (is.null(plan$select)) pool$candidate[which.min(pool$worst_rmse)] else
@@ -146,6 +178,7 @@
     data.frame(estimand = e, status = status, selected = sel,
                library = if (is.na(sel)) NA_character_ else row$library,
                truncation = if (is.na(sel)) NA_real_ else row$truncation,
+               unresolved = if (is.na(sel)) any(cs$could_flip) else row$unresolved_any,
                stringsAsFactors = FALSE)
   }))
 }
@@ -160,7 +193,11 @@
 #' covariates only; the cross-fitted score that grades overlap would make
 #' each row's treatment depend on its fold, which is not a covariate. An
 #' estimand is feasible when some candidate meets the bias and coverage
-#' tolerances on every surface. Repetitions run in parallel through
+#' tolerances on every surface, judged on the point estimates. A cell whose
+#' 95% interval for bias, or Wilson 95% interval for coverage, contains its
+#' tolerance is unresolved; unresolved cells of the estimands at or above the
+#' primary get further batches of `reps` repetitions, up to the plan's
+#' `max_reps`. Repetitions run in parallel through
 #' `future.apply` when a parallel `future` plan is set and cleanTMLE is
 #' installed (not only loaded with `devtools::load_all()`).
 #'
@@ -193,13 +230,64 @@ simulate_design <- function(lock, design) {
   message(sprintf(paste0("simulate_design: repetition 1 took %.1f s; expect about %.1f min ",
                          "for %d repetitions on %s worker(s)."),
                   secs, secs * p$reps / min(workers, p$reps) / 60, p$reps, format(workers)))
-  f <- function(r) .one_rep(r, X, g, surfaces, p)
-  rest <- if (par) future.apply::future_lapply(2:p$reps, f, future.seed = TRUE) else
-    lapply(2:p$reps, f)
-  all_reps <- c(list(first), rest)
+  run_batch <- function(rs, pairs = NULL) {
+    f <- if (is.null(pairs)) function(r) .one_rep(r, X, g, surfaces, p) else
+      function(r) .one_rep(r, X, g, surfaces, p, pairs = pairs)
+    if (par) future.apply::future_lapply(rs, f, future.seed = TRUE) else lapply(rs, f)
+  }
+  all_reps <- c(list(first), run_batch(2:p$reps))
   results <- do.call(rbind, lapply(all_reps, `[[`, "results"))
   risks <- do.call(rbind, lapply(all_reps, `[[`, "risks"))
-  metrics <- .sim_metrics(results, truths, p)
+
+  # Targeted extension: unresolved cells of the estimands at or above the
+  # primary get further batches of repetitions, numbered after the last one
+  # run, for their (surface, library) pairs only, until they resolve or reach
+  # max_reps. Cells of estimands below the primary keep their repetitions.
+  max_reps <- p$max_reps %||% p$reps
+  last_r <- p$reps
+  ext <- list()
+  cell_key <- function(d) paste(d$estimand, d$surface, d$library, sep = "\r")
+  repeat {
+    metrics <- .sim_metrics(results, truths, p)
+    verdict <- .sim_verdict(metrics, p)
+    pos <- match("feasible", verdict$status)
+    if (is.na(pos)) pos <- length(p$estimands)
+    relevant <- p$estimands[seq_len(pos)]
+    unres <- metrics[metrics$unresolved & metrics$estimand %in% relevant, , drop = FALSE]
+    open <- unres[unres$reps < max_reps, , drop = FALSE]
+    if (!nrow(open)) break
+    pairs <- unique(open[c("surface", "library")])
+    rownames(pairs) <- NULL
+    m_add <- min(p$reps, max_reps - min(open$reps))
+    rs <- last_r + seq_len(m_add)
+    message(sprintf(paste0("simulate_design: extending %d surface-library pair(s) by %d ",
+                           "repetitions (unresolved cells: %d)."),
+                    nrow(pairs), m_add, nrow(unres)))
+    new <- run_batch(rs, pairs)
+    nr <- do.call(rbind, lapply(new, `[[`, "results"))
+    nr <- nr[nr$estimand %in% relevant, , drop = FALSE]
+    # No cell goes past max_reps: keep, per cell, only the repetitions it has room for.
+    have <- tapply(metrics$reps, cell_key(metrics), max)
+    room <- max_reps - have[cell_key(nr)]
+    room[is.na(room)] <- max_reps
+    nr <- nr[nr$rep - last_r <= room, , drop = FALSE]
+    results <- rbind(results, nr)
+    risks <- rbind(risks, do.call(rbind, lapply(new, `[[`, "risks")))
+    ext[[length(ext) + 1L]] <- data.frame(
+      batch = length(ext) + 1L, reps_from = min(rs), reps_to = max(rs),
+      pairs = paste(pairs$surface, pairs$library, sep = " | ", collapse = "; "),
+      cells_unresolved_before = nrow(unres), stringsAsFactors = FALSE)
+    last_r <- max(rs)
+  }
+  rownames(results) <- NULL
+  extension <- if (length(ext)) do.call(rbind, ext) else
+    data.frame(batch = integer(), reps_from = integer(), reps_to = integer(),
+               pairs = character(), cells_unresolved_before = integer(),
+               stringsAsFactors = FALSE)
+  decision_note <- sprintf(paste0(
+    "Feasibility is judged on point estimates against the declared tolerances; cells ",
+    "whose 95%% interval contained a tolerance received extra repetitions up to ",
+    "max_reps (%d cells remain unresolved)."), nrow(unres))
   scope <- sprintf(paste0("Feasibility is certified only over the declared family of %d ",
                           "outcome surfaces (%s); a design can fail outside it."),
                    length(surfaces), paste(names(surfaces), collapse = "; "))
@@ -207,10 +295,11 @@ simulate_design <- function(lock, design) {
     scope <- paste(scope, "The outcome was simulated as risk by the target time;",
                    "the hazard models were not stress-tested.")
   out <- list(results = results, truths = truths, metrics = metrics,
-              verdict = .sim_verdict(metrics, p),
+              verdict = verdict,
               edge = if (is.null(risks)) NULL else .edge_check(risks),
-              surfaces = names(surfaces), reps = p$reps, K = p$K, scope = scope,
-              design_hash = design$stamp$hash)
+              surfaces = names(surfaces), reps = p$reps, max_reps = max_reps,
+              extension = extension, K = p$K, scope = scope,
+              decision_note = decision_note, design_hash = design$stamp$hash)
   out$stamp <- .stamp(lock, out)
   class(out) <- "cr_simulation"
   out
