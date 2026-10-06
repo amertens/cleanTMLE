@@ -22,6 +22,7 @@ analysis_plan(
   K = 5L,
   V = 5L,
   reps = 200L,
+  max_reps = 1000L,
   seed = 1L
 )
 }
@@ -66,6 +67,9 @@ candidate id; replaces the minimum worst-surface RMSE rule.}
 \item{V}{Inner folds of the super learner.}
 
 \item{reps}{Plasmode repetitions.}
+
+\item{max_reps}{Cap on repetitions for cells whose result is uncertain;
+see \code{\link[=simulate_design]{simulate_design()}}.}
 
 \item{seed}{Seed for every random step.}
 }

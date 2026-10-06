@@ -21,15 +21,19 @@ fast_plan <- function(...) {
                                      truncation = c(0.01, 0.05)),
                    trim_band = c(0.05, 0.95),
                    K = 2L, V = 2L, reps = 20L, seed = 11L)
-  do.call(analysis_plan, utils::modifyList(defaults, list(...)))
+  args <- utils::modifyList(defaults, list(...))
+  # No extra repetitions unless a test asks for them, so tests stay cheap.
+  if (is.null(args$max_reps)) args$max_reps <- args$reps
+  do.call(analysis_plan, args)
 }
 
 fixture_pipeline <- function(strength = 0.8, n = 400, nc = c(nc_visit = "care use"),
-                             seed = 11L) {
+                             seed = 11L, tolerance = list(bias = 0.1, coverage = 0.5),
+                             max_reps = NULL) {
   d <- make_design(n, seed = 2, strength = strength)
   plan <- fast_plan(negative_controls = nc,
                     nc_criteria = if (is.null(nc)) NULL else list(null_band = c(-0.1, 0.1)),
-                    tolerance = list(bias = 0.1, coverage = 0.5), reps = 10L, seed = seed)
+                    tolerance = tolerance, reps = 10L, max_reps = max_reps, seed = seed)
   lock <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), plan)
   design <- assess_design(lock)
   sim <- suppressMessages(simulate_design(lock, design))

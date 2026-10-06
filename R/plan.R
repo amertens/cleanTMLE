@@ -48,6 +48,8 @@
 #' @param K Outer cross-fitting folds (1 = no cross-fitting).
 #' @param V Inner folds of the super learner.
 #' @param reps Plasmode repetitions.
+#' @param max_reps Cap on repetitions for cells whose result is uncertain;
+#'   see [simulate_design()].
 #' @param seed Seed for every random step.
 #' @return A `cr_plan`.
 #' @export
@@ -64,12 +66,12 @@ analysis_plan <- function(outcome, estimands,
                           nc_criteria = NULL,
                           restrictions = NULL,
                           select = NULL,
-                          K = 5L, V = 5L, reps = 200L, seed = 1L) {
+                          K = 5L, V = 5L, reps = 200L, max_reps = 1000L, seed = 1L) {
   # Anything but a clean FALSE stops, so an NA condition is an error, not a pass.
   stop_if <- function(cond, ...) if (!isFALSE(cond)) stop(..., call. = FALSE)
   whole <- function(x) is.numeric(x) && length(x) == 1L && !is.na(x) &&
     is.finite(x) && x == round(x) && abs(x) <= .Machine$integer.max
-  for (arg in c("K", "V", "reps", "seed"))
+  for (arg in c("K", "V", "reps", "max_reps", "seed"))
     stop_if(!whole(get(arg)), "`", arg, "` must be a single whole number.")
 
   stop_if(!is.character(outcome) || !length(outcome) %in% 1:2,
@@ -147,6 +149,7 @@ analysis_plan <- function(outcome, estimands,
   stop_if(!is.null(select) && !is.function(select),
           "`select` must be NULL or a function of the metrics table.")
   stop_if(K < 1 || V < 2 || reps < 2, "Need K >= 1, V >= 2 and reps >= 2.")
+  stop_if(max_reps < reps, "Need max_reps >= reps.")
 
   structure(list(
     outcome = outcome, outcome_type = outcome_type, target_time = target_time,
@@ -155,7 +158,7 @@ analysis_plan <- function(outcome, estimands,
     trim_band = trim_band, negative_controls = negative_controls,
     nc_criteria = nc_criteria, restrictions = restrictions, select = select,
     K = as.integer(K), V = as.integer(V), reps = as.integer(reps),
-    seed = as.integer(seed)), class = "cr_plan")
+    max_reps = as.integer(max_reps), seed = as.integer(seed)), class = "cr_plan")
 }
 
 .outcome_columns <- function(plan) unname(plan$outcome)

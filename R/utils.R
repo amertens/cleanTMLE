@@ -33,7 +33,16 @@
 
 .bound <- function(p, eps) pmin(pmax(p, eps), 1 - eps)
 
+# Every seeded step runs under R's default generators, whatever RNG kind the
+# caller (or a parallel worker, which future puts on L'Ecuyer-CMRG) has set,
+# so a seed gives the same draws, folds and fits everywhere. The caller's
+# RNG state and kind are restored afterwards.
+.with_seed <- function(seed, code) {
+  withr::with_seed(seed, code, .rng_kind = "Mersenne-Twister",
+                   .rng_normal_kind = "Inversion", .rng_sample_kind = "Rejection")
+}
+
 .make_folds <- function(n, K, seed) {
   if (K <= 1L) return(rep(1L, n))
-  withr::with_seed(seed, sample(rep_len(seq_len(K), n)))
+  .with_seed(seed, sample(rep_len(seq_len(K), n)))
 }
