@@ -160,6 +160,9 @@
     r <- tryCatch(.target(Y, A, X, g_fit$g, Qf$Q1, Qf$Q0, e, t, plan$trim_band),
                   error = function(err) conditionMessage(err))
     if (is.character(r)) return(.estimate_row(e, t, message = r))
+    vals <- c(r$estimate, r$se, r$ci_lower, r$ci_upper)
+    if (length(vals) != 4L || !all(is.finite(vals)))
+      return(.estimate_row(e, t, message = "non-finite estimate or interval"))
     .estimate_row(e, t, r, .implausibility_check(r$estimate, Y, A))
   }
   rows <- list()

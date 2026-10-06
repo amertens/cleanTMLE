@@ -87,3 +87,20 @@ test_that("the implausibility guard flags a sign flip", {
   expect_true(.implausibility_check(-0.4, y, a)$implausible)
   expect_false(.implausibility_check(0.6, y, a)$implausible)
 })
+
+test_that("a non-finite estimate or interval becomes a failed row", {
+  d <- make_design(200)
+  X <- .design_matrix(d$design, c("w1", "w2", "w3"))
+  A <- d$design$A
+  Y <- d$outcomes$y
+  p <- fast_plan(estimands = c("ATE", "ATT"))
+  local_mocked_bindings(.target = function(Y, A, X, g, Q1, Q0, estimand, truncation, trim_band)
+    list(estimate = if (estimand == "ATE") 0.1 else NaN, se = 0.02, ci_lower = 0.06,
+         ci_upper = if (estimand == "ATE") Inf else 0.14, n_population = length(Y),
+         risk1 = 0.3, risk0 = 0.2))
+  out <- .fit_and_target(X, A, Y, "glm", c("ATE", "ATT"), 0.01, p,
+                         .make_folds(200, 2L, 1L), 1L)
+  expect_true(all(out$failed))
+  expect_true(all(out$message == "non-finite estimate or interval"))
+  expect_true(all(is.na(out$estimate)))
+})

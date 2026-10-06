@@ -12,7 +12,10 @@
 #'
 #' Cross-fits the propensity score with the plan's `ps_library`, grades
 #' overlap, and reports per-estimand effective sample sizes, covariate
-#' balance and the learner edge check.
+#' balance and the learner edge check. It also fits the same library once
+#' on all design rows (no cross-fitting); that single fit, a function of
+#' the covariates only, is the propensity score of the world that
+#' [simulate_design()] simulates. The dossier carries neither score.
 #'
 #' @param lock A `cr_lock`.
 #' @return A `cr_design`.
@@ -25,6 +28,10 @@ assess_design <- function(lock) {
   folds <- .make_folds(nrow(X), p$K, p$seed)
   gf <- .fit_g(X, A, p$ps_library, folds, p$V, p$seed)
   g <- gf$g
+  # The simulated world needs a propensity score that is a function of the
+  # covariates alone. The cross-fitted g also depends on each row's fold, which
+  # is not in X, so drawing treatment from it would plant a hidden confounder.
+  g_world <- .fit_g(X, A, p$ps_library, rep(1L, nrow(X)), p$V, p$seed)$g
   band <- p$trim_band %||% c(0.05, 0.95)
   outside <- g < band[1] | g > band[2]
   arm <- function(f) c(f(g[A == 1]), f(g[A == 0]))
@@ -54,7 +61,7 @@ assess_design <- function(lock) {
     })
     data.frame(estimand = e, max_abs_smd = smd)
   }))
-  out <- list(g = g, folds = folds, overlap = overlap, overlap_grade = grade,
+  out <- list(g = g, g_world = g_world, folds = folds, overlap = overlap, overlap_grade = grade,
               share_outside_band = share, band = band, ess = ess, balance = balance,
               edge = .edge_check(gf$risks), risks = gf$risks)
   out$stamp <- .stamp(lock, out)

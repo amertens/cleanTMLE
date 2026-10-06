@@ -15,9 +15,13 @@ simulate_design(lock, design)
 A \code{cr_simulation}.
 }
 \description{
-Resamples the design rows, draws treatment from the design's propensity
-score and outcomes from the plan's family of surfaces, and runs every
-candidate with the same fitter that \code{estimate_effect()} uses. An
+Resamples the design rows, draws treatment from the design's single-fit
+propensity score and outcomes from the plan's family of surfaces, and runs every
+candidate with the same fitter that \code{estimate_effect()} uses. The
+simulated world uses a single-fit propensity score (the plan's
+\code{ps_library} fitted once on all design rows), which depends on the
+covariates only; the cross-fitted score that grades overlap would make
+each row's treatment depend on its fold, which is not a covariate. An
 estimand is feasible when some candidate meets the bias and coverage
 tolerances on every surface. Repetitions run in parallel through
 \code{future.apply} when a parallel \code{future} plan is set and cleanTMLE is

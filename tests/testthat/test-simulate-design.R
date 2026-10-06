@@ -84,10 +84,40 @@ test_that("the simulation uses the plan's K for its folds", {
   expect_true(all(seen == 3L))
 })
 
+test_that("the simulated world uses the single-fit propensity score, not the cross-fitted one", {
+  d <- make_design(300)
+  p <- fast_plan(reps = 2L, estimands = "ATE")
+  lk <- create_analysis_lock(d$design, "A", covs, p)
+  ds <- assess_design(lk)
+  seen <- list()
+  orig_s <- .surfaces; orig_t <- .true_values; orig_r <- .one_rep
+  local_mocked_bindings(
+    .surfaces = function(plan, X, g, seed) { seen$surfaces <<- g; orig_s(plan, X, g, seed) },
+    .true_values = function(q1, q0, g, band) { seen$truth <<- g; orig_t(q1, q0, g, band) },
+    .one_rep = function(r, X, g, surfaces, plan) { seen$draw <<- g; orig_r(r, X, g, surfaces, plan) })
+  suppressMessages(simulate_design(lk, ds))
+  for (nm in c("surfaces", "truth", "draw")) expect_identical(seen[[nm]], ds$g_world, label = nm)
+})
+
 test_that("bootstrap copies of one row never straddle outer folds", {
   n <- 600
   idx <- withr::with_seed(7, sample.int(n, n, replace = TRUE))
   folds <- .make_folds(n, 5L, 11L)[idx]
   expect_true(all(tapply(folds, idx, function(f) length(unique(f))) == 1L))
   expect_identical(sort(unique(folds)), 1:5)
+})
+
+test_that("a repetition with a NaN interval counts as failed, not as a crash", {
+  res <- data.frame(rep = 1:40, surface = "s", library = "glm", estimand = "ATE",
+                    truncation = 0.01, failed = FALSE,
+                    estimate = rep(c(0.09, 0.11), 20), ci_lower = 0.0, ci_upper = 0.2)
+  res$ci_lower[3] <- NaN
+  res$ci_upper[5] <- NA
+  truths <- data.frame(surface = "s", estimand = "ATE", truth = 0.10)
+  p <- fast_plan(estimands = "ATE", tolerance = list(bias = 0.02, coverage = 0.9))
+  m <- .sim_metrics(res, truths, p)
+  expect_identical(m$failed, 2L)
+  expect_equal(m$coverage, 1)
+  expect_false(is.na(m$pass))
+  expect_no_error(.sim_verdict(m, p))
 })

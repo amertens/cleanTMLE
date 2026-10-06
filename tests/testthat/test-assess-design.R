@@ -16,6 +16,21 @@ test_that("assess_design grades overlap and reports per-estimand weights", {
   expect_lt(dg$balance$max_abs_smd[dg$balance$estimand == "ATO"], 0.1)
 })
 
+test_that("the world propensity score is a function of the covariates alone", {
+  d <- make_design(300)
+  p <- fast_plan(K = 2L)
+  folds <- .make_folds(300, p$K, p$seed)
+  j <- which(folds != folds[1])[1]
+  d$design[j, c("w1", "w2", "w3")] <- d$design[1, c("w1", "w2", "w3")]
+  ds <- assess_design(create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), p))
+  # The cross-fitted score depends on the fold, which is not a covariate ...
+  expect_false(isTRUE(all.equal(ds$g[1], ds$g[j])))
+  # ... but the single fit that drives the simulated world does not.
+  expect_length(ds$g_world, 300L)
+  expect_identical(ds$g_world[1], ds$g_world[j])
+  expect_true(all(ds$g_world > 0 & ds$g_world < 1))
+})
+
 test_that("the design is stamped and refuses a modified lock", {
   d <- make_design(300)
   lk <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), fast_plan())

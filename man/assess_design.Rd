@@ -15,5 +15,8 @@ A \code{cr_design}.
 \description{
 Cross-fits the propensity score with the plan's \code{ps_library}, grades
 overlap, and reports per-estimand effective sample sizes, covariate
-balance and the learner edge check.
+balance and the learner edge check. It also fits the same library once
+on all design rows (no cross-fitting); that single fit, a function of
+the covariates only, is the propensity score of the world that
+\code{\link[=simulate_design]{simulate_design()}} simulates. The dossier carries neither score.
 }

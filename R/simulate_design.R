@@ -97,7 +97,8 @@
     k <- keys[i, ]
     s <- results[results$estimand == k$estimand & results$candidate == k$candidate &
                    results$surface == k$surface, , drop = FALSE]
-    ok <- !s$failed & is.finite(s$estimate)
+    ok <- s$failed %in% FALSE & is.finite(s$estimate) & is.finite(s$ci_lower) &
+      is.finite(s$ci_upper)
     R <- sum(ok)
     e <- s$estimate[ok] - s$truth[ok]
     cv <- s$ci_lower[ok] <= s$truth[ok] & s$truth[ok] <= s$ci_upper[ok]
@@ -151,9 +152,13 @@
 
 #' Outcome-free plasmode simulation: the support map and candidate selection
 #'
-#' Resamples the design rows, draws treatment from the design's propensity
-#' score and outcomes from the plan's family of surfaces, and runs every
-#' candidate with the same fitter that `estimate_effect()` uses. An
+#' Resamples the design rows, draws treatment from the design's single-fit
+#' propensity score and outcomes from the plan's family of surfaces, and runs every
+#' candidate with the same fitter that `estimate_effect()` uses. The
+#' simulated world uses a single-fit propensity score (the plan's
+#' `ps_library` fitted once on all design rows), which depends on the
+#' covariates only; the cross-fitted score that grades overlap would make
+#' each row's treatment depend on its fold, which is not a covariate. An
 #' estimand is feasible when some candidate meets the bias and coverage
 #' tolerances on every surface. Repetitions run in parallel through
 #' `future.apply` when a parallel `future` plan is set and cleanTMLE is
@@ -168,7 +173,9 @@ simulate_design <- function(lock, design) {
   .check_stamp(lock, design, "design")
   p <- lock$plan
   X <- .design_matrix(lock$data, lock$covariates)
-  g <- design$g
+  g <- design$g_world  # the world's propensity score: covariates only, never the fold
+  if (is.null(g) || length(g) != nrow(X))
+    stop("`design` has no single-fit propensity score; rerun assess_design().", call. = FALSE)
   surfaces <- .surfaces(p, X, g, p$seed)
   truths <- do.call(rbind, lapply(names(surfaces), function(sn) {
     tv <- .true_values(surfaces[[sn]]$q1, surfaces[[sn]]$q0, g, p$trim_band)
@@ -180,10 +187,12 @@ simulate_design <- function(lock, design) {
   secs <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
   par <- requireNamespace("future.apply", quietly = TRUE) &&
     requireNamespace("future", quietly = TRUE) && future::nbrOfWorkers() > 1L
+  # nbrOfWorkers() can be Inf (for example under future.callr), so it is
+  # capped at the number of repetitions and printed with %s.
   workers <- if (par) future::nbrOfWorkers() else 1L
   message(sprintf(paste0("simulate_design: repetition 1 took %.1f s; expect about %.1f min ",
-                         "for %d repetitions on %d worker(s)."),
-                  secs, secs * p$reps / workers / 60, p$reps, workers))
+                         "for %d repetitions on %s worker(s)."),
+                  secs, secs * p$reps / min(workers, p$reps) / 60, p$reps, format(workers)))
   f <- function(r) .one_rep(r, X, g, surfaces, p)
   rest <- if (par) future.apply::future_lapply(2:p$reps, f, future.seed = TRUE) else
     lapply(2:p$reps, f)
