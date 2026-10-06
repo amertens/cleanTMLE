@@ -28,11 +28,12 @@ fast_plan <- function(...) {
 }
 
 fixture_pipeline <- function(strength = 0.8, n = 400, nc = c(nc_visit = "care use"),
-                             seed = 11L) {
+                             seed = 11L, tolerance = list(bias = 0.1, coverage = 0.5),
+                             max_reps = NULL) {
   d <- make_design(n, seed = 2, strength = strength)
   plan <- fast_plan(negative_controls = nc,
                     nc_criteria = if (is.null(nc)) NULL else list(null_band = c(-0.1, 0.1)),
-                    tolerance = list(bias = 0.1, coverage = 0.5), reps = 10L, seed = seed)
+                    tolerance = tolerance, reps = 10L, max_reps = max_reps, seed = seed)
   lock <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), plan)
   design <- assess_design(lock)
   sim <- suppressMessages(simulate_design(lock, design))

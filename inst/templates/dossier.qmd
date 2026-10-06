@@ -26,9 +26,9 @@ Negative-control verdict: **`r d$decision$nc_verdict`**.
 ```{r, results = "asis"}
 pr <- d$decision$primary
 if (!is.na(pr) && isTRUE(d$decision$unresolved[[pr]]))
-  cat("The primary estimand's status rests on at least one cell whose 95% interval",
-      "still contained a tolerance at max_reps; that cell was decided on its point",
-      "estimate.\n")
+  cat("The primary estimand's decision (status or selected candidate) rests on cells",
+      "still unresolved after their final repetitions: their 95% intervals contained",
+      "a tolerance, and they were decided on their point estimates.\n")
 ```
 
 ```{r}

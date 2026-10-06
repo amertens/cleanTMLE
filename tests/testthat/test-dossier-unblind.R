@@ -92,7 +92,27 @@ test_that("the dossier renders to HTML", {
   expect_match(html, "Decision")
   expect_match(html, "verdict")
   expect_match(html, "coverage_lower")
-  expect_match(html, "max_reps")
+  expect_match(html, "judged on point estimates against the declared tolerances")
+})
+
+test_that("a dossier carries a non-empty extension table and renders it", {
+  # Ten repetitions cannot resolve a 0.8 coverage tolerance (the Wilson
+  # interval for 10 of 10 starts near 0.72), so the selected cells are extended.
+  ex <- fixture_pipeline(tolerance = list(bias = 0.1, coverage = 0.8), max_reps = 20L)
+  d <- ex$dossier
+  expect_true(nrow(d$simulation$extension) > 0)
+  expect_identical(d$simulation$extension, ex$sim$extension)
+  expect_true(any(d$simulation$metrics$reps > 10L))
+  expect_true(all(d$simulation$metrics$reps <= 20L))
+  expect_match(d$simulation$decision_note, "received extra repetitions up to max_reps = 20")
+  skip_on_cran()
+  skip_if_not_installed("quarto")
+  skip_if(is.null(quarto::quarto_path()))
+  f <- withr::local_tempfile(fileext = ".html")
+  design_report(ex$lock, ex$design, ex$sim, ex$nc, file = f)
+  html <- paste(readLines(f, warn = FALSE), collapse = "")
+  expect_match(html, "reps_from")
+  expect_match(html, "cells_unresolved_before")
 })
 
 test_that("unblind fingerprints the dossier, the approval and the outcomes", {

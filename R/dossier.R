@@ -31,7 +31,8 @@
 #' Checks that every design-stage object belongs to the lock, walks the
 #' estimand ladder (the primary is the first declared estimand whose status
 #' is feasible), records the selected candidate for each feasible estimand,
-#' flags each status that rests on a cell still unresolved at `max_reps`
+#' flags each estimand whose decision (status or selected candidate) rests on
+#' cells still unresolved after their final repetitions
 #' (`decision$unresolved`), records the negative-control verdict, and
 #' fingerprints the result.
 #'
@@ -65,8 +66,9 @@ design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
     feas$estimand)
   decision <- list(primary = primary, ladder = p$estimands,
                    status = as.list(stats::setNames(v$status, v$estimand)),
-                   # TRUE when the estimand's status rests on a cell still
-                   # unresolved at max_reps (decided on its point estimate).
+                   # TRUE when the estimand's decision (status or selected
+                   # candidate) rests on cells still unresolved after their
+                   # final repetitions; they were decided on point estimates.
                    unresolved = as.list(stats::setNames(v$unresolved, v$estimand)),
                    candidates = candidates,
                    nc_verdict = if (is.null(nc)) NA_character_ else nc$verdict,

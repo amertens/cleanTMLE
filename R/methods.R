@@ -37,8 +37,8 @@ print.cr_simulation <- function(x, ...) {
         max(x$metrics$reps), " repetitions (max_reps = ", x$max_reps, ")\n", sep = "")
   print(x$verdict, row.names = FALSE)
   if (any(x$verdict$unresolved %in% TRUE))
-    cat("  unresolved = TRUE: the status rests on a cell whose 95% interval",
-        "contains a tolerance.\n")
+    cat("  unresolved = TRUE: the decision (status or selected candidate) rests on",
+        "cells still unresolved after their final repetitions.\n")
   if (!is.null(x$decision_note)) cat(strwrap(x$decision_note, prefix = "  "), sep = "\n")
   cat(strwrap(x$scope, prefix = "  "), sep = "\n")
   invisible(x)
