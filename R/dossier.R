@@ -30,8 +30,10 @@
 #'
 #' Checks that every design-stage object belongs to the lock, walks the
 #' estimand ladder (the primary is the first declared estimand whose status
-#' is feasible), records the selected candidate for each feasible estimand
-#' and the negative-control verdict, and fingerprints the result.
+#' is feasible), records the selected candidate for each feasible estimand,
+#' flags each status that rests on a cell still unresolved at `max_reps`
+#' (`decision$unresolved`), records the negative-control verdict, and
+#' fingerprints the result.
 #'
 #' @param lock A `cr_lock`.
 #' @param design,simulation,nc Results of [assess_design()],
@@ -63,6 +65,9 @@ design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
     feas$estimand)
   decision <- list(primary = primary, ladder = p$estimands,
                    status = as.list(stats::setNames(v$status, v$estimand)),
+                   # TRUE when the estimand's status rests on a cell still
+                   # unresolved at max_reps (decided on its point estimate).
+                   unresolved = as.list(stats::setNames(v$unresolved, v$estimand)),
                    candidates = candidates,
                    nc_verdict = if (is.null(nc)) NA_character_ else nc$verdict,
                    K = p$K, fold_seed = p$seed)
@@ -72,7 +77,8 @@ design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
     lock_hash = lock$lock_hash, plan = .plan_summary(p), outcome_type = p$outcome_type,
     design = design[c("overlap", "overlap_grade", "share_outside_band", "band", "ess",
                       "balance", "edge")],
-    simulation = simulation[c("metrics", "verdict", "truths", "scope", "reps", "K", "edge")],
+    simulation = simulation[c("metrics", "verdict", "truths", "scope", "decision_note",
+                              "extension", "reps", "max_reps", "K", "edge")],
     nc = if (is.null(nc)) NULL else nc[c("table", "by_domain", "by_rung", "verdict")],
     decision = decision, notes = notes,
     component_hashes = list(design = design$stamp$hash, simulation = simulation$stamp$hash,

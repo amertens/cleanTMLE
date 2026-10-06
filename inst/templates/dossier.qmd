@@ -23,8 +23,17 @@ cleanTMLE `r d$version`, built `r d$created`.
 Primary estimand: **`r if (is.na(d$decision$primary)) "none feasible" else d$decision$primary`**.
 Negative-control verdict: **`r d$decision$nc_verdict`**.
 
+```{r, results = "asis"}
+pr <- d$decision$primary
+if (!is.na(pr) && isTRUE(d$decision$unresolved[[pr]]))
+  cat("The primary estimand's status rests on at least one cell whose 95% interval",
+      "still contained a tolerance at max_reps; that cell was decided on its point",
+      "estimate.\n")
+```
+
 ```{r}
-kt(data.frame(estimand = names(d$decision$status), status = unlist(d$decision$status)))
+kt(data.frame(estimand = names(d$decision$status), status = unlist(d$decision$status),
+              unresolved = unlist(d$decision$unresolved[names(d$decision$status)])))
 ```
 
 ```{r}
@@ -50,10 +59,15 @@ if (!is.null(d$design$edge) && nrow(d$design$edge)) kt(d$design$edge)
 
 `r d$simulation$scope`
 
+`r d$simulation$decision_note`
+
 ```{r}
 kt(d$simulation$verdict)
-kt(d$simulation$metrics[c("estimand", "candidate", "surface", "bias", "coverage", "rmse",
-                          "fail_rate", "pass", "borderline")])
+if (!is.null(d$simulation$extension) && nrow(d$simulation$extension))
+  kt(d$simulation$extension)
+kt(d$simulation$metrics[c("estimand", "candidate", "surface", "reps", "bias", "coverage",
+                          "coverage_lower", "coverage_upper", "rmse", "fail_rate", "pass",
+                          "unresolved")])
 ```
 
 ## Negative controls

@@ -32,7 +32,14 @@ print.cr_design <- function(x, ...) {
 #' @export
 print.cr_simulation <- function(x, ...) {
   cat("Outcome-free simulation: ", x$reps, " repetitions, K = ", x$K, "\n", sep = "")
+  if (!is.null(x$extension) && nrow(x$extension))
+    cat("  Unresolved cells extended in ", nrow(x$extension), " batch(es), to at most ",
+        max(x$metrics$reps), " repetitions (max_reps = ", x$max_reps, ")\n", sep = "")
   print(x$verdict, row.names = FALSE)
+  if (any(x$verdict$unresolved %in% TRUE))
+    cat("  unresolved = TRUE: the status rests on a cell whose 95% interval",
+        "contains a tolerance.\n")
+  if (!is.null(x$decision_note)) cat(strwrap(x$decision_note, prefix = "  "), sep = "\n")
   cat(strwrap(x$scope, prefix = "  "), sep = "\n")
   invisible(x)
 }
@@ -50,7 +57,9 @@ print.cr_dossier <- function(x, ...) {
   dec <- x$decision
   cat("Design dossier ", .short(x$dossier_hash), " for lock ", .short(x$lock_hash), "\n", sep = "")
   cat("  Primary estimand: ", if (is.na(dec$primary)) "none feasible" else dec$primary, "\n", sep = "")
-  cat("  Status: ", paste(names(dec$status), unlist(dec$status), sep = " ", collapse = "; "), "\n", sep = "")
+  flag <- ifelse(unlist(dec$unresolved[names(dec$status)]) %in% TRUE, " (unresolved)", "")
+  cat("  Status: ", paste0(names(dec$status), " ", unlist(dec$status), flag, collapse = "; "),
+      "\n", sep = "")
   cat("  Negative controls: ", dec$nc_verdict, "\n", sep = "")
   invisible(x)
 }

@@ -20,6 +20,8 @@ A \code{cr_dossier}.
 \description{
 Checks that every design-stage object belongs to the lock, walks the
 estimand ladder (the primary is the first declared estimand whose status
-is feasible), records the selected candidate for each feasible estimand
-and the negative-control verdict, and fingerprints the result.
+is feasible), records the selected candidate for each feasible estimand,
+flags each status that rests on a cell still unresolved at \code{max_reps}
+(\code{decision$unresolved}), records the negative-control verdict, and
+fingerprints the result.
 }

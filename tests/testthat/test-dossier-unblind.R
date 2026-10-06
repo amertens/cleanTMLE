@@ -9,6 +9,13 @@ test_that("the dossier walks the ladder and records the candidate", {
   expect_identical(d$decision$K, fx$plan$K)
   expect_identical(d$decision$fold_seed, fx$plan$seed)
   expect_identical(d$decision$nc_verdict, "GO")
+  expect_true(all(unlist(d$decision$status) %in% c("feasible", "infeasible")))
+  expect_identical(names(d$decision$unresolved), fx$plan$estimands)
+  expect_true(all(vapply(d$decision$unresolved, is.logical, logical(1))))
+  expect_identical(unname(unlist(d$decision$unresolved)), fx$sim$verdict$unresolved)
+  expect_identical(d$simulation$decision_note, fx$sim$decision_note)
+  expect_s3_class(d$simulation$extension, "data.frame")
+  expect_identical(d$simulation$max_reps, fx$plan$max_reps)
   expect_null(d$design$g)
   expect_null(d$design$g_world)
   has_g_world <- function(x) is.list(x) &&
@@ -84,6 +91,8 @@ test_that("the dossier renders to HTML", {
   html <- paste(readLines(f, warn = FALSE), collapse = "")
   expect_match(html, "Decision")
   expect_match(html, "verdict")
+  expect_match(html, "coverage_lower")
+  expect_match(html, "max_reps")
 })
 
 test_that("unblind fingerprints the dossier, the approval and the outcomes", {

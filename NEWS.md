@@ -11,6 +11,13 @@ Breaking rebuild; 0.3.0 remains at the tag `v0.3.0`.
   In the simulation the fitter assigns the copies of a bootstrapped
   observation to a single cross-fitting fold, so copies never straddle a
   training and a validation fold.
+* `simulate_design()` judges feasibility on the point estimates against the
+  declared tolerances, with no second margin. Each cell reports a Wilson
+  95% interval for coverage and is flagged unresolved when that interval,
+  or the 95% interval for its bias, contains a tolerance; unresolved cells
+  of the estimands at or above the primary get further batches of
+  repetitions up to the new plan argument `max_reps` (default 1000), and
+  the dossier flags a decision that rests on a cell still unresolved there.
 * The simulated world draws treatment, builds its outcome surfaces and
   computes its true values from a single fit of the propensity score on all
   design rows, a function of the covariates only. The cross-fitted score
