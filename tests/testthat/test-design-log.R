@@ -59,7 +59,7 @@ test_that("the Muntner export has the Table S1 columns and one row per step", {
 test_that("the Muntner export names roles and records an override", {
   d <- make_design(400, seed = 2, strength = 0.8)
   p <- fast_plan(negative_controls = c(nc_bad = "care use"),
-                 nc_criteria = list(null_band = c(-0.01, 0.01)),
+                 nc_criteria = list(null_band = c(-0.01, 0.01), rule = "point"),
                  tolerance = list(bias = 0.1, coverage = 0.5), reps = 10L,
                  roles = list(analyst = "A. Analyst"))
   lk <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), p)
@@ -114,4 +114,14 @@ test_that("the JSON log carries the by-rung verdicts by estimand and the estiman
   expect_identical(br$estimand, fx$nc$by_rung$estimand)
   expect_identical(br$verdict, fx$nc$by_rung$verdict)
   expect_identical(unname(unlist(log$negative_controls$verdict)), unname(fx$nc$verdict))
+})
+
+test_that("the Muntner negative-control rationale names the rule", {
+  fx <- fixture_pipeline()
+  out <- export_design_log(fx$dossier, format = "muntner")
+  expect_match(out$rationale[out$stage == "Negative controls"], "point-estimate rule", fixed = TRUE)
+  fi <- fixture_pipeline(nc_rule = "interval")
+  o2 <- export_design_log(fi$dossier, format = "muntner")
+  expect_match(o2$rationale[o2$stage == "Negative controls"], "interval rule", fixed = TRUE)
+  expect_match(o2$rationale[o2$stage == "Negative controls"], "-0.1", fixed = TRUE)
 })

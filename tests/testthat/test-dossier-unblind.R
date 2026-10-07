@@ -157,6 +157,8 @@ test_that("the dossier renders to HTML", {
   # The negative controls are read on the primary estimand, and the section says so.
   expect_match(html, "(the primary estimand) gates unblinding", fixed = TRUE)
   expect_match(html, "rung</th>[^/]*estimand</th>[^/]*verdict</th>")
+  # The section states the grading rule in one sentence (fx uses the point rule).
+  expect_match(html, "point estimate against the null band", fixed = TRUE)
   expect_match(html, "judged on point estimates against the declared tolerances")
   # The trimmed-patient counts table appears, with its lead-in and the
   # covariate table that follows it.
@@ -184,6 +186,18 @@ test_that("a dossier for a plan with no trim band builds and renders", {
   expect_match(html, "Who each estimand describes")
   expect_match(html, "No trim band was declared.")
   expect_no_match(html, "Means of fewer than 5 patients")
+})
+
+test_that("the dossier states the interval rule in its negative-controls section", {
+  skip_on_cran()
+  skip_if_not_installed("quarto")
+  skip_if(is.null(quarto::quarto_path()))
+  iv <- fixture_pipeline(nc_rule = "interval")
+  f <- withr::local_tempfile(fileext = ".html")
+  design_report(iv$lock, iv$design, iv$sim, iv$nc, file = f)
+  html <- paste(readLines(f, warn = FALSE), collapse = "")
+  expect_match(html, "lies inside the null band", fixed = TRUE)
+  expect_match(html, "FLAG does not block unblinding", fixed = TRUE)
 })
 
 test_that("a dossier carries a non-empty extension table and renders it", {

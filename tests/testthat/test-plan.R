@@ -27,7 +27,7 @@ test_that("plan validation rejects what the spec rules out", {
 test_that("negative controls get default criteria", {
   p <- analysis_plan("y", "ATE", negative_controls = c(nc_visit = "care use"))
   expect_equal(p$nc_criteria$null_band, c(-0.02, 0.02))
-  expect_identical(p$nc_criteria$rule, "point")
+  expect_identical(p$nc_criteria$rule, "interval")
 })
 
 test_that(".candidates crosses libraries with truncation levels", {
@@ -75,4 +75,13 @@ test_that("a ci_halfwidth tolerance must be one positive number", {
   expect_equal(analysis_plan("y", "ATE", tolerance = list(ci_halfwidth = 0.05))$tolerance$ci_halfwidth,
                0.05)
   expect_null(analysis_plan("y", "ATE")$tolerance$ci_halfwidth)
+})
+
+test_that("the negative-control rule accepts point, ci and interval, and defaults to interval", {
+  nc <- c(nc_visit = "care use")
+  for (r in c("point", "ci", "interval"))
+    expect_identical(analysis_plan("y", "ATE", negative_controls = nc,
+                                   nc_criteria = list(rule = r))$nc_criteria$rule, r)
+  expect_error(analysis_plan("y", "ATE", negative_controls = nc,
+                             nc_criteria = list(rule = "bayes")), "point.*ci.*interval")
 })

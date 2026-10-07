@@ -3,6 +3,21 @@
   if (is.null(r)) NA_character_ else paste(r, collapse = ", ")
 }
 
+# The grading rule of the negative controls in one plain phrase, for the
+# Muntner rationale. Reads the plan summary's nc_criteria.
+.nc_rule_text <- function(crit) {
+  band <- crit$null_band
+  rng <- sprintf("[%s, %s]", band[1], band[2])
+  switch(crit$rule %||% "point",
+         interval = paste0("the interval rule (GO when the 95% interval lies inside the null band ",
+                           rng, ", STOP when it lies entirely outside, FLAG when it is too ",
+                           "imprecise to tell)."),
+         ci = paste0("the whole-interval rule (GO only when the 95% interval lies inside the null band ",
+                     rng, ")."),
+         paste0("the point-estimate rule (GO when the point estimate lies inside the null band ",
+                rng, ")."))
+}
+
 .muntner_log <- function(d, approval, fits) {
   pl <- d$plan
   an <- .role(pl, "analyst")
@@ -40,8 +55,8 @@
       sprintf("Residual confounding check on the %s (the primary estimand)",
               d$decision$nc_estimand),
       d$decision$nc_verdict,
-      paste("Graded against the prespecified criteria on the full cohort, for the estimand",
-            "the analysis reports."))
+      paste("Graded on the full cohort, for the estimand the analysis reports, by",
+            .nc_rule_text(pl$nc_criteria)))
   } else if (!is.null(pl$negative_controls) && is.na(d$decision$primary)) {
     rows[[length(rows) + 1L]] <- row(
       d$created, "Negative controls", "Residual confounding check (no feasible estimand)",

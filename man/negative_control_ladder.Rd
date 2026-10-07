@@ -24,13 +24,22 @@ control read on an estimand the design cannot deliver measures that
 estimand's extrapolation, not residual confounding.
 }
 \details{
+Each estimated control gets a \code{reading} from the plan's rule. Under the
+default \code{"interval"} rule it reads "inside" when its 95\% interval lies
+entirely inside \code{null_band}, "outside" when the interval lies entirely
+outside it, and "inconclusive" otherwise (too imprecise to tell). Under
+\code{"point"} it reads "inside" or "outside" by the point estimate, and under
+\code{"ci"} it reads "inside" only when the whole interval is inside the band.
+Neither of those two rules gives "inconclusive".
+
 Grading is per rung and estimand. Within a rung and estimand, a domain
-reads "fail" if any estimable control is out of the band (even when too few
-controls are estimable), otherwise "insufficient" if fewer than
-\code{min_per_domain} controls are estimable, otherwise "pass". A rung is STOP
-if any domain fails, FLAG if any is insufficient, and GO otherwise. An
-estimated control whose estimate or interval is not finite counts as
-failed, not as estimable.
+reads "fail" if any control is outside the band (even when too few controls
+are estimable), otherwise "inconclusive" if any control is inconclusive,
+otherwise "insufficient" if fewer than \code{min_per_domain} controls are
+estimable, otherwise "pass". A rung is STOP if any domain fails, FLAG if
+any is inconclusive or insufficient, and GO otherwise. FLAG does not block
+\code{\link[=unblind]{unblind()}}; only STOP does. An estimated control whose estimate or
+interval is not finite counts as failed, not as estimable.
 
 \code{verdict} is a named character vector: the full cohort's verdict for each
 declared estimand, in ladder order. \code{\link[=design_report]{design_report()}} gates unblinding on

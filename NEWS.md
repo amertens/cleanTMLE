@@ -37,6 +37,13 @@
   extrapolation, not confounding. `nc$verdict` is a named vector, the tables
   gain an `estimand` column, and ladders made before this change stop
   `design_report()` with a message to rerun `negative_control_ladder()`.
+* The default negative-control rule is now `"interval"`. A control reads
+  inside the null band, outside it, or inconclusive, from its 95% interval:
+  GO when the interval lies inside the band, STOP when it lies entirely
+  outside, and FLAG when it is too imprecise to tell (FLAG does not block
+  `unblind()`). A point-estimate band narrower than the sampling error fails a
+  control with no effect most of the time. The `"point"` and `"ci"` rules are
+  unchanged, and the table gains a per-control `reading` column.
 
 # cleanTMLE 0.4.0
 

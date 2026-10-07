@@ -136,6 +136,20 @@ if (!is.null(d$nc) && !is.na(d$decision$nc_estimand))
 if (!is.null(d$nc) && is.na(d$decision$nc_estimand))
   cat("No estimand is feasible, so no estimand's control verdict gates unblinding.",
       "The rows below are diagnostics.", "\n")
+if (!is.null(d$nc) && !is.null(d$plan$nc_criteria)) {
+  cr <- d$plan$nc_criteria
+  band <- paste0("[", cr$null_band[1], ", ", cr$null_band[2], "]")
+  cat("\n\n", switch(cr$rule,
+    interval = paste0("Rule: each control is read from its 95% interval against the null band ",
+      band, ". The verdict is GO when the interval lies inside the null band, STOP when it lies ",
+      "entirely outside, and FLAG when it is too imprecise to tell. FLAG does not block ",
+      "unblinding."),
+    ci = paste0("Rule: each control is read from its 95% interval against the null band ", band,
+      ". The verdict is GO when the whole interval lies inside the null band and STOP otherwise."),
+    paste0("Rule: each control is read from its point estimate against the null band ", band,
+      ". The verdict is GO when the point estimate lies inside the null band and STOP when it ",
+      "lies outside.")), "\n", sep = "")
+}
 ```
 
 ```{r}

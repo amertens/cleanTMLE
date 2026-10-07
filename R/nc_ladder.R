@@ -4,19 +4,34 @@
   tab$status[bad] <- "failed: non-finite estimate"
   est <- tab$status == "estimated"
   band <- crit$null_band
-  tab$in_band <- NA
-  tab$in_band[est] <- if (crit$rule == "ci") {
-    tab$ci_lower[est] >= band[1] & tab$ci_upper[est] <= band[2]
+  # Each estimated control gets a reading: "inside" or "outside" the null band,
+  # or (interval rule only) "inconclusive". in_band is the same reading as
+  # TRUE, FALSE or NA, kept for compatibility.
+  tab$reading <- NA_character_
+  tab$reading[est] <- if (crit$rule == "interval") {
+    lo <- tab$ci_lower[est]
+    hi <- tab$ci_upper[est]
+    ifelse(lo >= band[1] & hi <= band[2], "inside",
+           ifelse(hi < band[1] | lo > band[2], "outside", "inconclusive"))
   } else {
-    tab$estimate[est] >= band[1] & tab$estimate[est] <= band[2]
+    inside <- if (crit$rule == "ci") {
+      tab$ci_lower[est] >= band[1] & tab$ci_upper[est] <= band[2]
+    } else {
+      tab$estimate[est] >= band[1] & tab$estimate[est] <= band[2]
+    }
+    ifelse(inside, "inside", "outside")
   }
+  tab$in_band <- NA
+  tab$in_band[est & tab$reading %in% "inside"] <- TRUE
+  tab$in_band[est & tab$reading %in% "outside"] <- FALSE
   # Graded per rung and estimand: a control is read on each estimand separately.
   keys <- unique(tab[c("rung", "estimand", "domain")])
   by_domain <- do.call(rbind, lapply(seq_len(nrow(keys)), function(i) {
     d <- tab[tab$rung == keys$rung[i] & tab$estimand == keys$estimand[i] &
                tab$domain == keys$domain[i], , drop = FALSE]
     n_est <- sum(d$status == "estimated")
-    reading <- if (any(!d$in_band, na.rm = TRUE)) "fail" else
+    reading <- if (any(d$reading %in% "outside")) "fail" else
+      if (any(d$reading %in% "inconclusive")) "inconclusive" else
       if (n_est < crit$min_per_domain) "insufficient" else "pass"
     data.frame(rung = keys$rung[i], estimand = keys$estimand[i], domain = keys$domain[i],
                n_estimable = n_est, reading = reading, stringsAsFactors = FALSE)
@@ -25,7 +40,7 @@
   by_rung <- data.frame(rung = rk$rung, estimand = rk$estimand,
                         verdict = vapply(seq_len(nrow(rk)), function(i) {
     x <- by_domain$reading[by_domain$rung == rk$rung[i] & by_domain$estimand == rk$estimand[i]]
-    if (any(x == "fail")) "STOP" else if (any(x == "insufficient")) "FLAG" else "GO"
+    if (any(x == "fail")) "STOP" else if (any(x %in% c("inconclusive", "insufficient"))) "FLAG" else "GO"
   }, character(1)), stringsAsFactors = FALSE, row.names = NULL)
   list(table = tab, by_domain = by_domain, by_rung = by_rung)
 }
@@ -40,13 +55,22 @@
 #' control read on an estimand the design cannot deliver measures that
 #' estimand's extrapolation, not residual confounding.
 #'
+#' Each estimated control gets a `reading` from the plan's rule. Under the
+#' default `"interval"` rule it reads "inside" when its 95% interval lies
+#' entirely inside `null_band`, "outside" when the interval lies entirely
+#' outside it, and "inconclusive" otherwise (too imprecise to tell). Under
+#' `"point"` it reads "inside" or "outside" by the point estimate, and under
+#' `"ci"` it reads "inside" only when the whole interval is inside the band.
+#' Neither of those two rules gives "inconclusive".
+#'
 #' Grading is per rung and estimand. Within a rung and estimand, a domain
-#' reads "fail" if any estimable control is out of the band (even when too few
-#' controls are estimable), otherwise "insufficient" if fewer than
-#' `min_per_domain` controls are estimable, otherwise "pass". A rung is STOP
-#' if any domain fails, FLAG if any is insufficient, and GO otherwise. An
-#' estimated control whose estimate or interval is not finite counts as
-#' failed, not as estimable.
+#' reads "fail" if any control is outside the band (even when too few controls
+#' are estimable), otherwise "inconclusive" if any control is inconclusive,
+#' otherwise "insufficient" if fewer than `min_per_domain` controls are
+#' estimable, otherwise "pass". A rung is STOP if any domain fails, FLAG if
+#' any is inconclusive or insufficient, and GO otherwise. FLAG does not block
+#' [unblind()]; only STOP does. An estimated control whose estimate or
+#' interval is not finite counts as failed, not as estimable.
 #'
 #' `verdict` is a named character vector: the full cohort's verdict for each
 #' declared estimand, in ladder order. [design_report()] gates unblinding on

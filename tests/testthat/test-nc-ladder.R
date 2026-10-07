@@ -15,19 +15,19 @@ test_that("no declared controls gives an empty ladder with no verdict", {
 })
 
 test_that("a null control passes and a treatment-driven control stops", {
-  ok <- ladder_for(c(nc_visit = "care use"), nc_criteria = list(null_band = c(-0.1, 0.1)),
+  ok <- ladder_for(c(nc_visit = "care use"), nc_criteria = list(null_band = c(-0.1, 0.1), rule = "point"),
                    restrictions = list(no_transfer = ~ transfer == 0))
   ests <- c("ATE", "trimmed_ATE", "ATT", "ATO")
   expect_identical(ok$by_rung$rung, rep(c("full cohort", "no_transfer"), each = 4))
   expect_identical(ok$by_rung$estimand, rep(ests, 2))
   expect_identical(ok$verdict, stats::setNames(rep("GO", 4), ests))
-  bad <- ladder_for(c(nc_bad = "care use"), nc_criteria = list(null_band = c(-0.1, 0.1)))
+  bad <- ladder_for(c(nc_bad = "care use"), nc_criteria = list(null_band = c(-0.1, 0.1), rule = "point"))
   expect_identical(names(bad$verdict), ests)
   expect_identical(bad$verdict[["ATE"]], "STOP")
 })
 
 test_that("each control is estimated for every declared estimand, one row each", {
-  nc <- ladder_for(c(nc_visit = "care use"), nc_criteria = list(null_band = c(-0.1, 0.1)),
+  nc <- ladder_for(c(nc_visit = "care use"), nc_criteria = list(null_band = c(-0.1, 0.1), rule = "point"),
                    restrictions = list(no_transfer = ~ transfer == 0))
   ests <- c("ATE", "trimmed_ATE", "ATT", "ATO")
   expect_true("estimand" %in% names(nc$table))
@@ -40,7 +40,7 @@ test_that("each control is estimated for every declared estimand, one row each",
   expect_gt(length(unique(round(nc$table$estimate[nc$table$rung == "full cohort"], 8))), 1L)
   # A plan that declares one estimand gets one verdict, named by it.
   one <- ladder_for(c(nc_visit = "care use"), estimands = "ATO",
-                    nc_criteria = list(null_band = c(-0.1, 0.1)))
+                    nc_criteria = list(null_band = c(-0.1, 0.1), rule = "point"))
   expect_identical(names(one$verdict), "ATO")
   expect_identical(one$table$estimand, "ATO")
 })
@@ -52,7 +52,7 @@ test_that("the verdict vector is the full-cohort rung of by_rung, named by estim
     d$design$nc_sub <- stats::rbinom(500, 1, stats::plogis(-1 + 3 * d$design$A * d$design$grp))
   })
   p <- fast_plan(negative_controls = c(nc_sub = "care use"),
-                 nc_criteria = list(null_band = c(-0.1, 0.1)))
+                 nc_criteria = list(null_band = c(-0.1, 0.1), rule = "point"))
   lk <- create_analysis_lock(d$design, "A", covs, p)
   nc <- negative_control_ladder(lk, assess_design(lk))
   expect_identical(nc$by_rung$estimand, p$estimands)
@@ -163,7 +163,7 @@ test_that("the verdict is the full cohort's for each estimand, whatever the rest
     d$design$nc_sub <- stats::rbinom(500, 1, stats::plogis(-1 + 3 * d$design$A * d$design$grp))
   })
   p <- fast_plan(negative_controls = c(nc_sub = "care use"),
-                 nc_criteria = list(null_band = c(-0.1, 0.1)),
+                 nc_criteria = list(null_band = c(-0.1, 0.1), rule = "point"),
                  restrictions = list(grp0 = ~ grp == 0, untreated_only = ~ A == 0),
                  tolerance = list(bias = 0.1, coverage = 0.5), reps = 10L)
   lk <- create_analysis_lock(d$design, "A", covs, p)
@@ -205,4 +205,82 @@ test_that(".nc_grade relabels an estimated row with a non-finite estimate as fai
   expect_identical(g$by_domain$n_estimable, 0L)
   expect_identical(g$by_domain$reading, "insufficient")
   expect_identical(g$by_rung$verdict, "FLAG")
+})
+
+test_that("the interval rule reads each control from its interval against the null band", {
+  tab <- function(est, lo, hi, status = "estimated", domain = "d", estimand = "ATE",
+                  rung = "r") {
+    data.frame(rung = rung, estimand = estimand, negative_control = paste0("nc", seq_along(est)),
+               domain = domain, n = 100L, estimate = est, ci_lower = lo, ci_upper = hi,
+               status = status, stringsAsFactors = FALSE)
+  }
+  crit <- list(null_band = c(-0.1, 0.1), rule = "interval", min_per_domain = 1L)
+  # inside, outside (either side), inconclusive (overlapping either edge or spanning the band)
+  g <- .nc_grade(tab(est = c(0, 0.5, -0.5, 0.12, -0.12, 0),
+                     lo = c(-0.05, 0.4, -0.6, 0.05, -0.2, -0.3),
+                     hi = c(0.05, 0.6, -0.4, 0.2, -0.05, 0.3)), crit)
+  expect_identical(g$table$reading,
+                   c("inside", "outside", "outside", "inconclusive", "inconclusive", "inconclusive"))
+  # an interval exactly on the band edge is inside; touching the band from outside is not outside
+  e <- .nc_grade(tab(est = c(0, 0.1, -0.1), lo = c(-0.1, 0.1, -0.2), hi = c(0.1, 0.2, -0.1)), crit)
+  expect_identical(e$table$reading, c("inside", "inconclusive", "inconclusive"))
+  e2 <- .nc_grade(tab(est = c(0.2, -0.2), lo = c(0.1000001, -0.3), hi = c(0.3, -0.1000001)), crit)
+  expect_identical(e2$table$reading, c("outside", "outside"))
+  # in_band is kept: TRUE inside, FALSE outside, NA when inconclusive
+  expect_identical(g$table$in_band, c(TRUE, FALSE, FALSE, NA, NA, NA))
+  # domain and rung mapping: one control each
+  one <- function(lo, hi, ...) .nc_grade(tab(est = (lo + hi) / 2, lo = lo, hi = hi, ...), crit)
+  expect_identical(one(-0.05, 0.05)$by_domain$reading, "pass")
+  expect_identical(one(-0.05, 0.05)$by_rung$verdict, "GO")
+  expect_identical(one(0.2, 0.4)$by_domain$reading, "fail")
+  expect_identical(one(0.2, 0.4)$by_rung$verdict, "STOP")
+  expect_identical(one(-0.05, 0.3)$by_domain$reading, "inconclusive")
+  expect_identical(one(-0.05, 0.3)$by_rung$verdict, "FLAG")
+  # fail beats inconclusive; inconclusive beats insufficient; insufficient is FLAG
+  two <- .nc_grade(tab(est = c(0.3, 0.1), lo = c(0.2, -0.05), hi = c(0.4, 0.3)), crit)
+  expect_identical(two$by_domain$reading, "fail")
+  three <- .nc_grade(tab(est = c(0.1, 0), lo = c(-0.05, NA), hi = c(0.3, NA),
+                         status = c("estimated", "inestimable (a cell below 5 events)")),
+                     utils::modifyList(crit, list(min_per_domain = 2L)))
+  expect_identical(three$by_domain$reading, "inconclusive")
+  four <- .nc_grade(tab(est = c(0, 0), lo = c(-0.05, NA), hi = c(0.05, NA),
+                        status = c("estimated", "failed: x")),
+                    utils::modifyList(crit, list(min_per_domain = 2L)))
+  expect_identical(four$by_domain$reading, "insufficient")
+  expect_identical(four$by_rung$verdict, "FLAG")
+  # graded per estimand and per domain
+  m <- .nc_grade(rbind(tab(0, -0.05, 0.05, estimand = "ATE"),
+                       tab(0.3, 0.2, 0.4, estimand = "ATO"),
+                       tab(0.1, -0.05, 0.3, estimand = "ATT")), crit)
+  expect_identical(m$by_rung$estimand, c("ATE", "ATO", "ATT"))
+  expect_identical(m$by_rung$verdict, c("GO", "STOP", "FLAG"))
+})
+
+test_that("point and ci rules map in_band to a reading and are never inconclusive", {
+  est <- "estimated"
+  tab <- data.frame(rung = "r", estimand = "ATE", negative_control = c("a", "b", "c"),
+                    domain = "d", n = 100L, estimate = c(0.05, 0.2, 0.05),
+                    ci_lower = c(-0.2, 0.1, -0.05), ci_upper = c(0.3, 0.3, 0.08),
+                    status = c(est, est, "failed: x"), stringsAsFactors = FALSE)
+  for (rule in c("point", "ci")) {
+    g <- .nc_grade(tab, list(null_band = c(-0.1, 0.1), rule = rule, min_per_domain = 1))
+    expect_false(any(g$table$reading %in% "inconclusive"))
+    expect_identical(g$table$reading[2], "outside")
+    expect_true(is.na(g$table$reading[3]))
+    expect_identical(g$table$reading[1], if (rule == "point") "inside" else "outside")
+    expect_identical(g$table$in_band[1:2], g$table$reading[1:2] == "inside")
+  }
+})
+
+test_that("a ladder under the interval rule can read FLAG where the point rule reads STOP", {
+  # nc_visit is null; the band is narrower than the sampling error, so a point rule
+  # fails it and the interval rule calls it inconclusive.
+  nc <- ladder_for(c(nc_visit = "care use"),
+                   nc_criteria = list(null_band = c(-0.001, 0.001), rule = "interval"))
+  expect_true("reading" %in% names(nc$table))
+  expect_false(any(nc$verdict == "STOP"))
+  expect_true(all(nc$verdict == "FLAG"))
+  pt <- ladder_for(c(nc_visit = "care use"),
+                   nc_criteria = list(null_band = c(-0.001, 0.001), rule = "point"))
+  expect_true(all(pt$verdict == "STOP"))
 })
