@@ -46,6 +46,12 @@
   `unblind()`. A point-estimate band narrower than the sampling error fails a
   control with no effect most of the time. The `"point"` and `"ci"` rules are
   unchanged, and the table gains a per-control `reading` column.
+* Two vignettes: "Get started with cleanTMLE", which takes `cr_example`
+  through every stage on a small plan, and "Writing the plan and reading the
+  dossier", for the analyst who writes the plan and the review team who reads
+  the dossier.
+* The dossier says feasibility is supported, not certified, over the declared
+  family of outcome surfaces.
 
 # cleanTMLE 0.4.0
 

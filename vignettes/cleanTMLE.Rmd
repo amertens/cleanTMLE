@@ -1,0 +1,342 @@
+---
+title: "Get started with cleanTMLE"
+output: rmarkdown::html_vignette
+bibliography: references.bib
+vignette: >
+  %\VignetteIndexEntry{Get started with cleanTMLE}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 6, fig.height = 3.5)
+r3 <- function(x) format(round(x, 3), nsmall = 3)
+pct <- function(x) paste0(round(100 * x), "%")
+mw <- function(d, e) format(round(d$ess$max_weight[d$ess$estimand == e], 2), nsmall = 2)
+ess <- function(d, e, arm) format(round(d$ess[[paste0("ess_", arm)]][d$ess$estimand == e]))
+lab <- function(e) c(ATE = "ATE", trimmed_ATE = "trimmed ATE", ATT = "ATT", ATO = "ATO")[[e]]
+pop <- function(d, col, v) r3(d$populations[[col]][d$populations$covariate == v])
+```
+
+cleanTMLE runs an observational comparison in stages, so that the design is
+settled before anyone sees the outcome. This is the clean-room idea of
+@muntner2024staging. The package adds one question to the design stage:
+can these data deliver the estimand we planned, and if not, which one can
+they deliver?
+
+In this vignette we take one simulated cohort through every stage. It takes
+a few minutes to build. Each step says what it decides and what to look for
+in its output.
+
+## Why decide before seeing the outcome
+
+Two problems motivate the stages. The first is analytic flexibility: when
+the person choosing the model can see how each choice moves the estimate,
+the final estimate carries those choices, however honest the person. The
+second is positivity. An average treatment effect (ATE) needs every kind of
+patient to have a real chance of either treatment. Where a group of
+patients almost never receives one treatment, an estimator extrapolates,
+and it can return a precise-looking estimate that is far from the truth
+[@petersen2012positivity].
+
+Keeping the outcome away from the design solves the first problem.
+Checking, still without the outcome, which estimands the design can support
+solves the second. The other estimands describe other populations: the
+average treatment effect among the treated (ATT); the trimmed ATE, the
+effect among patients whose propensity score lies inside a band
+[@crump2009trimming]; and the overlap-weighted effect (ATO), which weights
+each patient by how uncertain their treatment was [@li2018overlap]. In ICH
+E9(R1) terms, moving between them changes the population attribute of the
+estimand; the treatment, the outcome and the summary measure stay the same.
+
+cleanTMLE estimates each of them with targeted maximum likelihood
+estimation (TMLE), which combines a model for the outcome with a model for
+the propensity score and stays consistent if either one is correct
+[@vanderLaan2006tmle].
+
+## The example cohort
+
+`cr_example` is a simulated cohort of 1,500 patients. It comes as two
+separate data frames, so that the outcome stays out of the design stage.
+
+```{r data}
+library(cleanTMLE)
+str(cr_example$design)
+str(cr_example$outcomes)
+```
+
+The question is the effect of treatment `A` on death within 30 days
+(`death_30d`), measured as a risk difference: the difference in the
+proportion of patients who die within 30 days. A risk difference describes
+the whole target population directly and, unlike a hazard ratio from a Cox
+model, does not depend on a proportional-hazards assumption. Treatment
+depends strongly on `severity`, so few severe patients go untreated and few
+mild patients are treated. Because the data are simulated, we know the true
+effect for each estimand; it is in `cr_example$truth`, and we compare our
+estimate with it at the end.
+
+## Step 1: declare the plan
+
+Everything about the analysis is set once, in the plan. Nothing can be
+added after the next step.
+
+```{r plan}
+plan <- analysis_plan(
+  outcome = "death_30d",
+  estimands = c("ATE", "trimmed_ATE", "ATT", "ATO"),
+  trim_band = c(0.05, 0.95),
+  ps_library = "glm",
+  candidates = list(library = list(glm = "glm"), truncation = 0.01),
+  surfaces = list(forms = "linear"),
+  negative_controls = c(health_seeking = "health care use"),
+  restrictions = list(no_transfer = ~ transfer == 0),
+  roles = list(analyst = "A. Analyst", reviewers = "Review team"),
+  K = 1, reps = 50, max_reps = 50, seed = 1)
+```
+
+The `estimands` are a ladder, in order of preference: the first one the
+design can support becomes the primary estimand. `trim_band` defines the
+trimmed population. `ps_library` is the model for the propensity score, and
+`candidates` lists the outcome models and the truncation levels to compare.
+Truncation bounds the estimated propensity score, here at 0.01 and 0.99,
+inside the estimator; it limits extreme weights without removing anyone.
+Trimming, by contrast, removes the patients outside the band from the
+target population. `surfaces` describes the simulated outcomes the design
+stage tests against (step 4). `negative_controls` names an outcome that
+treatment should not affect, and `restrictions` lists cohort restrictions
+to check it under.
+
+The plan also holds defaults we did not change. An estimand is accepted
+when, in the simulation, its estimator's absolute bias is at most
+`r plan$tolerance$bias` on the risk difference scale and the coverage of
+its 95% confidence interval is at least `r plan$tolerance$coverage`. The
+negative control passes when its interval lies within
+`r plan$nc_criteria$null_band[1]` to `r plan$nc_criteria$null_band[2]`.
+
+This plan is deliberately small so that the vignette builds in a few
+minutes: logistic regression only, no cross-fitting (`K = 1`), and 50
+simulated repetitions. A real analysis keeps the defaults. These are a
+super learner, which combines several machine-learning models by
+cross-validation, with one learner of each kind; five-fold cross-fitting,
+which fits the models on part of the data and predicts on the rest; and
+200 or more repetitions. The vignette "Writing the plan and reading the
+dossier" explains each choice.
+
+## Step 2: lock the design data
+
+```{r lock}
+lock <- create_analysis_lock(cr_example$design, treatment = "A",
+                             covariates = c("age", "female", "severity", "prior_visits"),
+                             plan = plan)
+```
+
+The lock holds the plan and the design data, and refuses data that contain
+the outcome column. Its hash is a fingerprint of both:
+
+```{r hash}
+substr(lock$lock_hash, 1, 16)
+```
+
+If the plan or the design data change after this point, the hash no longer
+matches and every later step stops. The lock cannot stop anyone from
+analyzing the outcome outside the package; what it guarantees is that any
+change to the plan or the design data is detectable. The outcome enters
+the package only at step 6.
+
+## Step 3: assess the design
+
+```{r design}
+design <- assess_design(lock)
+design
+```
+
+The overlap grade is `r design$overlap_grade`: `r pct(design$share_outside_band)`
+of patients have an estimated propensity score outside the trim band (the
+grade is good below 5%, moderate below 20%, and poor otherwise). The
+c-statistic of the propensity score is `r r3(design$c_statistic)`; values
+near 1 mean treatment is close to predictable from the covariates.
+
+The table gives, for each estimand, the effective sample size in each arm,
+the largest weight, and the 99th percentile of the weights. For the ATE the
+largest weight is `r mw(design, "ATE")`: one patient counts as that many
+patients who look like them but received the other treatment. The ATT
+needs controls who look like the treated, and the effective number of
+controls for it is only `r ess(design, "ATT", "control")`. Overlap weights
+are at most 1, so for the ATO the largest weight is `r mw(design, "ATO")`.
+
+The plot shows why. Near a propensity score of 0 almost every patient is a
+control, and near 1 most are treated.
+
+```{r design-plot}
+plot(design)
+```
+
+Changing the estimand changes the population the answer is about. The
+`populations` table gives, for each estimand, the mean of each covariate
+in its target population and the standardized mean difference from the
+full cohort (the columns ending in `_shift`):
+
+```{r populations}
+design$populations[, c("covariate", "cohort", "trimmed_ATE", "ATT", "ATO",
+                       "trimmed_ATE_shift", "ATT_shift", "ATO_shift")]
+```
+
+Severity shows the difference. Its mean is `r pop(design, "cohort", "severity")`
+in the cohort and `r pop(design, "ATT", "severity")` among the treated, a
+standardized mean difference of `r pop(design, "ATT_shift", "severity")`. The
+trimmed and overlap-weighted populations differ from the cohort by
+`r pop(design, "trimmed_ATE_shift", "severity")` and
+`r pop(design, "ATO_shift", "severity")`. An answer about the treated is an
+answer about sicker patients.
+
+The trimmed population leaves out the patients outside the band. Here is
+who they are:
+
+```{r trimmed}
+design$trimmed_profile$counts
+design$trimmed_profile$covariates
+```
+
+When fewer than five patients are removed or kept, these means are not
+shown, so that the dossier never reports values for one or two
+individuals.
+
+## Step 4: test the design with simulated outcomes
+
+The outcome is still locked away. To learn which estimands the design can
+deliver, `simulate_design()` runs a plasmode simulation: it keeps the real
+covariates, draws new treatments from the estimated propensity score, and
+draws outcomes from a family of outcome models fixed in the plan, which
+the package calls outcome surfaces. Because it built those outcomes, it
+knows the true effect in each simulated dataset, so it can check whether
+each estimator recovers it. Drawing new treatments, rather than keeping
+each patient's observed one, matters: keeping them builds a positivity
+violation into the simulation [@shaw2025plasmode].
+
+```{r simulate}
+sim <- simulate_design(lock, design)
+sim$verdict[, c("estimand", "status", "selected", "ci_halfwidth", "unresolved")]
+```
+
+An estimand is feasible when an estimator meets the bias and coverage
+tolerances on every surface. Here the ATE is
+`r sim$verdict$status[sim$verdict$estimand == "ATE"]` and the trimmed ATE
+is `r sim$verdict$status[sim$verdict$estimand == "trimmed_ATE"]`, so the
+ladder moves one rung down. `selected` names the chosen candidate: the
+outcome model (`glm`) and the truncation level (`t0.01`). `ci_halfwidth`
+is the expected half-width of the 95% confidence interval, which tells you,
+before seeing any outcome, how precise the answer will be.
+
+Each check is itself an estimate from a finite number of simulated
+datasets. `unresolved` is `TRUE` when that uncertainty is too large to say
+whether a tolerance was met. With only 50 repetitions,
+`r if (all(sim$verdict$unresolved)) "every check here is unresolved" else "some checks here are unresolved"`; a real analysis uses more repetitions and lets `max_reps` add
+them where they could change the decision.
+
+## Step 5: check a negative control
+
+`health_seeking` records health care use that treatment should not affect.
+If adjustment removes confounding, its estimated effect should be near
+zero.
+
+```{r nc}
+nc <- negative_control_ladder(lock, design)
+nc$by_rung
+```
+
+The control is estimated for every estimand, first on the full cohort and
+then under each restriction; the `rung` column says which. Here the
+restriction excludes patients transferred in from another hospital, who may
+differ in ways the covariates do not capture. For each estimand the verdict
+is GO when every control's 95% interval lies inside the null band, STOP
+when any lies entirely outside it, and FLAG otherwise. Only the full-cohort
+verdict for the estimand the analysis will report can block unblinding.
+Estimands the design cannot deliver can read STOP for a reason other than
+confounding: a control read on such an estimand mixes extrapolation error
+with confounding.
+
+## Step 6: build the dossier and unblind
+
+The dossier collects the decision and everything behind it, and
+fingerprints them.
+
+```{r dossier}
+dossier <- design_report(lock, design, sim, nc)
+dossier
+```
+
+```{r nc-row, include = FALSE}
+nc_row <- subset(nc$table, rung == "full cohort" & estimand == dossier$decision$primary)
+```
+
+The primary estimand is the `r lab(dossier$decision$primary)`, and the
+negative-control verdict for it is `r dossier$decision$nc_verdict`. On that
+estimand the control's interval runs from `r r3(nc_row$ci_lower)` to
+`r r3(nc_row$ci_upper)`, much wider than the null band, so the check cannot
+rule out residual confounding as large as the band. FLAG does not block
+unblinding; the dossier reports it for the review team.
+
+The rendered dossier, `design_report(..., file = "dossier.html")`, also
+shows the plan, the population tables, the full simulation results, and the
+expected number of events in each arm, computed from the outcome surfaces
+and the observed treatment without reading the outcome:
+
+```{r events}
+ev <- dossier$expected_events_range
+ev[-1] <- round(ev[-1])
+ev
+```
+
+The ATE, ATT and ATO use every patient, so their rows match; the trimmed
+ATE uses only the patients inside the band. The range comes from the
+different outcome surfaces, and the treatment effect changes only the
+treated arm.
+
+In a real study the review team reads the rendered dossier before
+approving. Here `r if (all(sim$verdict$unresolved)) "every check is" else "some checks are"`
+unresolved, so a review team should ask for more repetitions before approving. We approve only to show the next step:
+
+```{r unblind}
+ub <- unblind(lock, dossier, cr_example$outcomes, approved_by = "Review team")
+```
+
+`unblind()` checks that the dossier belongs to this lock and has not been
+changed before it admits the outcome.
+
+## Step 7: estimate the effect
+
+```{r estimate}
+fit <- estimate_effect(ub)
+fit
+truth <- cr_example$truth$truth[cr_example$truth$estimand == fit$estimand]
+```
+
+`estimate_effect()` uses the estimand and the candidate the dossier
+selected. The estimated `r lab(fit$estimand)`, a difference in 30-day risk,
+is `r r3(fit$estimate)` (95% CI: `r r3(fit$ci_lower)`, `r r3(fit$ci_upper)`),
+and the true value in this simulated cohort is `r r3(truth)`, which the
+interval
+`r if (fit$ci_lower <= truth && truth <= fit$ci_upper) "contains" else "does not contain"`.
+The true value is computed over the patients whose true propensity score
+lies in the band, while the estimate trims on the estimated score, so the
+two populations are close but not identical (see `?cr_example`).
+
+A weighting estimator gives a comparison on the same estimand. It was not
+tested in the design stage, and the result says so:
+
+```{r weighting}
+estimate_effect(ub, method = "weighting")
+```
+
+## Step 8: export the record
+
+The design log records every decision, who made it, and the hashes that tie
+it together. The `"muntner"` format gives the columns of the decision log in
+@muntner2024staging.
+
+```{r log}
+log <- export_design_log(ub, fit, format = "muntner")
+log[, c("stage", "issue", "decision", "decided_by")]
+```
+
+## References

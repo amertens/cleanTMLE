@@ -378,7 +378,7 @@ simulate_design <- function(lock, design) {
     paste0(lead, "no cell that could change the decision had a 95% interval containing ",
            "a tolerance, so no extra repetitions were run (0 cells unresolved).")
   }
-  scope <- sprintf(paste0("Feasibility is certified only over the declared family of %d ",
+  scope <- sprintf(paste0("Feasibility is supported only over the declared family of %d ",
                           "outcome surfaces (%s); a design can fail outside it."),
                    length(surfaces), paste(names(surfaces), collapse = "; "))
   if (p$outcome_type == "tte")

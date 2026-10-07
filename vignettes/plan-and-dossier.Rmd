@@ -1,0 +1,199 @@
+---
+title: "Writing the plan and reading the dossier"
+output: rmarkdown::html_vignette
+bibliography: references.bib
+vignette: >
+  %\VignetteIndexEntry{Writing the plan and reading the dossier}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(cleanTMLE)
+```
+
+This vignette is for two readers: the analyst who writes the plan, and the
+review team who reads the dossier and decides whether to admit the outcome.
+It assumes you have run "Get started with cleanTMLE".
+
+Everything in the plan is fixed when the lock is created. Choose each part
+with the study question in front of you, not the data, and write down why;
+the plan is part of the record the review team reads.
+
+## Writing the plan
+
+### The estimand ladder
+
+`estimands` lists the estimands you would accept, in order of preference.
+The first one the design can support becomes the primary estimand, and the
+others are reported as secondary. Put first the estimand that answers the
+study question. If the question is about the whole population, that is the
+average treatment effect (ATE). Then list the estimands you would accept
+instead, knowing that each describes a different population: the trimmed
+ATE [@crump2009trimming], the average treatment effect among the treated
+(ATT), and the overlap-weighted effect (ATO) [@li2018overlap], as defined
+in "Get started with cleanTMLE".
+
+If one of these would not answer a question anyone cares about, leave it
+off the ladder. A ladder that ends in an estimand nobody will use only
+postpones the decision. `trim_band` is required when the trimmed ATE is on
+the ladder; 0.05 to 0.95 and 0.1 to 0.9 are common choices.
+
+### Tolerances
+
+An estimand is feasible when an estimator meets the tolerances on every
+simulated outcome surface. `tolerance$bias` is the largest absolute bias you
+would accept, on the risk difference scale; set it well below the smallest
+effect that would matter clinically. `tolerance$coverage` is the lowest
+coverage of the 95% confidence interval you would accept.
+
+`tolerance$ci_halfwidth` is optional. With it, an estimand is feasible only
+if its expected interval is narrow enough to be informative. Use it when a
+precise but uninformative answer would not be worth reporting.
+
+### The outcome surfaces
+
+The design stage cannot use the real outcome, so it runs a plasmode
+simulation: it tests each estimator against simulated outcomes drawn from a
+family of outcome models fixed in the plan, the outcome surfaces.
+The family varies the baseline risk (`baseline_risk`), the treatment effect
+on the log-odds scale (`log_or`), how much that effect changes with the
+propensity score (`heterogeneity`), how strongly the covariates predict the
+outcome (`prognostic`), and whether that relationship is linear or not
+(`forms`). The vectors you give are crossed into a grid, and an effect that
+does not change with the propensity score (heterogeneity 0) is always
+included. With the default two forms, the plan below has 2 x 2 x 3 x 2
+surfaces, and `analysis_plan()` says so:
+
+```{r grid}
+p <- analysis_plan("y", "ATE", surfaces = list(log_or = c(0, 0.5),
+                                               heterogeneity = c(0.5, 1),
+                                               prognostic = c(0.5, 1)))
+p$surfaces[c("log_or", "heterogeneity", "prognostic", "forms")]
+```
+
+Heterogeneity that tracks the propensity score is what separates the ATE,
+ATT and ATO, and what punishes an estimator that extrapolates; keep at least
+one non-zero value. A larger grid makes the check stricter, because an
+estimand must pass on every surface, and slower, because every candidate is
+fit on each.
+
+Feasibility is supported only over this family. A design can fail on an
+outcome model outside it, and the dossier says so. If a data steward who is
+not on the analysis team can fit a risk model on the covariates alone, its
+predictions can be passed as `surfaces$q0` to make the family closer to the
+real outcome without anyone on the team seeing it.
+
+### Candidates and learners
+
+`ps_library` fits the propensity score, and `candidates` lists the outcome
+models and the truncation levels for the propensity score that the design
+stage compares. The default library uses one learner of each kind: an
+elastic net, multivariate adaptive regression splines, gradient-boosted
+trees, and a small neural network. The design stage picks, for each
+feasible estimand, the candidate with the smallest worst-case error across
+the surfaces, and `estimate_effect()` later uses exactly that candidate.
+
+### Repetitions and Monte Carlo error
+
+`reps` is the number of simulated datasets per surface. Each verdict is an
+estimate with Monte Carlo error, so the dossier reports an interval for
+every bias and coverage and marks a cell unresolved when its interval
+contains a tolerance. With `max_reps` above `reps`, unresolved cells that
+could change the decision get more repetitions. The Monte Carlo standard
+error of a coverage near 0.95 shrinks with the square root of the number of
+repetitions:
+
+```{r mcse}
+reps <- c(50, 200, 1000)
+data.frame(reps = reps, mcse_coverage = round(sqrt(0.95 * 0.05 / reps), 3))
+```
+
+### Negative controls
+
+`negative_controls` names outcomes that treatment should not affect, each
+with a domain describing the kind of confounding it can detect, such as
+health care use. The control is estimated for every estimand on the ladder,
+on the full cohort and on each of the `restrictions`, and graded against
+`nc_criteria`. With the default interval rule, the verdict for an
+estimand is GO when every control's 95% interval lies inside the null band,
+STOP when any lies entirely outside it, and FLAG otherwise, which includes
+an interval too wide to tell and too few estimable controls. Only the
+verdict for the primary estimand on the full cohort can block unblinding.
+The rules `"point"` (the point estimate inside the band) and `"ci"` (the
+interval inside the band, with anything else a failure) are stricter.
+
+Choose the null band as you would the bias tolerance: the largest residual
+bias you would accept. A null band narrower than the precision your cohort
+allows will give FLAG; that is information for the review team, not a
+failure.
+
+### Roles
+
+`roles` records who is the analyst, the data steward and the reviewers.
+They appear in the dossier and the design log, and the lock's hash covers
+them.
+
+## Reading the dossier
+
+The dossier is what the review team approves. Each of its sections answers
+one question.
+
+### Decision
+
+Which estimand is primary, and is that decision settled? If
+the decision rests on unresolved cells, the simulation could not tell
+whether an estimator met a tolerance; ask for more repetitions before
+approving.
+
+### Prespecified plan
+
+Was the plan sensible before anyone saw the data?
+Check that the ladder starts with the estimand the question needs, that the
+tolerances are tight enough to matter, and that the outcome surfaces
+include effect heterogeneity.
+
+### Design
+
+How good is the overlap? A poor grade, a c-statistic near 1, or a largest
+weight in the tens or hundreds says the ATE depends on a few patients.
+
+### Who each estimand describes
+
+If the ladder moved, is the population the
+primary estimand describes one the study question cares about? A trimmed
+population that leaves out the sickest patients answers a different
+question from the one the protocol asked.
+
+### Simulation
+
+For the primary estimand, how large are the bias and the
+interval half-width? A feasible estimand with a wide interval may not be
+worth estimating. The expected events show how much information each arm
+will carry.
+
+### Negative controls
+
+Is the verdict for the primary estimand GO or FLAG?
+A FLAG with a wide interval means the check could not rule out residual
+confounding; say so in the report.
+
+### Notes
+
+What the simulation supports, and any caveats.
+
+When the review team approves, `unblind()` records who approved and when.
+If it refuses, because no estimand is feasible or the negative control says
+STOP, proceeding needs an `override` with a written reason, and the reason
+goes into the record.
+
+## The design log
+
+`export_design_log()` returns the full record as a JSON file, or with
+`format = "muntner"` as the decision log of @muntner2024staging, with one
+row per decision: the lock, the design assessment, the simulation verdict
+for each estimand, the negative control, the pre-outcome decision, the
+approval and any override, and each estimate. Release it with the paper.
+
+## References
