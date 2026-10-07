@@ -55,3 +55,6 @@
     stop("This design was made by an earlier cleanTMLE; rerun assess_design().", call. = FALSE)
   invisible(TRUE)
 }
+
+# Every recorded time is UTC, so lock, dossier and approval times compare.
+.utc_now <- function() format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")

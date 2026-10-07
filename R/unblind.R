@@ -102,7 +102,7 @@ unblind <- function(lock, dossier, outcomes, approved_by, override = NULL) {
   y <- outcomes[m, oc, drop = FALSE]
   rownames(y) <- NULL
   approval <- list(approved_by = approved_by,
-                   approved_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
+                   approved_at = .utc_now(),
                    override = if (has_override) override else NA_character_,
                    blocked_by = if (length(blocked)) blocked else NA_character_,
                    n_outcome_ids_not_in_design = sum(!outcomes[[lock$id]] %in% ids),

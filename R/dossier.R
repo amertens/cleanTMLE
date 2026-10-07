@@ -19,7 +19,10 @@
     v <- vapply(x, .flat, character(1))
     return(paste(if (is.null(names(x))) v else paste0(names(x), ": ", v), collapse = "; "))
   }
-  paste(format(x), collapse = ", ")
+  # Character values print as they are; numbers print without padding or
+  # trailing zeros, so c(1, 0.5) reads "1, 0.5".
+  paste(if (is.character(x)) x else format(x, trim = TRUE, drop0trailing = TRUE),
+        collapse = ", ")
 }
 
 .plan_rows <- c(estimands = "Estimand ladder (in order)", tolerance = "Tolerances",
@@ -126,7 +129,7 @@ design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
     notes = notes,
     component_hashes = list(design = design$stamp$hash, simulation = simulation$stamp$hash,
                             nc = if (is.null(nc)) NA_character_ else nc$stamp$hash),
-    version = .pkg_version(), created = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"))
+    version = .pkg_version(), created = .utc_now())
   class(d) <- "cr_dossier"
   d$dossier_hash <- .dossier_hash(d)
   if (!is.null(file)) .render_dossier(d, file)

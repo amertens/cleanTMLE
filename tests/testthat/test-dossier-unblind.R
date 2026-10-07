@@ -260,3 +260,20 @@ test_that("objects from cleanTMLE 0.4.0 stop with a clear message, not wrong out
   # A current design and simulation still work.
   expect_s3_class(design_report(fx$lock, fx$design, fx$sim, fx$nc), "cr_dossier")
 })
+
+test_that("the plan table prints values without padding", {
+  expect_identical(.flat(c("ATE", "trimmed_ATE")), "ATE, trimmed_ATE")
+  expect_identical(.flat(c(-0.02, 0.02)), "-0.02, 0.02")
+  expect_identical(.flat(c(1, 0.5)), "1, 0.5")
+  expect_identical(.flat(NULL), "none")
+  expect_identical(.flat(list(a = c("x", "y"), b = 2)), "a: x, y; b: 2")
+})
+
+test_that("every recorded time is UTC with a trailing Z", {
+  utc <- "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+  fx <- fixture_pipeline()
+  expect_match(fx$lock$created, utc)
+  expect_match(fx$dossier$created, utc)
+  ub <- unblind(fx$lock, fx$dossier, fx$d$outcomes, approved_by = "Review team")
+  expect_match(ub$approval$approved_at, utc)
+})
