@@ -8,6 +8,14 @@
 
 .ess <- function(w) if (sum(w > 0) == 0) 0 else sum(w)^2 / sum(w^2)
 
+# Area under the ROC curve of g for A, by the rank (Mann-Whitney) formula.
+.c_statistic <- function(g, A) {
+  r <- rank(g)
+  n1 <- sum(A == 1)
+  n0 <- sum(A == 0)
+  (sum(r[A == 1]) - n1 * (n1 + 1) / 2) / (n1 * n0)
+}
+
 # Smallest group whose covariate means the dossier may report.
 .min_cell <- 5L
 
@@ -104,7 +112,10 @@ assess_design <- function(lock) {
   colnames(Xdf) <- make.names(colnames(Xdf), unique = TRUE)  # cobalt parses names as formula terms
   ess <- do.call(rbind, lapply(p$estimands, function(e) {
     w <- .estimand_weights(g, A, e, band)
-    data.frame(estimand = e, ess_treated = .ess(w[A == 1]), ess_control = .ess(w[A == 0]))
+    wp <- w[w > 0]
+    data.frame(estimand = e, ess_treated = .ess(w[A == 1]), ess_control = .ess(w[A == 0]),
+               max_weight = if (length(wp)) max(wp) else NA_real_,
+               p99_weight = if (length(wp)) unname(stats::quantile(wp, 0.99)) else NA_real_)
   }))
   balance <- do.call(rbind, lapply(p$estimands, function(e) {
     w <- .estimand_weights(g, A, e, band)
@@ -124,7 +135,8 @@ assess_design <- function(lock) {
   populations <- .populations(X, A, g, p$estimands, p$trim_band)
   trimmed_profile <- if (is.null(p$trim_band)) NULL else .trimmed_profile(X, A, g, p$trim_band)
   out <- list(g = g, g_world = g_world, folds = folds, overlap = overlap, overlap_grade = grade,
-              share_outside_band = share, band = band, ess = ess, balance = balance,
+              share_outside_band = share,
+              c_statistic = .c_statistic(g, A), A = A, band = band, ess = ess, balance = balance,
               populations = populations, trimmed_profile = trimmed_profile,
               edge = .edge_check(gf$risks), risks = gf$risks)
   out$stamp <- .stamp(lock, out)

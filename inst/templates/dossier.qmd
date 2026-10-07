@@ -48,7 +48,8 @@ if (length(d$decision$candidates))
 ## Design
 
 Overlap grade: **`r d$design$overlap_grade`**; share outside the band:
-`r round(d$design$share_outside_band, 3)`.
+`r round(d$design$share_outside_band, 3)`; c-statistic of the propensity score:
+`r round(d$design$c_statistic, 3)`.
 
 ```{r}
 kt(d$design$overlap); kt(d$design$ess); kt(d$design$balance)

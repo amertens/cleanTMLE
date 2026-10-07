@@ -23,7 +23,8 @@ print.cr_lock <- function(x, ...) {
 #' @export
 print.cr_design <- function(x, ...) {
   cat("Design: overlap ", x$overlap_grade, " (", round(100 * x$share_outside_band, 1),
-      "% outside [", x$band[1], ", ", x$band[2], "])\n", sep = "")
+      "% outside [", x$band[1], ", ", x$band[2], "]); c-statistic ",
+      format(round(x$c_statistic, 3)), "\n", sep = "")
   print(x$ess, row.names = FALSE)
   if (nrow(x$edge)) { cat("Edge check:\n"); print(x$edge, row.names = FALSE) }
   invisible(x)
@@ -136,10 +137,12 @@ as.data.frame.cr_nc_ladder <- function(x, ...) x$table
 
 #' @export
 plot.cr_design <- function(x, ...) {
-  ggplot2::ggplot(data.frame(g = x$g), ggplot2::aes(x = .data$g)) +
-    ggplot2::geom_histogram(bins = 40) +
+  df <- data.frame(g = x$g, arm = factor(ifelse(x$A == 1, "Treated", "Control"),
+                                         levels = c("Treated", "Control")))
+  ggplot2::ggplot(df, ggplot2::aes(x = .data$g, fill = .data$arm)) +
+    ggplot2::geom_histogram(bins = 40, position = "identity", alpha = 0.5) +
     ggplot2::geom_vline(xintercept = x$band, linetype = 2) +
-    ggplot2::labs(x = "Cross-fitted propensity score", y = "Rows")
+    ggplot2::labs(x = "Cross-fitted propensity score", y = "Patients", fill = "Arm")
 }
 
 #' @export

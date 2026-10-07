@@ -161,3 +161,31 @@ test_that("the dossier carries the population tables", {
   expect_true(is.data.frame(fx$dossier$design$populations))
   expect_type(fx$dossier$design$trimmed_profile, "list")
 })
+
+test_that("the c-statistic matches a pairwise count", {
+  g <- c(0.2, 0.4, 0.4, 0.7, 0.9, 0.1)
+  A <- c(0, 0, 1, 1, 1, 0)
+  pairs <- outer(g[A == 1], g[A == 0], function(t, c) (t > c) + 0.5 * (t == c))
+  expect_equal(.c_statistic(g, A), mean(pairs))
+})
+
+test_that("the ESS table reports the largest and 99th-percentile weights", {
+  d <- make_design(300, strength = 2)
+  lk <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), fast_plan())
+  ds <- assess_design(lk)
+  w <- .estimand_weights(ds$g, d$design$A, "ATE", ds$band)
+  row <- ds$ess[ds$ess$estimand == "ATE", ]
+  expect_equal(row$max_weight, max(w))
+  expect_equal(row$p99_weight, unname(stats::quantile(w[w > 0], 0.99)))
+  expect_lte(ds$ess$max_weight[ds$ess$estimand == "ATO"], 1)
+  expect_true(ds$c_statistic > 0.5 && ds$c_statistic < 1)
+  expect_identical(ds$A, as.integer(d$design$A))
+})
+
+test_that("plot(design) splits the propensity score by arm", {
+  d <- make_design(200)
+  ds <- assess_design(create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), fast_plan()))
+  p <- plot(ds)
+  expect_s3_class(p, "ggplot")
+  expect_setequal(levels(p$data$arm), c("Treated", "Control"))
+})
