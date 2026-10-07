@@ -5,22 +5,30 @@
 \alias{cr_example}
 \title{Example cohort for cleanTMLE}
 \format{
-A list with two data frames joined by \code{id}:
+A list with three data frames:
 \describe{
 \item{design}{\code{id}, treatment \code{A} (0/1), covariates \code{age}, \code{female},
 \code{severity}, \code{prior_visits}, restriction variable \code{transfer}, and the
 negative-control outcome \code{health_seeking}.}
 \item{outcomes}{\code{id} and the 0/1 outcome \code{death_30d}.}
+\item{truth}{\code{estimand}, \code{truth} (the true risk difference, computed
+from the generating model over this cohort's covariates) and
+\code{population} (whom it describes).}
 }
 }
 \source{
-Simulated by \code{data-raw/make_cr_example.R}.
+Simulated by \code{make_cr_example()} in \code{data-raw/make_cr_example.R}.
 }
 \usage{
 cr_example
 }
 \description{
-A simulated cohort of 1,500 patients, shipped as two data frames so the
-outcome can be admitted with \code{\link[=unblind]{unblind()}} after the design stage.
+A simulated cohort of 1,500 patients, shipped as separate design and
+outcome data frames so the outcome can be admitted with \code{\link[=unblind]{unblind()}} after
+the design stage. Treatment depends strongly on severity, so few severe
+patients are untreated and few mild patients are treated, and the effect
+of treatment grows with severity. Under a plan like the one in the Get
+started vignette, the average treatment effect is not estimable from
+these data while an effect in a narrower population is.
 }
 \keyword{datasets}

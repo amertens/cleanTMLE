@@ -19,10 +19,12 @@ test_that("a dossier alone exports the pre-outcome log", {
   expect_identical(log$decision$primary, "ATE")
 })
 
-test_that("the example dataset keeps the outcome separate", {
-  expect_setequal(names(cr_example), c("design", "outcomes"))
+test_that("the example dataset keeps the outcome separate and carries the truth", {
+  expect_setequal(names(cr_example), c("design", "outcomes", "truth"))
   expect_false("death_30d" %in% names(cr_example$design))
   expect_identical(cr_example$design$id, cr_example$outcomes$id)
+  expect_setequal(cr_example$truth$estimand, c("ATE", "trimmed_ATE", "ATT", "ATO"))
+  expect_true(all(is.finite(cr_example$truth$truth)))
 })
 
 test_that("the package exports exactly the twelve verbs", {
