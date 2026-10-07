@@ -95,6 +95,27 @@ test_that("the dossier renders to HTML", {
   expect_match(html, "judged on point estimates against the declared tolerances")
 })
 
+test_that("a dossier for a plan with no trim band builds and renders", {
+  d <- make_design(300, seed = 2)
+  plan <- fast_plan(estimands = c("ATE", "ATO"), trim_band = NULL, reps = 10L)
+  lock <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), plan)
+  design <- assess_design(lock)
+  sim <- suppressMessages(simulate_design(lock, design))
+  dos <- design_report(lock, design, sim, NULL)
+  expect_null(dos$design$trimmed_profile)
+  expect_false("trimmed_ATE" %in% names(dos$design$populations))
+  expect_true(is.data.frame(dos$design$populations))
+  skip_on_cran()
+  skip_if_not_installed("quarto")
+  skip_if(is.null(quarto::quarto_path()))
+  f <- withr::local_tempfile(fileext = ".html")
+  design_report(lock, design, sim, NULL, file = f)
+  html <- paste(readLines(f, warn = FALSE), collapse = "")
+  expect_match(html, "Who each estimand describes")
+  expect_match(html, "No trim band was declared.")
+  expect_no_match(html, "Means of fewer than 5 removed patients")
+})
+
 test_that("a dossier carries a non-empty extension table and renders it", {
   # Ten repetitions cannot resolve a 0.8 coverage tolerance (the Wilson
   # interval for 10 of 10 starts near 0.72), so the selected cells are extended.
