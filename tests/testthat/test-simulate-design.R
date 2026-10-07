@@ -464,3 +464,31 @@ test_that("the default surfaces are unchanged and the grid crosses every vector"
   expect_false(isTRUE(all.equal(s2[[1]]$q0, s2[[3]]$q0)))  # prognostic 1 vs 2
   for (x in s2) expect_equal(mean(x$q0), 0.10, tolerance = 1e-8)
 })
+
+test_that("a plan stored without prognostic keeps its surfaces", {
+  d <- make_design(200)
+  X <- as.matrix(d$design[c("w1", "w2", "w3")])
+  g <- stats::plogis(0.8 * X[, 1])
+  p <- fast_plan()
+  ref <- .surfaces(p, X, g, p$seed)
+  p0 <- p
+  p0$surfaces$prognostic <- NULL
+  expect_identical(.n_surfaces(p0$surfaces), 4L)
+  s0 <- .surfaces(p0, X, g, p0$seed)
+  expect_length(s0, 4L)
+  expect_identical(s0, ref)
+})
+
+test_that("duplicate surface names stop instead of overwriting", {
+  d <- make_design(200)
+  X <- as.matrix(d$design[c("w1", "w2", "w3")])
+  g <- stats::plogis(0.8 * X[, 1])
+  p <- fast_plan(surfaces = list(forms = "linear", heterogeneity = 0,
+                                 log_or = c(0.3, 0.1 + 0.2)))
+  expect_error(.surfaces(p, X, g, p$seed), "distinct names.*linear, prognostic 1, log OR 0.3")
+  f <- function(a, X) rep(0.1, nrow(X))
+  p2 <- fast_plan(surfaces = list(forms = "linear", heterogeneity = 0,
+                                  custom = list(mine = f)))
+  p2$surfaces$custom <- list(mine = f, mine = f)
+  expect_error(.surfaces(p2, X, g, p2$seed), "mine")
+})

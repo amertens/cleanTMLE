@@ -24,19 +24,26 @@
   }
   hg <- .std(lg)
   out <- list()
-  for (form in names(idx)) for (gam in s$prognostic) for (tau in s$log_or)
+  nms <- character()
+  for (form in names(idx)) for (gam in s$prognostic %||% 1) for (tau in s$log_or)
     for (delta in unique(c(0, s$heterogeneity))) {
       m <- gam * idx[[form]]
       eta <- function(b0, a) b0 + m + a * (tau + delta * hg)
       b0 <- stats::uniroot(function(b) mean(stats::plogis(eta(b, 0))) - s$baseline_risk,
                            c(-30, 30), tol = 1e-10)$root
-      out[[.surface_name(form, gam, tau, delta)]] <-
+      out[[length(out) + 1L]] <-
         list(q1 = stats::plogis(eta(b0, 1)), q0 = stats::plogis(eta(b0, 0)))
+      nms <- c(nms, .surface_name(form, gam, tau, delta))
     }
-  for (nm in names(s$custom))
-    out[[nm]] <- list(q1 = .bound(s$custom[[nm]](1, X), 1e-6),
-                      q0 = .bound(s$custom[[nm]](0, X), 1e-6))
-  out
+  for (nm in names(s$custom)) {
+    out[[length(out) + 1L]] <- list(q1 = .bound(s$custom[[nm]](1, X), 1e-6),
+                                    q0 = .bound(s$custom[[nm]](0, X), 1e-6))
+    nms <- c(nms, nm)
+  }
+  if (anyDuplicated(nms))
+    stop("Outcome surfaces must have distinct names; duplicated: ",
+         paste(unique(nms[duplicated(nms)]), collapse = "; "), ".", call. = FALSE)
+  stats::setNames(out, nms)
 }
 
 .true_values <- function(q1, q0, g, band) {

@@ -17,7 +17,7 @@
 
 .n_surfaces <- function(s) {
   forms <- if (is.null(s$q0)) length(s$forms) else 1L
-  as.integer(forms * length(s$prognostic) * length(s$log_or) *
+  as.integer(forms * length(s$prognostic %||% 1) * length(s$log_or) *
                length(unique(c(0, s$heterogeneity))) + length(s$custom))
 }
 
