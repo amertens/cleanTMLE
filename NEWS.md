@@ -18,14 +18,15 @@
 * The dossier shows the prespecified plan and the lock's creation time.
   `analysis_plan()` gains `roles`. `export_design_log(format = "muntner")`
   writes the Table S1 columns of Muntner et al. (2024).
-* `tmle::tmle` now skips its ATT step on calls that do not target the ATT.
-  In a profile on a small plan this cut one simulation repetition from about
-  5.4 s to about 4.3 s.
+* `tmle::tmle` now skips its ATT and ATC step
+  on calls that do not target the ATT. In a profile on a small plan this cut one
+  simulation repetition from about 5.4 s to about 4.3 s.
 * `cr_example` is regenerated so that the outcome-free simulation can tell
   estimands apart, and carries the true value of each estimand in
   `cr_example$truth`. Under a small plan (one learner, no cross-fitting, 50
   repetitions) it finds the ATE infeasible while the trimmed ATE and the ATO
-  are feasible; under the default plan only the ATO is feasible.
+  are feasible; under the default plan with 50 repetitions only the ATO is
+  feasible.
 
 # cleanTMLE 0.4.0
 
