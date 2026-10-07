@@ -29,7 +29,7 @@ sim_cell <- function(library, R, bias = 0, spread = 0.01, covered = R, failed = 
   cov <- seq_len(n) <= covered
   data.frame(rep = seq_len(n), surface = surface, library = library, estimand = estimand,
              truncation = 0.01, failed = seq_len(n) > R, estimate = est,
-             ci_lower = ifelse(cov, truth - 0.1, truth + 0.5),
+             se = 0.05, ci_lower = ifelse(cov, truth - 0.1, truth + 0.5),
              ci_upper = ifelse(cov, truth + 0.1, truth + 0.6), stringsAsFactors = FALSE)
 }
 
@@ -295,7 +295,7 @@ run_mocked <- function(beh, reps, max_reps) {
           err <- (if (b == "wide") 0.02 else 0.001) * (if (r %% 2) 1 else -1)
           rows[[length(rows) + 1L]] <- data.frame(
             rep = r, surface = sn, library = lib, estimand = e, truncation = 0.05,
-            estimate = err, ci_lower = if (cov) err - 0.5 else 0.5,
+            estimate = err, se = 0.1, ci_lower = if (cov) err - 0.5 else 0.5,
             ci_upper = if (cov) err + 0.5 else 0.6, failed = FALSE,
             stringsAsFactors = FALSE)
         }
@@ -423,7 +423,8 @@ test_that("bootstrap copies of one row never straddle outer folds", {
 test_that("a repetition with a NaN interval counts as failed, not as a crash", {
   res <- data.frame(rep = 1:40, surface = "s", library = "glm", estimand = "ATE",
                     truncation = 0.01, failed = FALSE,
-                    estimate = rep(c(0.09, 0.11), 20), ci_lower = 0.0, ci_upper = 0.2)
+                    estimate = rep(c(0.09, 0.11), 20), se = 0.05, ci_lower = 0.0,
+                    ci_upper = 0.2)
   res$ci_lower[3] <- NaN
   res$ci_upper[5] <- NA
   truths <- data.frame(surface = "s", estimand = "ATE", truth = 0.10)
@@ -491,4 +492,53 @@ test_that("duplicate surface names stop instead of overwriting", {
                                   custom = list(mine = f)))
   p2$surfaces$custom <- list(mine = f, mine = f)
   expect_error(.surfaces(p2, X, g, p2$seed), "mine")
+})
+
+precision_results <- function() data.frame(
+  rep = 1:4, surface = "s1", library = "glm", estimand = "ATE", truncation = 0.01,
+  estimate = c(0.1, 0.2, 0.3, 0.4), se = c(0.05, 0.05, 0.1, 0.1),
+  ci_lower = c(0, 0.1, 0.1, 0.2), ci_upper = c(0.2, 0.3, 0.5, 0.6), failed = FALSE,
+  stringsAsFactors = FALSE)
+
+test_that("metrics report the mean SE, the empirical SE and the interval half-width", {
+  tr <- data.frame(surface = "s1", estimand = "ATE", truth = 0.25)
+  m <- .sim_metrics(precision_results(), tr, fast_plan(estimands = "ATE",
+                                                       tolerance = list(bias = 1, coverage = 0.5)))
+  expect_equal(m$se_mean, 0.075)
+  expect_equal(m$emp_se, stats::sd(c(0.1, 0.2, 0.3, 0.4)))
+  expect_equal(m$ci_halfwidth, 0.15)
+  expect_true(m$pass)
+  tight <- fast_plan(estimands = "ATE",
+                     tolerance = list(bias = 1, coverage = 0.5, ci_halfwidth = 0.1))
+  expect_false(.sim_metrics(precision_results(), tr, tight)$pass)
+})
+
+test_that("an all-failed cell never passes a half-width tolerance", {
+  r <- precision_results()
+  r$failed <- TRUE
+  r$estimate <- NA_real_
+  tr <- data.frame(surface = "s1", estimand = "ATE", truth = 0.25)
+  p <- fast_plan(estimands = "ATE", tolerance = list(bias = 1, coverage = 0.5, ci_halfwidth = 1))
+  m <- .sim_metrics(r, tr, p)
+  expect_true(is.na(m$ci_halfwidth))
+  expect_false(m$pass)
+})
+
+test_that("expected events come from the surfaces and the observed treatment", {
+  s <- list(s1 = list(q1 = c(0.2, 0.4, 0.6, 0.8), q0 = c(0.1, 0.1, 0.3, 0.3)))
+  A <- c(1, 0, 1, 0)
+  g <- c(0.5, 0.5, 0.01, 0.5)
+  ee <- .expected_events(s, A, g, c("ATE", "trimmed_ATE"), c(0.05, 0.95))
+  expect_equal(ee$treated[ee$estimand == "ATE"], 0.2 + 0.6)
+  expect_equal(ee$control[ee$estimand == "ATE"], 0.1 + 0.3)
+  expect_equal(ee$treated[ee$estimand == "trimmed_ATE"], 0.2)
+  expect_equal(ee$control[ee$estimand == "trimmed_ATE"], 0.1 + 0.3)
+})
+
+test_that("the simulation and the dossier carry precision and expected events", {
+  fx <- fixture_pipeline()
+  expect_true(all(c("se_mean", "emp_se", "ci_halfwidth") %in% names(fx$sim$metrics)))
+  expect_true("ci_halfwidth" %in% names(fx$sim$verdict))
+  expect_setequal(unique(fx$sim$expected_events$estimand), fx$plan$estimands)
+  expect_setequal(fx$dossier$expected_events_range$estimand, fx$plan$estimands)
 })

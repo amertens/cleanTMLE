@@ -75,14 +75,25 @@ design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
                    K = p$K, fold_seed = p$seed)
   notes <- c("Weighting and matching are comparators and were not stress-tested.",
              simulation$scope)
+  if (!is.null(p$tolerance$ci_halfwidth))
+    notes <- c(notes, sprintf(paste0("A cell passes only if its mean interval half-width is ",
+                                     "at most %s; this tolerance does not enter the ",
+                                     "unresolved-cell rule."), p$tolerance$ci_halfwidth))
   d <- list(
     lock_hash = lock$lock_hash, plan = .plan_summary(p), outcome_type = p$outcome_type,
     design = design[c("overlap", "overlap_grade", "share_outside_band", "c_statistic", "band", "ess",
                       "balance", "edge", "populations", "trimmed_profile")],
     simulation = simulation[c("metrics", "verdict", "truths", "scope", "decision_note",
-                              "extension", "reps", "max_reps", "K", "edge")],
+                              "extension", "reps", "max_reps", "K", "edge",
+                              "expected_events")],
     nc = if (is.null(nc)) NULL else nc[c("table", "by_domain", "by_rung", "verdict")],
-    decision = decision, notes = notes,
+    decision = decision,
+    expected_events_range = do.call(rbind, lapply(p$estimands, function(e) {
+      x <- simulation$expected_events[simulation$expected_events$estimand == e, ]
+      data.frame(estimand = e, treated_min = min(x$treated), treated_max = max(x$treated),
+                 control_min = min(x$control), control_max = max(x$control))
+    })),
+    notes = notes,
     component_hashes = list(design = design$stamp$hash, simulation = simulation$stamp$hash,
                             nc = if (is.null(nc)) NA_character_ else nc$stamp$hash),
     version = .pkg_version(), created = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"))

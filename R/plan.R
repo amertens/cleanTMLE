@@ -35,8 +35,10 @@
 #'   `"nnet"`, or `"default"` (the last four).
 #' @param candidates `list(library = <named list of learner vectors>,
 #'   truncation = <numbers in (0, 0.5)>)`; candidates are their crossing.
-#' @param tolerance `list(bias = , coverage = )`; bias is absolute bias on
-#'   the risk-difference scale.
+#' @param tolerance `list(bias = , coverage = , ci_halfwidth = )`; bias is
+#'   absolute bias on the risk-difference scale; the optional
+#'   `ci_halfwidth` is the largest mean interval half-width a cell may have
+#'   and still pass.
 #' @param surfaces Outcome-surface family: `baseline_risk`, `log_or`
 #'   (one or more effects on the log-odds scale), `heterogeneity` (one or
 #'   more slopes of the effect on the standardized logit propensity score;
@@ -126,6 +128,9 @@ analysis_plan <- function(outcome, estimands,
   tolerance <- utils::modifyList(list(bias = 0.02, coverage = 0.90), tolerance)
   stop_if(tolerance$bias <= 0 || tolerance$coverage <= 0 || tolerance$coverage >= 1,
           "`tolerance` needs bias > 0 and 0 < coverage < 1.")
+  hw <- tolerance$ci_halfwidth
+  stop_if(!is.null(hw) && (!is.numeric(hw) || length(hw) != 1L || !is.finite(hw) || hw <= 0),
+          "`tolerance$ci_halfwidth` must be NULL or one positive number.")
 
   surfaces <- utils::modifyList(list(baseline_risk = 0.10, log_or = 0.5,
                                      heterogeneity = 0.5, prognostic = 1,

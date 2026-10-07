@@ -39,8 +39,10 @@ candidate: any of \code{"glm"}, \code{"glmnet"}, \code{"earth"}, \code{"xgboost"
 
 \item{candidates}{\verb{list(library = <named list of learner vectors>, truncation = <numbers in (0, 0.5)>)}; candidates are their crossing.}
 
-\item{tolerance}{\code{list(bias = , coverage = )}; bias is absolute bias on
-the risk-difference scale.}
+\item{tolerance}{\code{list(bias = , coverage = , ci_halfwidth = )}; bias is
+absolute bias on the risk-difference scale; the optional
+\code{ci_halfwidth} is the largest mean interval half-width a cell may have
+and still pass.}
 
 \item{surfaces}{Outcome-surface family: \code{baseline_risk}, \code{log_or}
 (one or more effects on the log-odds scale), \code{heterogeneity} (one or

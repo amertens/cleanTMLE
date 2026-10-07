@@ -57,6 +57,19 @@
   out
 }
 
+# Expected events among the rows each estimator uses, from the surface risks
+# and the observed treatment. Never reads the outcome.
+.expected_events <- function(surfaces, A, g, estimands, band) {
+  do.call(rbind, lapply(names(surfaces), function(sn) {
+    s <- surfaces[[sn]]
+    do.call(rbind, lapply(estimands, function(e) {
+      rows <- if (e == "trimmed_ATE") g >= band[1] & g <= band[2] else rep(TRUE, length(A))
+      data.frame(surface = sn, estimand = e, treated = sum(s$q1[rows & A == 1]),
+                 control = sum(s$q0[rows & A == 0]), stringsAsFactors = FALSE)
+    }))
+  }))
+}
+
 .failed_rows <- function(plan, msg) {
   g <- expand.grid(truncation = plan$candidates$truncation, estimand = plan$estimands,
                    stringsAsFactors = FALSE)
@@ -147,6 +160,9 @@
                coverage_lower = wi[1], coverage_upper = wi[2],
                rmse = rmse,
                rmse_mcse = if (R > 1 && rmse > 0) stats::sd(e^2) / (2 * rmse * sqrt(R)) else NA_real_,
+               se_mean = if (R) mean(s$se[ok]) else NA_real_,
+               emp_se = if (R > 1) stats::sd(s$estimate[ok]) else NA_real_,
+               ci_halfwidth = if (R) mean((s$ci_upper[ok] - s$ci_lower[ok]) / 2) else NA_real_,
                stringsAsFactors = FALSE)
   }))
   tb <- plan$tolerance$bias
@@ -155,6 +171,10 @@
   # declared margin, and no second margin is applied.
   usable <- !is.na(m$bias) & m$reps - m$failed > 1 & m$fail_rate <= 0.05
   m$pass <- usable & abs(m$bias) <= tb & m$coverage >= tc
+  # The half-width tolerance makes feasible also mean informative. It does not
+  # enter the unresolved-cell rule.
+  tw <- plan$tolerance$ci_halfwidth
+  if (!is.null(tw)) m$pass <- m$pass & !is.na(m$ci_halfwidth) & m$ci_halfwidth <= tw
   # A usable cell is unresolved when the 95% interval for its bias, or the
   # Wilson interval for its coverage, contains the tolerance. A cell that fails
   # the failure rule is not unresolved; it fails.
@@ -221,6 +241,8 @@
     data.frame(estimand = e, status = status, selected = sel,
                library = if (is.na(sel)) NA_character_ else row$library,
                truncation = if (is.na(sel)) NA_real_ else row$truncation,
+               ci_halfwidth = if (is.na(sel)) NA_real_ else
+                 max(me$ci_halfwidth[me$candidate == sel]),
                unresolved = any(me$unresolved & me$candidate %in% cand),
                stringsAsFactors = FALSE)
   }))
@@ -266,6 +288,7 @@ simulate_design <- function(lock, design) {
     data.frame(surface = sn, estimand = names(tv), truth = unname(tv),
                stringsAsFactors = FALSE)
   }))
+  expected_events <- .expected_events(surfaces, design$A, design$g, p$estimands, p$trim_band)
   t0 <- Sys.time()
   first <- .one_rep(1L, X, g, surfaces, p)
   secs <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
@@ -356,7 +379,7 @@ simulate_design <- function(lock, design) {
     scope <- paste(scope, "The outcome was simulated as risk by the target time;",
                    "the hazard models were not stress-tested.")
   out <- list(results = results, truths = truths, metrics = metrics,
-              verdict = verdict,
+              verdict = verdict, expected_events = expected_events,
               edge = if (is.null(risks)) NULL else .edge_check(risks),
               surfaces = names(surfaces), reps = p$reps, max_reps = max_reps,
               extension = extension, K = p$K, scope = scope,

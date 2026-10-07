@@ -67,3 +67,12 @@ test_that("surface vectors are validated and the grid size is announced", {
                  "36 outcome surfaces")
   expect_silent(analysis_plan("y", "ATE"))
 })
+
+test_that("a ci_halfwidth tolerance must be one positive number", {
+  expect_error(analysis_plan("y", "ATE", tolerance = list(ci_halfwidth = -1)), "ci_halfwidth")
+  expect_error(analysis_plan("y", "ATE", tolerance = list(ci_halfwidth = c(0.1, 0.2))),
+               "ci_halfwidth")
+  expect_equal(analysis_plan("y", "ATE", tolerance = list(ci_halfwidth = 0.05))$tolerance$ci_halfwidth,
+               0.05)
+  expect_null(analysis_plan("y", "ATE")$tolerance$ci_halfwidth)
+})

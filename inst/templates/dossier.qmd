@@ -93,8 +93,16 @@ kt(d$simulation$verdict)
 if (!is.null(d$simulation$extension) && nrow(d$simulation$extension))
   kt(d$simulation$extension)
 kt(d$simulation$metrics[c("estimand", "candidate", "surface", "reps", "bias", "coverage",
-                          "coverage_lower", "coverage_upper", "rmse", "fail_rate", "pass",
-                          "unresolved")])
+                          "coverage_lower", "coverage_upper", "rmse", "se_mean", "emp_se", "ci_halfwidth",
+                          "fail_rate", "pass", "unresolved")])
+```
+
+Expected events among the patients each estimator uses, from the declared
+outcome surfaces and the observed treatment (range over the surfaces). No
+outcome was read.
+
+```{r}
+kt(d$expected_events_range)
 ```
 
 ## Negative controls
