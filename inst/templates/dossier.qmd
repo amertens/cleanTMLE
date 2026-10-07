@@ -77,8 +77,8 @@ if (!is.null(d$design$trimmed_profile)) {
 
 ```{r, results = "asis"}
 if (!is.null(d$design$trimmed_profile))
-  cat("Means of fewer than 5 removed patients are not shown. When 1 to 4 patients are",
-      "removed, the trimmed-population means and the kept means are hidden as well.\n")
+  cat("Means of fewer than 5 patients are not shown. When 1 to 4 patients are removed",
+      "or kept, the removed, kept and trimmed-population means are all hidden.\n")
 ```
 
 ## Simulation

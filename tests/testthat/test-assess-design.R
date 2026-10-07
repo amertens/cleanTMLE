@@ -115,6 +115,19 @@ test_that("with one to four patients removed, no table lets the reader differenc
     expect_false(anyNA(p$cohort))
     expect_false(anyNA(p$ATE)); expect_false(anyNA(p$ATT)); expect_false(anyNA(p$ATO))
   }
+  # The same holds when 1 to 4 patients are KEPT and the rest removed: the
+  # removed mean, the cohort mean and the counts would give the kept mean.
+  for (k in c(3L, 1L)) {
+    gk <- c(rep(0.01, 40 - k), rep(0.5, k))
+    pk <- .populations(X, A, gk, ests, c(0.05, 0.95))
+    tk <- .trimmed_profile(X, A, gk, c(0.05, 0.95))
+    expect_true(all(is.na(pk$trimmed_ATE)))
+    expect_true(all(is.na(pk$trimmed_ATE_shift)))
+    expect_true(all(is.na(tk$covariates$removed)))
+    expect_true(all(is.na(tk$covariates$kept)))
+    expect_true(all(is.na(tk$covariates$std_diff)))
+    expect_identical(tk$counts$kept[1], k)
+  }
   # Five removed patients is the smallest group that is reported.
   g5 <- c(rep(0.01, 5), rep(0.5, 35))
   p5 <- .populations(X, A, g5, ests, c(0.05, 0.95))

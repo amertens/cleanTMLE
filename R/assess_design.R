@@ -11,11 +11,13 @@
 # Smallest group whose covariate means the dossier may report.
 .min_cell <- 5L
 
-# One removed patient is exposed by the trimmed-population mean (or the kept
-# mean) together with the cohort mean and the counts. So when 1 to .min_cell - 1
-# patients fall outside the band, every figure that would reveal their values is
-# suppressed. With none removed, the trimmed population is the cohort.
-.small_removed <- function(n_removed) n_removed >= 1L & n_removed < .min_cell
+# A small removed (or kept) group is exposed by the trimmed-population mean, the
+# removed and kept means, and the cohort mean, together with the counts. So when
+# 1 to .min_cell - 1 patients fall outside the band, or 1 to .min_cell - 1 stay
+# inside it, every figure that would reveal their values is suppressed. With none
+# removed, the trimmed population is the cohort.
+.small_trim_group <- function(n_removed, n_kept)
+  any(c(n_removed, n_kept) >= 1L & c(n_removed, n_kept) < .min_cell)
 
 .std_shift <- function(m, ref, s)
   ifelse(is.na(m), NA_real_, ifelse(is.finite(s) & s > 0, (m - ref) / s, 0))
@@ -33,7 +35,7 @@
       ATT = as.numeric(A == 1),
       ATO = g * (1 - g))
     m <- if (sum(w) > 0) colSums(X * w) / sum(w) else rep(NA_real_, ncol(X))
-    if (e == "trimmed_ATE" && .small_removed(sum(g < band[1] | g > band[2])))
+    if (e == "trimmed_ATE" && .small_trim_group(sum(w == 0), sum(w)))
       m <- rep(NA_real_, ncol(X))
     out[[e]] <- unname(m)
     out[[paste0(e, "_shift")]] <- unname(.std_shift(m, mu, s))
@@ -43,15 +45,17 @@
 
 # The patients a trimmed analysis no longer describes: counts by arm, and the
 # covariate means of removed and kept patients. Means of fewer than .min_cell
-# removed patients are suppressed, and so are the kept means and the standardized
-# difference when 1 to .min_cell - 1 patients are removed (see .small_removed).
+# patients are suppressed. When 1 to .min_cell - 1 patients are removed or kept
+# (see .small_trim_group), the removed and kept means and the standardized
+# difference are all suppressed.
 .trimmed_profile <- function(X, A, g, band) {
   out <- g < band[1] | g > band[2]
   s <- apply(X, 2, stats::sd)
   mean_or_na <- function(rows) if (sum(rows) >= .min_cell) colMeans(X[rows, , drop = FALSE]) else
     rep(NA_real_, ncol(X))
-  removed <- mean_or_na(out)
-  kept <- if (.small_removed(sum(out))) rep(NA_real_, ncol(X)) else mean_or_na(!out)
+  hide <- .small_trim_group(sum(out), sum(!out))
+  removed <- if (hide) rep(NA_real_, ncol(X)) else mean_or_na(out)
+  kept <- if (hide) rep(NA_real_, ncol(X)) else mean_or_na(!out)
   list(
     counts = data.frame(group = c("all", "treated", "control"),
                         removed = c(sum(out), sum(out & A == 1), sum(out & A == 0)),

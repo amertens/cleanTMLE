@@ -113,7 +113,7 @@ test_that("a dossier for a plan with no trim band builds and renders", {
   html <- paste(readLines(f, warn = FALSE), collapse = "")
   expect_match(html, "Who each estimand describes")
   expect_match(html, "No trim band was declared.")
-  expect_no_match(html, "Means of fewer than 5 removed patients")
+  expect_no_match(html, "Means of fewer than 5 patients")
 })
 
 test_that("a dossier carries a non-empty extension table and renders it", {
