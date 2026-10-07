@@ -434,3 +434,33 @@ test_that("a repetition with a NaN interval counts as failed, not as a crash", {
   expect_false(is.na(m$pass))
   expect_no_error(.sim_verdict(m, p))
 })
+
+test_that("the default surfaces are unchanged and the grid crosses every vector", {
+  d <- make_design(200)
+  X <- as.matrix(d$design[c("w1", "w2", "w3")])
+  g <- stats::plogis(0.8 * X[, 1])
+  p <- fast_plan()
+  s <- .surfaces(p, X, g, p$seed)
+  expect_identical(names(s), c("linear, prognostic 1, log OR 0.5, heterogeneity 0",
+                               "linear, prognostic 1, log OR 0.5, heterogeneity 0.5",
+                               "nonlinear, prognostic 1, log OR 0.5, heterogeneity 0",
+                               "nonlinear, prognostic 1, log OR 0.5, heterogeneity 0.5"))
+  # Reference: the 0.4.0 family, with the prognostic index entering at scale 1.
+  lg <- stats::qlogis(.bound(g, 1e-6))
+  Z <- apply(X, 2, .std)
+  dirn <- .with_seed(p$seed, stats::rnorm(ncol(Z)))
+  lin <- .std(0.5 * .std(lg) + 0.5 * .std(drop(Z %*% dirn)))
+  eta <- function(b0, a) b0 + lin + a * (0.5 + 0.5 * .std(lg))
+  b0 <- stats::uniroot(function(b) mean(stats::plogis(eta(b, 0))) - 0.10,
+                       c(-30, 30), tol = 1e-10)$root
+  expect_equal(s[[2]]$q1, stats::plogis(eta(b0, 1)))
+  expect_equal(s[[2]]$q0, stats::plogis(eta(b0, 0)))
+
+  p2 <- fast_plan(surfaces = list(forms = "linear", log_or = c(0, 1),
+                                  heterogeneity = 0, prognostic = c(1, 2)))
+  s2 <- .surfaces(p2, X, g, p2$seed)
+  expect_length(s2, 4L)
+  expect_identical(names(s2)[4], "linear, prognostic 2, log OR 1, heterogeneity 0")
+  expect_false(isTRUE(all.equal(s2[[1]]$q0, s2[[3]]$q0)))  # prognostic 1 vs 2
+  for (x in s2) expect_equal(mean(x$q0), 0.10, tolerance = 1e-8)
+})

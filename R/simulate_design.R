@@ -3,6 +3,10 @@
   if (!is.finite(s) || s == 0) v * 0 else (v - mean(v)) / s
 }
 
+.surface_name <- function(form, prognostic, log_or, heterogeneity)
+  sprintf("%s, prognostic %s, log OR %s, heterogeneity %s",
+          form, format(prognostic), format(log_or), format(heterogeneity))
+
 .surfaces <- function(plan, X, g, seed) {
   s <- plan$surfaces
   lg <- stats::qlogis(.bound(g, 1e-6))
@@ -20,14 +24,15 @@
   }
   hg <- .std(lg)
   out <- list()
-  for (form in names(idx)) for (delta in unique(c(0, s$heterogeneity))) {
-    m <- idx[[form]]
-    eta <- function(b0, a) b0 + m + a * (s$log_or + delta * hg)
-    b0 <- stats::uniroot(function(b) mean(stats::plogis(eta(b, 0))) - s$baseline_risk,
-                         c(-30, 30), tol = 1e-10)$root
-    out[[sprintf("%s, heterogeneity %s", form, delta)]] <-
-      list(q1 = stats::plogis(eta(b0, 1)), q0 = stats::plogis(eta(b0, 0)))
-  }
+  for (form in names(idx)) for (gam in s$prognostic) for (tau in s$log_or)
+    for (delta in unique(c(0, s$heterogeneity))) {
+      m <- gam * idx[[form]]
+      eta <- function(b0, a) b0 + m + a * (tau + delta * hg)
+      b0 <- stats::uniroot(function(b) mean(stats::plogis(eta(b, 0))) - s$baseline_risk,
+                           c(-30, 30), tol = 1e-10)$root
+      out[[.surface_name(form, gam, tau, delta)]] <-
+        list(q1 = stats::plogis(eta(b0, 1)), q0 = stats::plogis(eta(b0, 0)))
+    }
   for (nm in names(s$custom))
     out[[nm]] <- list(q1 = .bound(s$custom[[nm]](1, X), 1e-6),
                       q0 = .bound(s$custom[[nm]](0, X), 1e-6))

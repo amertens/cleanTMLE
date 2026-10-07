@@ -42,10 +42,15 @@ candidate: any of \code{"glm"}, \code{"glmnet"}, \code{"earth"}, \code{"xgboost"
 \item{tolerance}{\code{list(bias = , coverage = )}; bias is absolute bias on
 the risk-difference scale.}
 
-\item{surfaces}{Outcome-surface family: \code{baseline_risk}, \code{log_or},
-\code{heterogeneity}, \code{forms} (\code{"linear"}, \code{"nonlinear"}), optional \code{q0}
-(steward-supplied risks, one per design row) and \code{custom} (named list
-of \verb{function(a, X)} returning risks).}
+\item{surfaces}{Outcome-surface family: \code{baseline_risk}, \code{log_or}
+(one or more effects on the log-odds scale), \code{heterogeneity} (one or
+more slopes of the effect on the standardized logit propensity score;
+0 is always included), \code{prognostic} (one or more scales of the
+prognostic index, default 1), \code{forms} (\code{"linear"}, \code{"nonlinear"}),
+optional \code{q0} (steward-supplied risks, one per design row; replaces
+the forms) and \code{custom} (named list of \verb{function(a, X)} returning
+risks). The grid crosses every vector; feasibility must hold on every
+surface.}
 
 \item{trim_band}{\code{c(lower, upper)} propensity band for \code{"trimmed_ATE"}.}
 

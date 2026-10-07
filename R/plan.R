@@ -15,6 +15,12 @@
   x
 }
 
+.n_surfaces <- function(s) {
+  forms <- if (is.null(s$q0)) length(s$forms) else 1L
+  as.integer(forms * length(s$prognostic) * length(s$log_or) *
+               length(unique(c(0, s$heterogeneity))) + length(s$custom))
+}
+
 #' Declare the analysis plan
 #'
 #' Holds every declaration of the analysis. The lock fingerprints the whole
@@ -31,10 +37,15 @@
 #'   truncation = <numbers in (0, 0.5)>)`; candidates are their crossing.
 #' @param tolerance `list(bias = , coverage = )`; bias is absolute bias on
 #'   the risk-difference scale.
-#' @param surfaces Outcome-surface family: `baseline_risk`, `log_or`,
-#'   `heterogeneity`, `forms` (`"linear"`, `"nonlinear"`), optional `q0`
-#'   (steward-supplied risks, one per design row) and `custom` (named list
-#'   of `function(a, X)` returning risks).
+#' @param surfaces Outcome-surface family: `baseline_risk`, `log_or`
+#'   (one or more effects on the log-odds scale), `heterogeneity` (one or
+#'   more slopes of the effect on the standardized logit propensity score;
+#'   0 is always included), `prognostic` (one or more scales of the
+#'   prognostic index, default 1), `forms` (`"linear"`, `"nonlinear"`),
+#'   optional `q0` (steward-supplied risks, one per design row; replaces
+#'   the forms) and `custom` (named list of `function(a, X)` returning
+#'   risks). The grid crosses every vector; feasibility must hold on every
+#'   surface.
 #' @param trim_band `c(lower, upper)` propensity band for `"trimmed_ATE"`.
 #' @param target_time,hazards Time-to-event only: the target time and the
 #'   hazard models passed to `concrete` as its `Model` entries.
@@ -117,20 +128,28 @@ analysis_plan <- function(outcome, estimands,
           "`tolerance` needs bias > 0 and 0 < coverage < 1.")
 
   surfaces <- utils::modifyList(list(baseline_risk = 0.10, log_or = 0.5,
-                                     heterogeneity = 0.5,
+                                     heterogeneity = 0.5, prognostic = 1,
                                      forms = c("linear", "nonlinear")), surfaces)
   stop_if(surfaces$baseline_risk <= 0 || surfaces$baseline_risk >= 1,
           "`surfaces$baseline_risk` must lie in (0, 1).")
-  stop_if(!is.numeric(surfaces$log_or) || length(surfaces$log_or) != 1L ||
-            !is.finite(surfaces$log_or),
-          "`surfaces$log_or` must be a single finite number.")
-  stop_if(surfaces$heterogeneity < 0, "`surfaces$heterogeneity` must be >= 0.")
+  finite_vec <- function(x) is.numeric(x) && length(x) > 0L && all(is.finite(x))
+  stop_if(!finite_vec(surfaces$log_or), "`surfaces$log_or` must be finite numbers.")
+  stop_if(!finite_vec(surfaces$heterogeneity) || any(surfaces$heterogeneity < 0),
+          "`surfaces$heterogeneity` must be finite numbers >= 0.")
+  stop_if(!finite_vec(surfaces$prognostic) || any(surfaces$prognostic <= 0),
+          "`surfaces$prognostic` must be finite numbers > 0.")
+  for (v in c("log_or", "heterogeneity", "prognostic")) surfaces[[v]] <- unique(surfaces[[v]])
   stop_if(!length(surfaces$forms) || !all(surfaces$forms %in% c("linear", "nonlinear")),
           "`surfaces$forms` must be from: linear, nonlinear.")
   stop_if(!is.null(surfaces$custom) &&
             (!is.list(surfaces$custom) || is.null(names(surfaces$custom)) ||
                !all(vapply(surfaces$custom, is.function, logical(1)))),
           "`surfaces$custom` must be a named list of function(a, X).")
+  ns <- .n_surfaces(surfaces)
+  if (ns > 12L)
+    message("The plan declares ", ns, " outcome surfaces: simulate_design() fits every ",
+            "candidate on each, so runtime grows with the grid, and an estimand is feasible ",
+            "only if it meets the tolerances on all of them.")
 
   if (!is.null(negative_controls)) {
     stop_if(!is.character(negative_controls) || is.null(names(negative_controls)),
