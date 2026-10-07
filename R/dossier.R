@@ -68,6 +68,10 @@
 #' @export
 design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
   verify_lock(lock)
+  .need_design_fields(design, c("A", "c_statistic", "populations"))
+  if (!"expected_events" %in% names(simulation))
+    stop("This simulation was made by an earlier cleanTMLE; rerun simulate_design().",
+         call. = FALSE)
   .check_stamp(lock, design, "design")
   .check_stamp(lock, simulation, "simulation")
   if (!identical(simulation$design_hash, design$stamp$hash))

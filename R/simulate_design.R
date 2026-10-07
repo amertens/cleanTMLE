@@ -281,6 +281,7 @@
 #' @export
 simulate_design <- function(lock, design) {
   verify_lock(lock)
+  .need_design_fields(design)
   .check_stamp(lock, design, "design")
   p <- lock$plan
   X <- .design_matrix(lock$data, lock$covariates)

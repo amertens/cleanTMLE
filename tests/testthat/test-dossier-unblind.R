@@ -241,3 +241,22 @@ test_that("a lock without a creation time gives a dossier with NA", {
   d <- design_report(old, fx$design, fx$sim, fx$nc)
   expect_true(is.na(d$lock_created))
 })
+
+test_that("objects from cleanTMLE 0.4.0 stop with a clear message, not wrong output", {
+  fx <- fixture_pipeline()
+  msg_design <- "made by an earlier cleanTMLE; rerun assess_design"
+  strip <- function(x, nm) { x[nm] <- NULL; x }
+  for (nm in c("A", "c_statistic")) {
+    old <- strip(fx$design, nm)
+    expect_error(simulate_design(fx$lock, old), msg_design)
+    expect_error(design_report(fx$lock, old, fx$sim, fx$nc), msg_design)
+    expect_error(print(old), msg_design)
+    expect_error(plot(old), msg_design)
+  }
+  expect_error(design_report(fx$lock, strip(fx$design, "populations"), fx$sim, fx$nc),
+               msg_design)
+  old_sim <- strip(fx$sim, "expected_events")
+  expect_error(design_report(fx$lock, fx$design, old_sim, fx$nc), "rerun simulate_design")
+  # A current design and simulation still work.
+  expect_s3_class(design_report(fx$lock, fx$design, fx$sim, fx$nc), "cr_dossier")
+})

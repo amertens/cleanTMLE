@@ -22,6 +22,7 @@ print.cr_lock <- function(x, ...) {
 
 #' @export
 print.cr_design <- function(x, ...) {
+  .need_design_fields(x)
   cat("Design: overlap ", x$overlap_grade, " (", round(100 * x$share_outside_band, 1),
       "% outside [", x$band[1], ", ", x$band[2], "]); c-statistic ",
       format(round(x$c_statistic, 3)), "\n", sep = "")
@@ -137,6 +138,7 @@ as.data.frame.cr_nc_ladder <- function(x, ...) x$table
 
 #' @export
 plot.cr_design <- function(x, ...) {
+  .need_design_fields(x)
   df <- data.frame(g = x$g, arm = factor(ifelse(x$A == 1, "Treated", "Control"),
                                          levels = c("Treated", "Control")))
   ggplot2::ggplot(df, ggplot2::aes(x = .data$g, fill = .data$arm)) +

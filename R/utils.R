@@ -46,3 +46,12 @@
   if (K <= 1L) return(rep(1L, n))
   .with_seed(seed, sample(rep_len(seq_len(K), n)))
 }
+
+# Objects made by cleanTMLE 0.4.0 lack fields that 0.4.1 reads (A, c_statistic,
+# populations); say so up front instead of failing obscurely or printing
+# wrong output. `fields` are the names required.
+.need_design_fields <- function(design, fields = c("A", "c_statistic")) {
+  if (!all(fields %in% names(design)))
+    stop("This design was made by an earlier cleanTMLE; rerun assess_design().", call. = FALSE)
+  invisible(TRUE)
+}
