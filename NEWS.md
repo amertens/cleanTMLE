@@ -1,3 +1,32 @@
+# cleanTMLE 0.4.1
+
+* `assess_design()` reports who each estimand describes: covariate means in
+  each estimand's target population with their standardized shift from the
+  full cohort, and a profile of the patients a trimmed analysis drops. Means
+  of fewer than 5 patients are suppressed, and when 1 to 4 patients are
+  removed or kept, the removed, kept and trimmed-population means are
+  suppressed. It also reports the largest and 99th-percentile weight per
+  estimand and the c-statistic of the propensity score; `plot()` splits the
+  score by arm.
+* `simulate_design()` reports pre-outcome precision (mean SE, empirical SE,
+  mean interval half-width) and the expected events among the patients each
+  estimator uses, from the declared surfaces and the observed treatment. A
+  new optional `tolerance$ci_halfwidth` makes feasible also mean informative.
+* `surfaces` takes vectors for `log_or` and `heterogeneity` and a new
+  `prognostic` scale, crossed into a declared grid; the defaults give the
+  same four surfaces as 0.4.0, under longer names.
+* The dossier shows the prespecified plan and the lock's creation time.
+  `analysis_plan()` gains `roles`. `export_design_log(format = "muntner")`
+  writes the Table S1 columns of Muntner et al. (2024).
+* `tmle::tmle` now skips its ATT step on calls that do not target the ATT.
+  In a profile on a small plan this cut one simulation repetition from about
+  5.4 s to about 4.3 s.
+* `cr_example` is regenerated so that the outcome-free simulation can tell
+  estimands apart, and carries the true value of each estimand in
+  `cr_example$truth`. Under a small plan (one learner, no cross-fitting, 50
+  repetitions) it finds the ATE infeasible while the trimmed ATE and the ATO
+  are feasible; under the default plan only the ATO is feasible.
+
 # cleanTMLE 0.4.0
 
 Breaking rebuild; 0.3.0 remains at the tag `v0.3.0`.
