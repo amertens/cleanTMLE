@@ -165,7 +165,7 @@ estimate_effect <- function(unblinded, method = c("tmle", "weighting", "matching
     r <- .estimate_tte(unblinded, estimand, candidate)
     return(.new_estimate(estimand, prespecified, "concrete", candidate$id, r,
                          n = r$n_population, stress_tested = FALSE,
-                         note = paste(c(note, "Support and truncation were stress-tested; the hazard models were not."),
+                         note = paste(c(stats::na.omit(note), "Support and truncation were stress-tested; the hazard models were not."),
                                       collapse = " ")))
   }
 
@@ -190,6 +190,6 @@ estimate_effect <- function(unblinded, method = c("tmle", "weighting", "matching
            " treated units found a match within the caliper.") else NULL
   .new_estimate(estimand, prespecified, method, NA_character_, r, n = length(Y),
                 stress_tested = FALSE,
-                note = paste(c(note, unmatched, "Comparator; not stress-tested."),
+                note = paste(c(stats::na.omit(note), unmatched, "Comparator; not stress-tested."),
                              collapse = " "))
 }

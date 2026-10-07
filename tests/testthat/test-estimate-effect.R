@@ -140,3 +140,11 @@ test_that("summary does not error when a risk is zero", {
   fit$risk1 <- NaN
   expect_null(summary(fit)$evalue)
 })
+
+test_that("a comparator on the primary estimand has a note without NA", {
+  w <- estimate_effect(ub, method = "weighting")
+  expect_identical(w$note, "Comparator; not stress-tested.")
+  expect_false(any(grepl("NA", capture.output(print(w)), fixed = TRUE)))
+  s <- estimate_effect(ub, method = "weighting", estimand = "ATO")
+  expect_identical(s$note, "This estimand is not the prespecified primary. Comparator; not stress-tested.")
+})
