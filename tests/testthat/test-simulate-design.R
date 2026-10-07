@@ -29,7 +29,7 @@ sim_cell <- function(library, R, bias = 0, spread = 0.01, covered = R, failed = 
   cov <- seq_len(n) <= covered
   data.frame(rep = seq_len(n), surface = surface, library = library, estimand = estimand,
              truncation = 0.01, failed = seq_len(n) > R, estimate = est,
-             ci_lower = ifelse(cov, truth - 0.1, truth + 0.5),
+             se = 0.05, ci_lower = ifelse(cov, truth - 0.1, truth + 0.5),
              ci_upper = ifelse(cov, truth + 0.1, truth + 0.6), stringsAsFactors = FALSE)
 }
 
@@ -295,7 +295,7 @@ run_mocked <- function(beh, reps, max_reps) {
           err <- (if (b == "wide") 0.02 else 0.001) * (if (r %% 2) 1 else -1)
           rows[[length(rows) + 1L]] <- data.frame(
             rep = r, surface = sn, library = lib, estimand = e, truncation = 0.05,
-            estimate = err, ci_lower = if (cov) err - 0.5 else 0.5,
+            estimate = err, se = 0.1, ci_lower = if (cov) err - 0.5 else 0.5,
             ci_upper = if (cov) err + 0.5 else 0.6, failed = FALSE,
             stringsAsFactors = FALSE)
         }
@@ -423,7 +423,8 @@ test_that("bootstrap copies of one row never straddle outer folds", {
 test_that("a repetition with a NaN interval counts as failed, not as a crash", {
   res <- data.frame(rep = 1:40, surface = "s", library = "glm", estimand = "ATE",
                     truncation = 0.01, failed = FALSE,
-                    estimate = rep(c(0.09, 0.11), 20), ci_lower = 0.0, ci_upper = 0.2)
+                    estimate = rep(c(0.09, 0.11), 20), se = 0.05, ci_lower = 0.0,
+                    ci_upper = 0.2)
   res$ci_lower[3] <- NaN
   res$ci_upper[5] <- NA
   truths <- data.frame(surface = "s", estimand = "ATE", truth = 0.10)
@@ -433,4 +434,140 @@ test_that("a repetition with a NaN interval counts as failed, not as a crash", {
   expect_equal(m$coverage, 1)
   expect_false(is.na(m$pass))
   expect_no_error(.sim_verdict(m, p))
+})
+
+test_that("the default surfaces are unchanged and the grid crosses every vector", {
+  d <- make_design(200)
+  X <- as.matrix(d$design[c("w1", "w2", "w3")])
+  g <- stats::plogis(0.8 * X[, 1])
+  p <- fast_plan()
+  s <- .surfaces(p, X, g, p$seed)
+  expect_identical(names(s), c("linear, prognostic 1, log OR 0.5, heterogeneity 0",
+                               "linear, prognostic 1, log OR 0.5, heterogeneity 0.5",
+                               "nonlinear, prognostic 1, log OR 0.5, heterogeneity 0",
+                               "nonlinear, prognostic 1, log OR 0.5, heterogeneity 0.5"))
+  # Reference: the 0.4.0 family, with the prognostic index entering at scale 1.
+  lg <- stats::qlogis(.bound(g, 1e-6))
+  Z <- apply(X, 2, .std)
+  dirn <- .with_seed(p$seed, stats::rnorm(ncol(Z)))
+  lin <- .std(0.5 * .std(lg) + 0.5 * .std(drop(Z %*% dirn)))
+  eta <- function(b0, a) b0 + lin + a * (0.5 + 0.5 * .std(lg))
+  b0 <- stats::uniroot(function(b) mean(stats::plogis(eta(b, 0))) - 0.10,
+                       c(-30, 30), tol = 1e-10)$root
+  expect_equal(s[[2]]$q1, stats::plogis(eta(b0, 1)))
+  expect_equal(s[[2]]$q0, stats::plogis(eta(b0, 0)))
+
+  p2 <- fast_plan(surfaces = list(forms = "linear", log_or = c(0, 1),
+                                  heterogeneity = 0, prognostic = c(1, 2)))
+  s2 <- .surfaces(p2, X, g, p2$seed)
+  expect_length(s2, 4L)
+  expect_identical(names(s2)[4], "linear, prognostic 2, log OR 1, heterogeneity 0")
+  expect_false(isTRUE(all.equal(s2[[1]]$q0, s2[[3]]$q0)))  # prognostic 1 vs 2
+  for (x in s2) expect_equal(mean(x$q0), 0.10, tolerance = 1e-8)
+})
+
+test_that("a plan stored without prognostic keeps its surfaces", {
+  d <- make_design(200)
+  X <- as.matrix(d$design[c("w1", "w2", "w3")])
+  g <- stats::plogis(0.8 * X[, 1])
+  p <- fast_plan()
+  ref <- .surfaces(p, X, g, p$seed)
+  p0 <- p
+  p0$surfaces$prognostic <- NULL
+  expect_identical(.n_surfaces(p0$surfaces), 4L)
+  s0 <- .surfaces(p0, X, g, p0$seed)
+  expect_length(s0, 4L)
+  expect_identical(s0, ref)
+})
+
+test_that("duplicate surface names stop instead of overwriting", {
+  d <- make_design(200)
+  X <- as.matrix(d$design[c("w1", "w2", "w3")])
+  g <- stats::plogis(0.8 * X[, 1])
+  p <- fast_plan(surfaces = list(forms = "linear", heterogeneity = 0,
+                                 log_or = c(0.3, 0.1 + 0.2)))
+  expect_error(.surfaces(p, X, g, p$seed), "distinct names.*linear, prognostic 1, log OR 0.3")
+  f <- function(a, X) rep(0.1, nrow(X))
+  p2 <- fast_plan(surfaces = list(forms = "linear", heterogeneity = 0,
+                                  custom = list(mine = f)))
+  p2$surfaces$custom <- list(mine = f, mine = f)
+  expect_error(.surfaces(p2, X, g, p2$seed), "mine")
+})
+
+precision_results <- function() data.frame(
+  rep = 1:4, surface = "s1", library = "glm", estimand = "ATE", truncation = 0.01,
+  estimate = c(0.1, 0.2, 0.3, 0.4), se = c(0.05, 0.05, 0.1, 0.1),
+  ci_lower = c(0, 0.1, 0.1, 0.2), ci_upper = c(0.2, 0.3, 0.5, 0.6), failed = FALSE,
+  stringsAsFactors = FALSE)
+
+test_that("metrics report the mean SE, the empirical SE and the interval half-width", {
+  tr <- data.frame(surface = "s1", estimand = "ATE", truth = 0.25)
+  m <- .sim_metrics(precision_results(), tr, fast_plan(estimands = "ATE",
+                                                       tolerance = list(bias = 1, coverage = 0.5)))
+  expect_equal(m$se_mean, 0.075)
+  expect_equal(m$emp_se, stats::sd(c(0.1, 0.2, 0.3, 0.4)))
+  expect_equal(m$ci_halfwidth, 0.15)
+  expect_true(m$pass)
+  tight <- fast_plan(estimands = "ATE",
+                     tolerance = list(bias = 1, coverage = 0.5, ci_halfwidth = 0.1))
+  expect_false(.sim_metrics(precision_results(), tr, tight)$pass)
+})
+
+test_that("an all-failed cell never passes a half-width tolerance", {
+  r <- precision_results()
+  r$failed <- TRUE
+  r$estimate <- NA_real_
+  tr <- data.frame(surface = "s1", estimand = "ATE", truth = 0.25)
+  p <- fast_plan(estimands = "ATE", tolerance = list(bias = 1, coverage = 0.5, ci_halfwidth = 1))
+  m <- .sim_metrics(r, tr, p)
+  expect_true(is.na(m$ci_halfwidth))
+  expect_false(m$pass)
+})
+
+test_that("expected events come from the surfaces and the observed treatment", {
+  s <- list(s1 = list(q1 = c(0.2, 0.4, 0.6, 0.8), q0 = c(0.1, 0.1, 0.3, 0.3)))
+  A <- c(1, 0, 1, 0)
+  g <- c(0.5, 0.5, 0.01, 0.5)
+  ee <- .expected_events(s, A, g, c("ATE", "trimmed_ATE"), c(0.05, 0.95))
+  expect_equal(ee$treated[ee$estimand == "ATE"], 0.2 + 0.6)
+  expect_equal(ee$control[ee$estimand == "ATE"], 0.1 + 0.3)
+  expect_equal(ee$treated[ee$estimand == "trimmed_ATE"], 0.2)
+  expect_equal(ee$control[ee$estimand == "trimmed_ATE"], 0.1 + 0.3)
+})
+
+test_that("the simulation and the dossier carry precision and expected events", {
+  fx <- fixture_pipeline()
+  expect_true(all(c("se_mean", "emp_se", "ci_halfwidth") %in% names(fx$sim$metrics)))
+  expect_true("ci_halfwidth" %in% names(fx$sim$verdict))
+  expect_setequal(unique(fx$sim$expected_events$estimand), fx$plan$estimands)
+  expect_setequal(fx$dossier$expected_events_range$estimand, fx$plan$estimands)
+})
+
+test_that("a half-width failure is a resolved failure: more repetitions cannot fix it", {
+  truths <- data.frame(surface = "s", estimand = "ATE", truth = 0.10)
+  tol <- list(bias = 0.021, coverage = 0.9)
+  res <- rbind(sim_cell("cov89", 200, covered = 178),    # fails coverage, unresolved; half-width 0.1
+               sim_cell("biasedge", 40, bias = 0.02))    # passes bias and coverage, bias unresolved
+  # Half-width tolerance below 0.1: both cells fail it, so neither can flip.
+  p <- fast_plan(estimands = "ATE", tolerance = c(tol, list(ci_halfwidth = 0.05)))
+  m <- .sim_metrics(res, truths, p)
+  expect_true(all(m$unresolved))
+  expect_false(any(m$pass))
+  cs <- .candidate_summary(m)
+  expect_identical(cs$could_flip, c(FALSE, FALSE))
+  v <- .sim_verdict(m, p)
+  expect_identical(v$status, "infeasible")
+  expect_false(v$unresolved)
+  expect_false(any(.decision_cells(m, v, p)))
+  # Half-width tolerance above 0.1: the coverage failure can still flip; the
+  # cell that passes bias and coverage already passes.
+  p_ok <- fast_plan(estimands = "ATE", tolerance = c(tol, list(ci_halfwidth = 0.2)))
+  m_ok <- .sim_metrics(res, truths, p_ok)
+  cs_ok <- .candidate_summary(m_ok)
+  expect_identical(cs_ok$could_flip[cs_ok$candidate == "cov89_t0.01"], TRUE)
+  expect_identical(cs_ok$pass_all[cs_ok$candidate == "biasedge_t0.01"], TRUE)
+  # A plan without the tolerance behaves as before.
+  m0 <- .sim_metrics(res, truths, fast_plan(estimands = "ATE", tolerance = tol))
+  expect_identical(.candidate_summary(m0)$could_flip, c(FALSE, TRUE))  # biasedge, cov89
+  expect_true(.sim_verdict(m0, fast_plan(estimands = "ATE", tolerance = tol))$unresolved)
 })

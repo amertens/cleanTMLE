@@ -93,6 +93,32 @@ test_that("the dossier renders to HTML", {
   expect_match(html, "verdict")
   expect_match(html, "coverage_lower")
   expect_match(html, "judged on point estimates against the declared tolerances")
+  # The trimmed-patient counts table appears, with its lead-in and the
+  # covariate table that follows it.
+  expect_match(html, "Patients outside the trim band, by arm", fixed = TRUE)
+  expect_match(html, "group</th>.*removed</th>.*kept</th>.*treated</td>")
+  expect_match(html, "covariate</th>.*std_diff</th>")
+})
+
+test_that("a dossier for a plan with no trim band builds and renders", {
+  d <- make_design(300, seed = 2)
+  plan <- fast_plan(estimands = c("ATE", "ATO"), trim_band = NULL, reps = 10L)
+  lock <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), plan)
+  design <- assess_design(lock)
+  sim <- suppressMessages(simulate_design(lock, design))
+  dos <- design_report(lock, design, sim, NULL)
+  expect_null(dos$design$trimmed_profile)
+  expect_false("trimmed_ATE" %in% names(dos$design$populations))
+  expect_true(is.data.frame(dos$design$populations))
+  skip_on_cran()
+  skip_if_not_installed("quarto")
+  skip_if(is.null(quarto::quarto_path()))
+  f <- withr::local_tempfile(fileext = ".html")
+  design_report(lock, design, sim, NULL, file = f)
+  html <- paste(readLines(f, warn = FALSE), collapse = "")
+  expect_match(html, "Who each estimand describes")
+  expect_match(html, "No trim band was declared.")
+  expect_no_match(html, "Means of fewer than 5 patients")
 })
 
 test_that("a dossier carries a non-empty extension table and renders it", {
@@ -195,4 +221,59 @@ test_that("unblind checks the coding of a time-to-event outcome", {
   negev <- oc
   negev$s[3] <- -1
   expect_error(ok(negev), "whole numbers")
+})
+
+test_that("the dossier carries the lock's creation time and the plan table", {
+  fx <- fixture_pipeline()
+  expect_identical(fx$dossier$lock_created, fx$lock$created)
+  expect_true(all(c("Estimand ladder (in order)", "Tolerances", "Outcome surfaces") %in%
+                    fx$dossier$plan_table$setting))
+  bad <- fx$dossier
+  bad$lock_created <- "2000-01-01T00:00:00Z"
+  expect_error(.verify_dossier(bad), "modified")
+})
+
+test_that("a lock without a creation time gives a dossier with NA", {
+  fx <- fixture_pipeline()
+  old <- fx$lock
+  old$created <- NULL
+  expect_true(verify_lock(old))
+  d <- design_report(old, fx$design, fx$sim, fx$nc)
+  expect_true(is.na(d$lock_created))
+})
+
+test_that("objects from cleanTMLE 0.4.0 stop with a clear message, not wrong output", {
+  fx <- fixture_pipeline()
+  msg_design <- "made by an earlier cleanTMLE; rerun assess_design"
+  strip <- function(x, nm) { x[nm] <- NULL; x }
+  for (nm in c("A", "c_statistic")) {
+    old <- strip(fx$design, nm)
+    expect_error(simulate_design(fx$lock, old), msg_design)
+    expect_error(design_report(fx$lock, old, fx$sim, fx$nc), msg_design)
+    expect_error(print(old), msg_design)
+    expect_error(plot(old), msg_design)
+  }
+  expect_error(design_report(fx$lock, strip(fx$design, "populations"), fx$sim, fx$nc),
+               msg_design)
+  old_sim <- strip(fx$sim, "expected_events")
+  expect_error(design_report(fx$lock, fx$design, old_sim, fx$nc), "rerun simulate_design")
+  # A current design and simulation still work.
+  expect_s3_class(design_report(fx$lock, fx$design, fx$sim, fx$nc), "cr_dossier")
+})
+
+test_that("the plan table prints values without padding", {
+  expect_identical(.flat(c("ATE", "trimmed_ATE")), "ATE, trimmed_ATE")
+  expect_identical(.flat(c(-0.02, 0.02)), "-0.02, 0.02")
+  expect_identical(.flat(c(1, 0.5)), "1, 0.5")
+  expect_identical(.flat(NULL), "none")
+  expect_identical(.flat(list(a = c("x", "y"), b = 2)), "a: x, y; b: 2")
+})
+
+test_that("every recorded time is UTC with a trailing Z", {
+  utc <- "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+  fx <- fixture_pipeline()
+  expect_match(fx$lock$created, utc)
+  expect_match(fx$dossier$created, utc)
+  ub <- unblind(fx$lock, fx$dossier, fx$d$outcomes, approved_by = "Review team")
+  expect_match(ub$approval$approved_at, utc)
 })

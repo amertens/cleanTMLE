@@ -13,6 +13,33 @@
   p
 }
 
+.flat <- function(x) {
+  if (is.null(x)) return("none")
+  if (is.list(x)) {
+    v <- vapply(x, .flat, character(1))
+    return(paste(if (is.null(names(x))) v else paste0(names(x), ": ", v), collapse = "; "))
+  }
+  # Character values print as they are; numbers print without padding or
+  # trailing zeros, so c(1, 0.5) reads "1, 0.5".
+  paste(if (is.character(x)) x else format(x, trim = TRUE, drop0trailing = TRUE),
+        collapse = ", ")
+}
+
+.plan_rows <- c(estimands = "Estimand ladder (in order)", tolerance = "Tolerances",
+                trim_band = "Trim band", ps_library = "Propensity-score library",
+                candidates = "Candidates (libraries, truncations)",
+                surfaces = "Outcome surfaces", K = "Cross-fitting folds (K)",
+                V = "Super learner folds (V)", reps = "Repetitions",
+                max_reps = "Repetition cap (max_reps)", seed = "Seed",
+                negative_controls = "Negative controls (column: domain)",
+                nc_criteria = "Negative-control criteria",
+                restrictions = "Restrictions (least to most restricted)", roles = "Roles")
+
+.plan_table <- function(ps) data.frame(
+  setting = unname(.plan_rows),
+  value = vapply(names(.plan_rows), function(r) .flat(ps[[r]]), character(1)),
+  stringsAsFactors = FALSE, row.names = NULL)
+
 .dossier_hash <- function(d) {
   d$dossier_hash <- NULL
   .hash(unclass(d))
@@ -44,6 +71,10 @@
 #' @export
 design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
   verify_lock(lock)
+  .need_design_fields(design, c("A", "c_statistic", "populations"))
+  if (!"expected_events" %in% names(simulation))
+    stop("This simulation was made by an earlier cleanTMLE; rerun simulate_design().",
+         call. = FALSE)
   .check_stamp(lock, design, "design")
   .check_stamp(lock, simulation, "simulation")
   if (!identical(simulation$design_hash, design$stamp$hash))
@@ -75,17 +106,30 @@ design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
                    K = p$K, fold_seed = p$seed)
   notes <- c("Weighting and matching are comparators and were not stress-tested.",
              simulation$scope)
+  if (!is.null(p$tolerance$ci_halfwidth))
+    notes <- c(notes, sprintf(paste0("A cell passes only if its mean interval half-width is ",
+                                     "at most %s; this tolerance does not enter the ",
+                                     "unresolved-cell rule."), p$tolerance$ci_halfwidth))
   d <- list(
-    lock_hash = lock$lock_hash, plan = .plan_summary(p), outcome_type = p$outcome_type,
-    design = design[c("overlap", "overlap_grade", "share_outside_band", "band", "ess",
-                      "balance", "edge")],
+    lock_hash = lock$lock_hash, plan = (ps <- .plan_summary(p)),
+    plan_table = .plan_table(ps), lock_created = lock$created %||% NA_character_,
+    outcome_type = p$outcome_type,
+    design = design[c("overlap", "overlap_grade", "share_outside_band", "c_statistic", "band", "ess",
+                      "balance", "edge", "populations", "trimmed_profile")],
     simulation = simulation[c("metrics", "verdict", "truths", "scope", "decision_note",
-                              "extension", "reps", "max_reps", "K", "edge")],
+                              "extension", "reps", "max_reps", "K", "edge",
+                              "expected_events")],
     nc = if (is.null(nc)) NULL else nc[c("table", "by_domain", "by_rung", "verdict")],
-    decision = decision, notes = notes,
+    decision = decision,
+    expected_events_range = do.call(rbind, lapply(p$estimands, function(e) {
+      x <- simulation$expected_events[simulation$expected_events$estimand == e, ]
+      data.frame(estimand = e, treated_min = min(x$treated), treated_max = max(x$treated),
+                 control_min = min(x$control), control_max = max(x$control))
+    })),
+    notes = notes,
     component_hashes = list(design = design$stamp$hash, simulation = simulation$stamp$hash,
                             nc = if (is.null(nc)) NA_character_ else nc$stamp$hash),
-    version = .pkg_version(), created = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"))
+    version = .pkg_version(), created = .utc_now())
   class(d) <- "cr_dossier"
   d$dossier_hash <- .dossier_hash(d)
   if (!is.null(file)) .render_dossier(d, file)

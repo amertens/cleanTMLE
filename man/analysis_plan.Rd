@@ -19,6 +19,7 @@ analysis_plan(
   nc_criteria = NULL,
   restrictions = NULL,
   select = NULL,
+  roles = NULL,
   K = 5L,
   V = 5L,
   reps = 200L,
@@ -39,13 +40,20 @@ candidate: any of \code{"glm"}, \code{"glmnet"}, \code{"earth"}, \code{"xgboost"
 
 \item{candidates}{\verb{list(library = <named list of learner vectors>, truncation = <numbers in (0, 0.5)>)}; candidates are their crossing.}
 
-\item{tolerance}{\code{list(bias = , coverage = )}; bias is absolute bias on
-the risk-difference scale.}
+\item{tolerance}{\code{list(bias = , coverage = , ci_halfwidth = )}; bias is
+absolute bias on the risk-difference scale; the optional
+\code{ci_halfwidth} is the largest mean interval half-width a cell may have
+and still pass.}
 
-\item{surfaces}{Outcome-surface family: \code{baseline_risk}, \code{log_or},
-\code{heterogeneity}, \code{forms} (\code{"linear"}, \code{"nonlinear"}), optional \code{q0}
-(steward-supplied risks, one per design row) and \code{custom} (named list
-of \verb{function(a, X)} returning risks).}
+\item{surfaces}{Outcome-surface family: \code{baseline_risk}, \code{log_or}
+(one or more effects on the log-odds scale), \code{heterogeneity} (one or
+more slopes of the effect on the standardized logit propensity score;
+0 is always included), \code{prognostic} (one or more scales of the
+prognostic index, default 1), \code{forms} (\code{"linear"}, \code{"nonlinear"}),
+optional \code{q0} (steward-supplied risks, one per design row; replaces
+the forms) and \code{custom} (named list of \verb{function(a, X)} returning
+risks). The grid crosses every vector; feasibility must hold on every
+surface.}
 
 \item{trim_band}{\code{c(lower, upper)} propensity band for \code{"trimmed_ATE"}.}
 
@@ -61,6 +69,9 @@ restricted.}
 
 \item{select}{Optional function of the metrics table returning a
 candidate id; replaces the minimum worst-surface RMSE rule.}
+
+\item{roles}{Optional named list of who holds each role (for example
+\code{analyst}, \code{data_steward}, \code{reviewers}), each a character vector.}
 
 \item{K}{Outer cross-fitting folds (1 = no cross-fitting).}
 

@@ -45,14 +45,57 @@ if (length(d$decision$candidates))
   })))
 ```
 
+## Prespecified plan
+
+Lock created: `r if (is.na(d$lock_created)) "not recorded (lock made before cleanTMLE 0.4.1)" else d$lock_created`.
+
+```{r}
+kt(d$plan_table)
+```
+
 ## Design
 
 Overlap grade: **`r d$design$overlap_grade`**; share outside the band:
-`r round(d$design$share_outside_band, 3)`.
+`r round(d$design$share_outside_band, 3)`; c-statistic of the propensity score:
+`r round(d$design$c_statistic, 3)`.
 
 ```{r}
 kt(d$design$overlap); kt(d$design$ess); kt(d$design$balance)
 if (!is.null(d$design$edge) && nrow(d$design$edge)) kt(d$design$edge)
+```
+
+## Who each estimand describes
+
+Covariate means in each estimand's target population, with the standardized
+shift from the full cohort (difference over the full-cohort SD).
+
+```{r}
+kt(d$design$populations)
+```
+
+```{r, results = "asis"}
+if (is.null(d$design$trimmed_profile)) cat("No trim band was declared.\n")
+```
+
+```{r, results = "asis"}
+if (!is.null(d$design$trimmed_profile))
+  cat("Patients outside the trim band, by arm, and the covariate means of removed",
+      "and kept patients.
+")
+```
+
+```{r}
+if (!is.null(d$design$trimmed_profile)) kt(d$design$trimmed_profile$counts)
+```
+
+```{r}
+if (!is.null(d$design$trimmed_profile)) kt(d$design$trimmed_profile$covariates)
+```
+
+```{r, results = "asis"}
+if (!is.null(d$design$trimmed_profile))
+  cat("Means of fewer than 5 patients are not shown. When 1 to 4 patients are removed",
+      "or kept, the removed, kept and trimmed-population means are all hidden.\n")
 ```
 
 ## Simulation
@@ -66,8 +109,17 @@ kt(d$simulation$verdict)
 if (!is.null(d$simulation$extension) && nrow(d$simulation$extension))
   kt(d$simulation$extension)
 kt(d$simulation$metrics[c("estimand", "candidate", "surface", "reps", "bias", "coverage",
-                          "coverage_lower", "coverage_upper", "rmse", "fail_rate", "pass",
-                          "unresolved")])
+                          "coverage_lower", "coverage_upper", "rmse", "se_mean", "emp_se", "ci_halfwidth",
+                          "fail_rate", "pass", "unresolved")])
+```
+
+Expected events among the patients each estimator uses, from the declared
+outcome surfaces and the observed treatment (range over the surfaces). No
+outcome was read. The ATE, ATT and ATO use all patients, so their expected
+events are equal; the heterogeneity setting changes only the treated arm.
+
+```{r}
+kt(d$expected_events_range)
 ```
 
 ## Negative controls

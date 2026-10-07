@@ -54,3 +54,25 @@ test_that("max_reps is a whole number no smaller than reps", {
   expect_error(analysis_plan("y", "ATE", max_reps = NA), "`max_reps`")
   expect_identical(analysis_plan("y", "ATE", reps = 50, max_reps = 50)$max_reps, 50L)
 })
+
+test_that("surface vectors are validated and the grid size is announced", {
+  expect_error(analysis_plan("y", "ATE", surfaces = list(prognostic = 0)), "prognostic")
+  expect_error(analysis_plan("y", "ATE", surfaces = list(heterogeneity = c(0.5, -1))),
+               "heterogeneity")
+  p <- analysis_plan("y", "ATE", surfaces = list(log_or = c(0.5, 0.5, 1)))
+  expect_identical(p$surfaces$log_or, c(0.5, 1))
+  expect_identical(.n_surfaces(p$surfaces), 8L)
+  expect_message(analysis_plan("y", "ATE", surfaces = list(log_or = c(0, 0.5, 1),
+                                                         prognostic = c(0.5, 1, 2))),
+                 "36 outcome surfaces")
+  expect_silent(analysis_plan("y", "ATE"))
+})
+
+test_that("a ci_halfwidth tolerance must be one positive number", {
+  expect_error(analysis_plan("y", "ATE", tolerance = list(ci_halfwidth = -1)), "ci_halfwidth")
+  expect_error(analysis_plan("y", "ATE", tolerance = list(ci_halfwidth = c(0.1, 0.2))),
+               "ci_halfwidth")
+  expect_equal(analysis_plan("y", "ATE", tolerance = list(ci_halfwidth = 0.05))$tolerance$ci_halfwidth,
+               0.05)
+  expect_null(analysis_plan("y", "ATE")$tolerance$ci_halfwidth)
+})

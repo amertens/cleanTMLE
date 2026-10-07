@@ -8,6 +8,74 @@
 
 .ess <- function(w) if (sum(w > 0) == 0) 0 else sum(w)^2 / sum(w^2)
 
+# Area under the ROC curve of g for A, by the rank (Mann-Whitney) formula.
+.c_statistic <- function(g, A) {
+  r <- rank(g)
+  n1 <- sum(A == 1)
+  n0 <- sum(A == 0)
+  (sum(r[A == 1]) - n1 * (n1 + 1) / 2) / (n1 * n0)
+}
+
+# Smallest group whose covariate means the dossier may report.
+.min_cell <- 5L
+
+# A small removed (or kept) group is exposed by the trimmed-population mean, the
+# removed and kept means, and the cohort mean, together with the counts. So when
+# 1 to .min_cell - 1 patients fall outside the band, or 1 to .min_cell - 1 stay
+# inside it, every figure that would reveal their values is suppressed. With none
+# removed, the trimmed population is the cohort.
+.small_trim_group <- function(n_removed, n_kept)
+  any(c(n_removed, n_kept) >= 1L & c(n_removed, n_kept) < .min_cell)
+
+.std_shift <- function(m, ref, s)
+  ifelse(is.na(m), NA_real_, ifelse(is.finite(s) & s > 0, (m - ref) / s, 0))
+
+# Covariate means in each estimand's target population, and the standardized
+# shift from the full cohort (difference over the full-cohort SD).
+.populations <- function(X, A, g, estimands, band) {
+  mu <- colMeans(X)
+  s <- apply(X, 2, stats::sd)
+  out <- data.frame(covariate = colnames(X), cohort = unname(mu), stringsAsFactors = FALSE)
+  for (e in estimands) {
+    w <- switch(e,
+      ATE = rep(1, nrow(X)),
+      trimmed_ATE = as.numeric(g >= band[1] & g <= band[2]),
+      ATT = as.numeric(A == 1),
+      ATO = g * (1 - g))
+    m <- if (sum(w) > 0) colSums(X * w) / sum(w) else rep(NA_real_, ncol(X))
+    if (e == "trimmed_ATE" && .small_trim_group(sum(w == 0), sum(w)))
+      m <- rep(NA_real_, ncol(X))
+    out[[e]] <- unname(m)
+    out[[paste0(e, "_shift")]] <- unname(.std_shift(m, mu, s))
+  }
+  out
+}
+
+# The patients a trimmed analysis no longer describes: counts by arm, and the
+# covariate means of removed and kept patients. Means of fewer than .min_cell
+# patients are suppressed. When 1 to .min_cell - 1 patients are removed or kept
+# (see .small_trim_group), the removed and kept means and the standardized
+# difference are all suppressed.
+.trimmed_profile <- function(X, A, g, band) {
+  out <- g < band[1] | g > band[2]
+  s <- apply(X, 2, stats::sd)
+  mean_or_na <- function(rows) if (sum(rows) >= .min_cell) colMeans(X[rows, , drop = FALSE]) else
+    rep(NA_real_, ncol(X))
+  hide <- .small_trim_group(sum(out), sum(!out))
+  removed <- if (hide) rep(NA_real_, ncol(X)) else mean_or_na(out)
+  kept <- if (hide) rep(NA_real_, ncol(X)) else mean_or_na(!out)
+  list(
+    counts = data.frame(group = c("all", "treated", "control"),
+                        removed = c(sum(out), sum(out & A == 1), sum(out & A == 0)),
+                        kept = c(sum(!out), sum(!out & A == 1), sum(!out & A == 0)),
+                        stringsAsFactors = FALSE),
+    covariates = data.frame(covariate = colnames(X), removed = unname(removed),
+                            kept = unname(kept),
+                            std_diff = unname(ifelse(is.na(removed), NA_real_,
+                                                     .std_shift(removed, kept, s))),
+                            stringsAsFactors = FALSE))
+}
+
 #' Assess the design without the outcome
 #'
 #' Cross-fits the propensity score with the plan's `ps_library`, grades
@@ -44,7 +112,10 @@ assess_design <- function(lock) {
   colnames(Xdf) <- make.names(colnames(Xdf), unique = TRUE)  # cobalt parses names as formula terms
   ess <- do.call(rbind, lapply(p$estimands, function(e) {
     w <- .estimand_weights(g, A, e, band)
-    data.frame(estimand = e, ess_treated = .ess(w[A == 1]), ess_control = .ess(w[A == 0]))
+    wp <- w[w > 0]
+    data.frame(estimand = e, ess_treated = .ess(w[A == 1]), ess_control = .ess(w[A == 0]),
+               max_weight = if (length(wp)) max(wp) else NA_real_,
+               p99_weight = if (length(wp)) unname(stats::quantile(wp, 0.99)) else NA_real_)
   }))
   balance <- do.call(rbind, lapply(p$estimands, function(e) {
     w <- .estimand_weights(g, A, e, band)
@@ -61,8 +132,12 @@ assess_design <- function(lock) {
     })
     data.frame(estimand = e, max_abs_smd = smd)
   }))
+  populations <- .populations(X, A, g, p$estimands, p$trim_band)
+  trimmed_profile <- if (is.null(p$trim_band)) NULL else .trimmed_profile(X, A, g, p$trim_band)
   out <- list(g = g, g_world = g_world, folds = folds, overlap = overlap, overlap_grade = grade,
-              share_outside_band = share, band = band, ess = ess, balance = balance,
+              share_outside_band = share,
+              c_statistic = .c_statistic(g, A), A = A, band = band, ess = ess, balance = balance,
+              populations = populations, trimmed_profile = trimmed_profile,
               edge = .edge_check(gf$risks), risks = gf$risks)
   out$stamp <- .stamp(lock, out)
   class(out) <- "cr_design"

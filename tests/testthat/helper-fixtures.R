@@ -51,3 +51,15 @@ contains_outcome <- function(obj, name, y) {
   is.numeric(obj) && length(obj) == length(y) &&
     isTRUE(all.equal(as.numeric(obj), as.numeric(y), check.attributes = FALSE))
 }
+
+# The small plan the Get-started vignette runs live.
+vignette_plan <- function(...) {
+  args <- utils::modifyList(list(
+    outcome = "death_30d", estimands = c("ATE", "trimmed_ATE", "ATT", "ATO"),
+    ps_library = "glm", candidates = list(library = list(glm = "glm"), truncation = 0.01),
+    surfaces = list(forms = "linear"), trim_band = c(0.05, 0.95),
+    negative_controls = c(health_seeking = "health care use"),
+    restrictions = list(no_transfer = ~ transfer == 0),
+    K = 1L, reps = 50L, max_reps = 50L, seed = 1L), list(...))
+  do.call(analysis_plan, args)
+}

@@ -3,6 +3,10 @@
   if (!is.finite(s) || s == 0) v * 0 else (v - mean(v)) / s
 }
 
+.surface_name <- function(form, prognostic, log_or, heterogeneity)
+  sprintf("%s, prognostic %s, log OR %s, heterogeneity %s",
+          form, format(prognostic), format(log_or), format(heterogeneity))
+
 .surfaces <- function(plan, X, g, seed) {
   s <- plan$surfaces
   lg <- stats::qlogis(.bound(g, 1e-6))
@@ -20,18 +24,26 @@
   }
   hg <- .std(lg)
   out <- list()
-  for (form in names(idx)) for (delta in unique(c(0, s$heterogeneity))) {
-    m <- idx[[form]]
-    eta <- function(b0, a) b0 + m + a * (s$log_or + delta * hg)
-    b0 <- stats::uniroot(function(b) mean(stats::plogis(eta(b, 0))) - s$baseline_risk,
-                         c(-30, 30), tol = 1e-10)$root
-    out[[sprintf("%s, heterogeneity %s", form, delta)]] <-
-      list(q1 = stats::plogis(eta(b0, 1)), q0 = stats::plogis(eta(b0, 0)))
+  nms <- character()
+  for (form in names(idx)) for (gam in s$prognostic %||% 1) for (tau in s$log_or)
+    for (delta in unique(c(0, s$heterogeneity))) {
+      m <- gam * idx[[form]]
+      eta <- function(b0, a) b0 + m + a * (tau + delta * hg)
+      b0 <- stats::uniroot(function(b) mean(stats::plogis(eta(b, 0))) - s$baseline_risk,
+                           c(-30, 30), tol = 1e-10)$root
+      out[[length(out) + 1L]] <-
+        list(q1 = stats::plogis(eta(b0, 1)), q0 = stats::plogis(eta(b0, 0)))
+      nms <- c(nms, .surface_name(form, gam, tau, delta))
+    }
+  for (nm in names(s$custom)) {
+    out[[length(out) + 1L]] <- list(q1 = .bound(s$custom[[nm]](1, X), 1e-6),
+                                    q0 = .bound(s$custom[[nm]](0, X), 1e-6))
+    nms <- c(nms, nm)
   }
-  for (nm in names(s$custom))
-    out[[nm]] <- list(q1 = .bound(s$custom[[nm]](1, X), 1e-6),
-                      q0 = .bound(s$custom[[nm]](0, X), 1e-6))
-  out
+  if (anyDuplicated(nms))
+    stop("Outcome surfaces must have distinct names; duplicated: ",
+         paste(unique(nms[duplicated(nms)]), collapse = "; "), ".", call. = FALSE)
+  stats::setNames(out, nms)
 }
 
 .true_values <- function(q1, q0, g, band) {
@@ -43,6 +55,19 @@
     out["trimmed_ATE"] <- if (any(k)) mean(tau[k]) else NA_real_
   }
   out
+}
+
+# Expected events among the rows each estimator uses, from the surface risks
+# and the observed treatment. Never reads the outcome.
+.expected_events <- function(surfaces, A, g, estimands, band) {
+  do.call(rbind, lapply(names(surfaces), function(sn) {
+    s <- surfaces[[sn]]
+    do.call(rbind, lapply(estimands, function(e) {
+      rows <- if (e == "trimmed_ATE") g >= band[1] & g <= band[2] else rep(TRUE, length(A))
+      data.frame(surface = sn, estimand = e, treated = sum(s$q1[rows & A == 1]),
+                 control = sum(s$q0[rows & A == 0]), stringsAsFactors = FALSE)
+    }))
+  }))
 }
 
 .failed_rows <- function(plan, msg) {
@@ -135,6 +160,9 @@
                coverage_lower = wi[1], coverage_upper = wi[2],
                rmse = rmse,
                rmse_mcse = if (R > 1 && rmse > 0) stats::sd(e^2) / (2 * rmse * sqrt(R)) else NA_real_,
+               se_mean = if (R) mean(s$se[ok]) else NA_real_,
+               emp_se = if (R > 1) stats::sd(s$estimate[ok]) else NA_real_,
+               ci_halfwidth = if (R) mean((s$ci_upper[ok] - s$ci_lower[ok]) / 2) else NA_real_,
                stringsAsFactors = FALSE)
   }))
   tb <- plan$tolerance$bias
@@ -142,7 +170,14 @@
   # Feasibility is judged on the point estimates: the tolerances are the
   # declared margin, and no second margin is applied.
   usable <- !is.na(m$bias) & m$reps - m$failed > 1 & m$fail_rate <= 0.05
-  m$pass <- usable & abs(m$bias) <= tb & m$coverage >= tc
+  m$pass_bc <- usable & abs(m$bias) <= tb & m$coverage >= tc
+  # The half-width tolerance makes feasible also mean informative. It does not
+  # enter the unresolved-cell rule, and more repetitions do not shrink the
+  # half-width to the tolerance by chance, so failing it is a resolved failure
+  # (see .candidate_summary()).
+  tw <- plan$tolerance$ci_halfwidth
+  m$pass_hw <- if (is.null(tw)) rep(TRUE, nrow(m)) else !is.na(m$ci_halfwidth) & m$ci_halfwidth <= tw
+  m$pass <- m$pass_bc & m$pass_hw
   # A usable cell is unresolved when the 95% interval for its bias, or the
   # Wilson interval for its coverage, contains the tolerance. A cell that fails
   # the failure rule is not unresolved; it fails.
@@ -160,8 +195,10 @@
   do.call(rbind, lapply(split(me, me$candidate), function(d) data.frame(
     candidate = d$candidate[1], library = d$library[1], truncation = d$truncation[1],
     pass_all = all(d$pass),
-    # Fails somewhere, but only on unresolved cells: it could still pass everywhere.
-    could_flip = !all(d$pass) && all(d$pass | d$unresolved),
+    # Fails somewhere, but only on unresolved cells whose half-width is within
+    # its tolerance: it could still pass everywhere. A cell that fails the
+    # half-width tolerance is a resolved failure.
+    could_flip = !all(d$pass) && all(d$pass | (d$unresolved & d$pass_hw)),
     worst_rmse = max(d$rmse), stringsAsFactors = FALSE)))
 }
 
@@ -209,6 +246,8 @@
     data.frame(estimand = e, status = status, selected = sel,
                library = if (is.na(sel)) NA_character_ else row$library,
                truncation = if (is.na(sel)) NA_real_ else row$truncation,
+               ci_halfwidth = if (is.na(sel)) NA_real_ else
+                 max(me$ci_halfwidth[me$candidate == sel]),
                unresolved = any(me$unresolved & me$candidate %in% cand),
                stringsAsFactors = FALSE)
   }))
@@ -242,6 +281,7 @@
 #' @export
 simulate_design <- function(lock, design) {
   verify_lock(lock)
+  .need_design_fields(design)
   .check_stamp(lock, design, "design")
   p <- lock$plan
   X <- .design_matrix(lock$data, lock$covariates)
@@ -254,6 +294,7 @@ simulate_design <- function(lock, design) {
     data.frame(surface = sn, estimand = names(tv), truth = unname(tv),
                stringsAsFactors = FALSE)
   }))
+  expected_events <- .expected_events(surfaces, design$A, design$g, p$estimands, p$trim_band)
   t0 <- Sys.time()
   first <- .one_rep(1L, X, g, surfaces, p)
   secs <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
@@ -344,7 +385,7 @@ simulate_design <- function(lock, design) {
     scope <- paste(scope, "The outcome was simulated as risk by the target time;",
                    "the hazard models were not stress-tested.")
   out <- list(results = results, truths = truths, metrics = metrics,
-              verdict = verdict,
+              verdict = verdict, expected_events = expected_events,
               edge = if (is.null(risks)) NULL else .edge_check(risks),
               surfaces = names(surfaces), reps = p$reps, max_reps = max_reps,
               extension = extension, K = p$K, scope = scope,

@@ -60,6 +60,9 @@ create_analysis_lock <- function(design_data, treatment, covariates, plan,
   lock <- list(data = data, id = id, treatment = treatment,
                covariates = covariates, plan = plan, version = .pkg_version())
   lock$lock_hash <- .lock_hash(lock)
+  # The creation time is recorded but not hashed, so the hash stays
+  # reproducible from its inputs; the dossier copies it under its own hash.
+  lock$created <- .utc_now()
   class(lock) <- "cr_lock"
   lock
 }
