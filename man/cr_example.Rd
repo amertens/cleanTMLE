@@ -13,7 +13,12 @@ negative-control outcome \code{health_seeking}.}
 \item{outcomes}{\code{id} and the 0/1 outcome \code{death_30d}.}
 \item{truth}{\code{estimand}, \code{truth} (the true risk difference, computed
 from the generating model over this cohort's covariates) and
-\code{population} (whom it describes).}
+\code{population} (whom it describes). The trimmed-ATE truth is over the
+patients whose true propensity score lies in \verb{[0.05, 0.95]}; that band
+is fixed at those values. \code{\link[=estimate_effect]{estimate_effect()}} trims on the
+cross-fitted estimated score, so its trimmed population can differ
+from this one. The ATT and ATO truths weight patients by the true
+propensity score.}
 }
 }
 \source{
@@ -27,8 +32,11 @@ A simulated cohort of 1,500 patients, shipped as separate design and
 outcome data frames so the outcome can be admitted with \code{\link[=unblind]{unblind()}} after
 the design stage. Treatment depends strongly on severity, so few severe
 patients are untreated and few mild patients are treated, and the effect
-of treatment grows with severity. Under a plan like the one in the Get
-started vignette, the average treatment effect is not estimable from
-these data while an effect in a narrower population is.
+of treatment grows with severity. Under a small plan like the one the
+package's tests use (one learner, no cross-fitting, 50 repetitions), the
+outcome-free simulation finds the average treatment effect infeasible
+against the plan's tolerances while the trimmed average treatment effect
+and the overlap-weighted effect (ATO) are feasible. Under the default plan
+with 50 repetitions only the ATO is feasible.
 }
 \keyword{datasets}
