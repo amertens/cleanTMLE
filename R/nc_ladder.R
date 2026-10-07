@@ -52,8 +52,8 @@
 #' main-terms GLM candidate (the smallest declared truncation) and the same
 #' fitter as the analysis, and grades the result against the plan's
 #' `nc_criteria`. A control is read on the estimand the analysis reports: a
-#' control read on an estimand the design cannot deliver measures that
-#' estimand's extrapolation, not residual confounding.
+#' control read on an estimand the design cannot deliver mixes extrapolation
+#' error with confounding, so it cannot isolate confounding.
 #'
 #' Each estimated control gets a `reading` from the plan's rule. Under the
 #' default `"interval"` rule it reads "inside" when its 95% interval lies
@@ -71,6 +71,11 @@
 #' any is inconclusive or insufficient, and GO otherwise. FLAG does not block
 #' [unblind()]; only STOP does. An estimated control whose estimate or
 #' interval is not finite counts as failed, not as estimable.
+#'
+#' A control is inestimable on a rung when a cell of its 2x2 table with the
+#' treatment has fewer than 5 events. That check uses the whole rung, so the
+#' trimmed ATE (fitted on the patients inside the trim band) can rest on a
+#' subset with smaller cells; its interval is then wide.
 #'
 #' `verdict` is a named character vector: the full cohort's verdict for each
 #' declared estimand, in ladder order. [design_report()] gates unblinding on

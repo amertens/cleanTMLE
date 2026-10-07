@@ -131,8 +131,8 @@ if (!is.null(d$nc) && !is.na(d$decision$nc_estimand))
       "estimand is graded on its own. The full-cohort verdict for the",
       d$decision$nc_estimand, "(the primary estimand) gates unblinding, because the",
       "controls are read on the estimand the analysis reports: a control read on an",
-      "estimand the design cannot deliver measures that estimand's extrapolation,",
-      "not residual confounding. The other rows are diagnostics.", "\n")
+      "estimand the design cannot deliver mixes extrapolation error with confounding,",
+      "so it cannot isolate confounding. The other rows are diagnostics.", "\n")
 if (!is.null(d$nc) && is.na(d$decision$nc_estimand))
   cat("No estimand is feasible, so no estimand's control verdict gates unblinding.",
       "The rows below are diagnostics.", "\n")
@@ -141,14 +141,34 @@ if (!is.null(d$nc) && !is.null(d$plan$nc_criteria)) {
   band <- paste0("[", cr$null_band[1], ", ", cr$null_band[2], "]")
   cat("\n\n", switch(cr$rule,
     interval = paste0("Rule: each control is read from its 95% interval against the null band ",
-      band, ". The verdict is GO when the interval lies inside the null band, STOP when it lies ",
-      "entirely outside, and FLAG when it is too imprecise to tell. FLAG does not block ",
-      "unblinding."),
+      band, ". The verdict is GO when every control's interval lies inside the null band, STOP ",
+      "when any lies entirely outside it, and FLAG otherwise (an interval that overlaps the ",
+      "band edge, or fewer estimable controls than the plan requires in a domain). FLAG does ",
+      "not block unblinding."),
     ci = paste0("Rule: each control is read from its 95% interval against the null band ", band,
-      ". The verdict is GO when the whole interval lies inside the null band and STOP otherwise."),
+      ". The verdict is GO when every control's whole interval lies inside the null band, STOP ",
+      "when any control's interval is not entirely inside it, and FLAG when no control is ",
+      "outside but fewer controls can be estimated than the plan requires in a domain. FLAG ",
+      "does not block unblinding."),
     paste0("Rule: each control is read from its point estimate against the null band ", band,
-      ". The verdict is GO when the point estimate lies inside the null band and STOP when it ",
-      "lies outside.")), "\n", sep = "")
+      ". The verdict is GO when every control's point estimate lies inside the null band, STOP ",
+      "when any lies outside it, and FLAG when none is outside but fewer controls can be ",
+      "estimated than the plan requires in a domain. FLAG does not block unblinding.")),
+    "\n", sep = "")
+}
+```
+
+```{r, results = "asis"}
+pe <- d$decision$nc_estimand
+if (!is.null(d$nc) && !is.na(pe)) {
+  tb <- d$nc$table
+  tb <- tb[tb$rung == "full cohort" & tb$estimand == pe,
+           c("negative_control", "domain", "estimate", "ci_lower", "ci_upper", "reading",
+             "status")]
+  cat("Full-cohort controls on the ", pe, " (the primary estimand): the estimates and 95% ",
+      "intervals the verdict is read from.\n\n", sep = "")
+  print(kt(tb))
+  cat("\n")
 }
 ```
 

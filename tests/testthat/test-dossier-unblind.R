@@ -88,8 +88,11 @@ test_that("the gate follows the primary: a different primary reads a different v
     nc$stamp <- .stamp(fx$lock, nc)
     d <- design_report(fx$lock, fx$design, fx$sim, nc)
     expect_identical(d$decision$nc_verdict, v)
-    expect_identical(identical(.blocked_reasons(d), "the negative-control verdict is STOP"),
-                     v == "STOP")
+    if (v == "STOP") {
+      expect_identical(.blocked_reasons(d), "the negative-control verdict is STOP")
+    } else {
+      expect_length(.blocked_reasons(d), 0L)
+    }
   }
   # A STOP on another estimand does not block the primary.
   other <- setdiff(fx$plan$estimands, prim)[1]
@@ -159,6 +162,12 @@ test_that("the dossier renders to HTML", {
   expect_match(html, "rung</th>[^/]*estimand</th>[^/]*verdict</th>")
   # The section states the grading rule in one sentence (fx uses the point rule).
   expect_match(html, "point estimate against the null band", fixed = TRUE)
+  # Quarto may turn the apostrophe into a typographic one.
+  expect_match(html, "every control.s point estimate lies inside the null band")
+  # The primary estimand's full-cohort controls are listed with their intervals and readings.
+  expect_match(html, "Full-cohort controls on the ATE", fixed = TRUE)
+  expect_match(html, "ci_upper</th>[^/]*reading</th>")
+  expect_match(html, "nc_visit")
   expect_match(html, "judged on point estimates against the declared tolerances")
   # The trimmed-patient counts table appears, with its lead-in and the
   # covariate table that follows it.
@@ -196,8 +205,11 @@ test_that("the dossier states the interval rule in its negative-controls section
   f <- withr::local_tempfile(fileext = ".html")
   design_report(iv$lock, iv$design, iv$sim, iv$nc, file = f)
   html <- paste(readLines(f, warn = FALSE), collapse = "")
-  expect_match(html, "lies inside the null band", fixed = TRUE)
+  expect_match(html, "GO when every control.s interval lies inside the null band")
+  expect_match(html, "STOP when any lies entirely outside it", fixed = TRUE)
   expect_match(html, "FLAG does not block unblinding", fixed = TRUE)
+  expect_match(html, "mixes extrapolation error with confounding", fixed = TRUE)
+  expect_match(html, "ci_upper</th>[^/]*reading</th>")
 })
 
 test_that("a dossier carries a non-empty extension table and renders it", {

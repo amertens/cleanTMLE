@@ -113,15 +113,56 @@ test_that("the JSON log carries the by-rung verdicts by estimand and the estiman
   expect_true("estimand" %in% names(br))
   expect_identical(br$estimand, fx$nc$by_rung$estimand)
   expect_identical(br$verdict, fx$nc$by_rung$verdict)
-  expect_identical(unname(unlist(log$negative_controls$verdict)), unname(fx$nc$verdict))
+  expect_identical(names(log$negative_controls$verdict), fx$plan$estimands)
+  expect_identical(unlist(log$negative_controls$verdict), fx$nc$verdict)
 })
 
 test_that("the Muntner negative-control rationale names the rule", {
   fx <- fixture_pipeline()
   out <- export_design_log(fx$dossier, format = "muntner")
   expect_match(out$rationale[out$stage == "Negative controls"], "point-estimate rule", fixed = TRUE)
+  expect_match(out$rationale[out$stage == "Negative controls"], "for the primary estimand",
+               fixed = TRUE)
+  expect_match(out$rationale[out$stage == "Negative controls"],
+               "when any lies outside it", fixed = TRUE)
   fi <- fixture_pipeline(nc_rule = "interval")
   o2 <- export_design_log(fi$dossier, format = "muntner")
   expect_match(o2$rationale[o2$stage == "Negative controls"], "interval rule", fixed = TRUE)
+  expect_match(o2$rationale[o2$stage == "Negative controls"],
+               "GO when every control's 95% interval lies inside the null band", fixed = TRUE)
+  expect_match(o2$rationale[o2$stage == "Negative controls"],
+               "FLAG otherwise", fixed = TRUE)
   expect_match(o2$rationale[o2$stage == "Negative controls"], "-0.1", fixed = TRUE)
+})
+
+test_that("a dossier built before the estimand was recorded still exports the Muntner log", {
+  fx <- fixture_pipeline()
+  old <- fx$dossier
+  old$decision$nc_estimand <- NULL
+  old$dossier_hash <- .dossier_hash(old)
+  out <- export_design_log(old, format = "muntner")
+  nc_row <- out[out$stage == "Negative controls", ]
+  expect_equal(nrow(nc_row), 1L)
+  expect_identical(nc_row$issue, "Residual confounding check")
+  expect_identical(nc_row$decision, old$decision$nc_verdict)
+  expect_false(grepl("primary estimand", nc_row$rationale))
+})
+
+test_that("the rule text says how the controls combine into a verdict, for each rule", {
+  band <- c(-0.02, 0.02)
+  iv <- .nc_rule_text(list(rule = "interval", null_band = band))
+  expect_match(iv, "GO when every control's 95% interval lies inside the null band", fixed = TRUE)
+  expect_match(iv, "STOP when any lies entirely outside it", fixed = TRUE)
+  expect_match(iv, "FLAG otherwise", fixed = TRUE)
+  expect_match(iv, "overlaps the band edge", fixed = TRUE)
+  expect_match(iv, "fewer estimable controls than the plan requires", fixed = TRUE)
+  expect_match(iv, "FLAG does not block unblinding", fixed = TRUE)
+  ci <- .nc_rule_text(list(rule = "ci", null_band = band))
+  expect_match(ci, "GO when every control's whole 95% interval lies inside the null band", fixed = TRUE)
+  expect_match(ci, "STOP when any control's interval is not entirely inside it", fixed = TRUE)
+  expect_match(ci, "FLAG when no control is outside but fewer controls can be estimated", fixed = TRUE)
+  pt <- .nc_rule_text(list(rule = "point", null_band = band))
+  expect_match(pt, "GO when every control's point estimate lies inside the null band", fixed = TRUE)
+  expect_match(pt, "STOP when any lies outside it", fixed = TRUE)
+  expect_match(pt, "FLAG when none is outside but fewer controls can be estimated", fixed = TRUE)
 })

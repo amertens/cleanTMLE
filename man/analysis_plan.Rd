@@ -62,7 +62,9 @@ hazard models passed to \code{concrete} as its \code{Model} entries.}
 
 \item{negative_controls}{Named character vector, column = domain.}
 
-\item{nc_criteria}{\verb{list(null_band = , rule = "interval", "point" or "ci", min_per_domain = )}. The default rule is \code{"interval"}: a control reads
+\item{nc_criteria}{\code{list(null_band = , rule = , min_per_domain = )}, where
+\code{rule} is one of \code{"interval"} (the default), \code{"point"} or \code{"ci"}. Under
+\code{"interval"} a control reads
 "inside" when its 95\% interval lies entirely inside \code{null_band},
 "outside" when the interval lies entirely outside it, and "inconclusive"
 otherwise (too imprecise to tell). Under \code{"point"} a control reads

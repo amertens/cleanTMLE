@@ -226,6 +226,13 @@ test_that("the interval rule reads each control from its interval against the nu
   expect_identical(e$table$reading, c("inside", "inconclusive", "inconclusive"))
   e2 <- .nc_grade(tab(est = c(0.2, -0.2), lo = c(0.1000001, -0.3), hi = c(0.3, -0.1000001)), crit)
   expect_identical(e2$table$reading, c("outside", "outside"))
+  # a missing or infinite interval is a failed control, never "inside"
+  nf <- .nc_grade(tab(est = c(0, 0, 0), lo = c(NA, -Inf, -0.05), hi = c(0.05, 0.05, Inf)), crit)
+  expect_identical(nf$table$status, rep("failed: non-finite estimate", 3))
+  expect_true(all(is.na(nf$table$reading)))
+  expect_false(any(nf$table$reading %in% "inside"))
+  expect_identical(nf$by_domain$reading, "insufficient")
+  expect_identical(nf$by_rung$verdict, "FLAG")
   # in_band is kept: TRUE inside, FALSE outside, NA when inconclusive
   expect_identical(g$table$in_band, c(TRUE, FALSE, FALSE, NA, NA, NA))
   # domain and rung mapping: one control each

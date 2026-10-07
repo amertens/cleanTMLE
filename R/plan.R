@@ -52,8 +52,9 @@
 #' @param target_time,hazards Time-to-event only: the target time and the
 #'   hazard models passed to `concrete` as its `Model` entries.
 #' @param negative_controls Named character vector, column = domain.
-#' @param nc_criteria `list(null_band = , rule = "interval", "point" or "ci",
-#'   min_per_domain = )`. The default rule is `"interval"`: a control reads
+#' @param nc_criteria `list(null_band = , rule = , min_per_domain = )`, where
+#'   `rule` is one of `"interval"` (the default), `"point"` or `"ci"`. Under
+#'   `"interval"` a control reads
 #'   "inside" when its 95% interval lies entirely inside `null_band`,
 #'   "outside" when the interval lies entirely outside it, and "inconclusive"
 #'   otherwise (too imprecise to tell). Under `"point"` a control reads
