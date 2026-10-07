@@ -63,6 +63,68 @@ test_that("STOP blocks unblinding unless an override gives a reason", {
   expect_identical(ub$approval$blocked_by, "the negative-control verdict is STOP")
 })
 
+test_that("the gate is the primary estimand's verdict, and by_rung has a row per rung and estimand", {
+  for (x in list(fx, st)) {
+    d <- x$dossier
+    expect_identical(d$decision$nc_estimand, d$decision$primary)
+    expect_false(is.na(d$decision$primary))
+    expect_identical(d$decision$nc_verdict, x$nc$verdict[[d$decision$primary]])
+    expect_identical(names(x$nc$verdict), x$plan$estimands)
+    rungs <- c("full cohort", names(x$plan$restrictions))
+    expect_identical(nrow(x$nc$by_rung), length(rungs) * length(x$plan$estimands))
+    expect_false(anyDuplicated(x$nc$by_rung[c("rung", "estimand")]) > 0)
+    expect_identical(d$nc$by_rung, x$nc$by_rung)
+  }
+})
+
+test_that("the gate follows the primary: a different primary reads a different verdict", {
+  # Verdicts set by hand to differ by estimand; the dossier takes the primary's.
+  prim <- fx$dossier$decision$primary
+  for (v in c("STOP", "FLAG")) {
+    nc <- fx$nc
+    nc$verdict[] <- "GO"
+    nc$verdict[[prim]] <- v
+    nc$by_rung$verdict[nc$by_rung$rung == "full cohort"] <- unname(nc$verdict)
+    nc$stamp <- .stamp(fx$lock, nc)
+    d <- design_report(fx$lock, fx$design, fx$sim, nc)
+    expect_identical(d$decision$nc_verdict, v)
+    expect_identical(identical(.blocked_reasons(d), "the negative-control verdict is STOP"),
+                     v == "STOP")
+  }
+  # A STOP on another estimand does not block the primary.
+  other <- setdiff(fx$plan$estimands, prim)[1]
+  nc <- fx$nc
+  nc$verdict[] <- "GO"
+  nc$verdict[[other]] <- "STOP"
+  nc$by_rung$verdict[nc$by_rung$rung == "full cohort"] <- unname(nc$verdict)
+  nc$stamp <- .stamp(fx$lock, nc)
+  d <- design_report(fx$lock, fx$design, fx$sim, nc)
+  expect_identical(d$decision$nc_verdict, "GO")
+  expect_length(.blocked_reasons(d), 0L)
+})
+
+test_that("with no feasible estimand the nc verdict is NA and the plan is blocked by infeasibility", {
+  sim <- fx$sim
+  sim$verdict$status <- "infeasible"
+  sim$stamp <- .stamp(fx$lock, sim)
+  d <- design_report(fx$lock, fx$design, sim, fx$nc)
+  expect_true(is.na(d$decision$primary))
+  expect_true(is.na(d$decision$nc_verdict))
+  expect_true(is.na(d$decision$nc_estimand))
+  expect_identical(.blocked_reasons(d), "no estimand is feasible")
+})
+
+test_that("a ladder made before the estimand column is refused", {
+  old <- fx$nc
+  old$by_rung$estimand <- NULL
+  old$stamp <- .stamp(fx$lock, old)
+  msg <- "This negative-control ladder was made by an earlier cleanTMLE; rerun negative_control_ladder()."
+  expect_error(design_report(fx$lock, fx$design, fx$sim, old), msg, fixed = TRUE)
+  old2 <- fx$nc
+  old2$by_rung$estimand <- NULL
+  expect_error(design_report(fx$lock, fx$design, fx$sim, old2), msg, fixed = TRUE)
+})
+
 test_that("a plan with negative controls cannot produce a dossier without nc", {
   expect_error(design_report(fx$lock, fx$design, fx$sim), "negative controls")
 })
@@ -92,6 +154,9 @@ test_that("the dossier renders to HTML", {
   expect_match(html, "Decision")
   expect_match(html, "verdict")
   expect_match(html, "coverage_lower")
+  # The negative controls are read on the primary estimand, and the section says so.
+  expect_match(html, "(the primary estimand) gates unblinding", fixed = TRUE)
+  expect_match(html, "rung</th>[^/]*estimand</th>[^/]*verdict</th>")
   expect_match(html, "judged on point estimates against the declared tolerances")
   # The trimmed-patient counts table appears, with its lead-in and the
   # covariate table that follows it.

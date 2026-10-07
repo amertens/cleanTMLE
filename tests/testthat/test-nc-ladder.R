@@ -17,10 +17,47 @@ test_that("no declared controls gives an empty ladder with no verdict", {
 test_that("a null control passes and a treatment-driven control stops", {
   ok <- ladder_for(c(nc_visit = "care use"), nc_criteria = list(null_band = c(-0.1, 0.1)),
                    restrictions = list(no_transfer = ~ transfer == 0))
-  expect_identical(ok$by_rung$rung, c("full cohort", "no_transfer"))
-  expect_identical(ok$verdict, "GO")
+  ests <- c("ATE", "trimmed_ATE", "ATT", "ATO")
+  expect_identical(ok$by_rung$rung, rep(c("full cohort", "no_transfer"), each = 4))
+  expect_identical(ok$by_rung$estimand, rep(ests, 2))
+  expect_identical(ok$verdict, stats::setNames(rep("GO", 4), ests))
   bad <- ladder_for(c(nc_bad = "care use"), nc_criteria = list(null_band = c(-0.1, 0.1)))
-  expect_identical(bad$verdict, "STOP")
+  expect_identical(names(bad$verdict), ests)
+  expect_identical(bad$verdict[["ATE"]], "STOP")
+})
+
+test_that("each control is estimated for every declared estimand, one row each", {
+  nc <- ladder_for(c(nc_visit = "care use"), nc_criteria = list(null_band = c(-0.1, 0.1)),
+                   restrictions = list(no_transfer = ~ transfer == 0))
+  ests <- c("ATE", "trimmed_ATE", "ATT", "ATO")
+  expect_true("estimand" %in% names(nc$table))
+  expect_identical(nrow(nc$table), 2L * 4L)
+  expect_identical(nc$table$estimand, rep(ests, 2))
+  expect_identical(nc$table$rung, rep(c("full cohort", "no_transfer"), each = 4))
+  expect_identical(nc$by_domain$estimand, rep(ests, 2))
+  expect_true(all(nc$table$status == "estimated"))
+  # The estimates differ by estimand: they are not the ATE repeated.
+  expect_gt(length(unique(round(nc$table$estimate[nc$table$rung == "full cohort"], 8))), 1L)
+  # A plan that declares one estimand gets one verdict, named by it.
+  one <- ladder_for(c(nc_visit = "care use"), estimands = "ATO",
+                    nc_criteria = list(null_band = c(-0.1, 0.1)))
+  expect_identical(names(one$verdict), "ATO")
+  expect_identical(one$table$estimand, "ATO")
+})
+
+test_that("the verdict vector is the full-cohort rung of by_rung, named by estimand", {
+  d <- make_design(500, seed = 5)
+  withr::with_seed(7, {
+    d$design$grp <- stats::rbinom(500, 1, 0.5)
+    d$design$nc_sub <- stats::rbinom(500, 1, stats::plogis(-1 + 3 * d$design$A * d$design$grp))
+  })
+  p <- fast_plan(negative_controls = c(nc_sub = "care use"),
+                 nc_criteria = list(null_band = c(-0.1, 0.1)))
+  lk <- create_analysis_lock(d$design, "A", covs, p)
+  nc <- negative_control_ladder(lk, assess_design(lk))
+  expect_identical(nc$by_rung$estimand, p$estimands)
+  expect_identical(nc$verdict, stats::setNames(nc$by_rung$verdict, nc$by_rung$estimand))
+  expect_identical(nc$verdict[["ATE"]], "STOP")
 })
 
 test_that("an inestimable control makes the domain insufficient", {
@@ -31,7 +68,9 @@ test_that("an inestimable control makes the domain insufficient", {
   lk <- create_analysis_lock(d$design, "A", covs, p)
   nc <- negative_control_ladder(lk, assess_design(lk))
   expect_match(nc$table$status, "inestimable")
-  expect_identical(nc$verdict, "FLAG")
+  expect_identical(nrow(nc$table), 4L)
+  expect_identical(nc$verdict, stats::setNames(rep("FLAG", 4),
+                                               c("ATE", "trimmed_ATE", "ATT", "ATO")))
 })
 
 test_that("a rung with one arm is recorded, not fatal", {
@@ -41,6 +80,7 @@ test_that("a rung with one arm is recorded, not fatal", {
   lk <- create_analysis_lock(d$design, "A", covs, p)
   nc <- negative_control_ladder(lk, assess_design(lk))
   expect_match(nc$table$status[nc$table$rung == "treated_only"], "inestimable|failed")
+  expect_identical(sum(nc$table$rung == "treated_only"), 4L)
 })
 
 test_that(".nc_grade applies the point and ci rules and the precedence of readings", {
@@ -48,6 +88,7 @@ test_that(".nc_grade applies the point and ci rules and the precedence of readin
     x <- data.frame(...)
     x$negative_control <- paste0("nc", seq_len(nrow(x)))
     x$n <- 100L
+    if (is.null(x$estimand)) x$estimand <- "ATE"
     x
   }
   crit <- function(rule, min_per_domain = 1) {
@@ -94,9 +135,25 @@ test_that(".nc_grade applies the point and ci rules and the precedence of readin
             status = c(est, est, "failed: x"))
   g7 <- .nc_grade(t7, crit("point", min_per_domain = 1))
   expect_identical(g7$by_rung$verdict, c("GO", "FLAG"))
+  # grading is per rung and estimand: the same control can pass on one and fail on another
+  t8 <- tab(rung = "r", estimand = c("ATE", "ATO"), domain = "d",
+            estimate = c(0.5, 0.01), ci_lower = c(0.4, -0.02), ci_upper = c(0.6, 0.04),
+            status = est)
+  g8 <- .nc_grade(t8, crit("point"))
+  expect_identical(g8$by_domain$estimand, c("ATE", "ATO"))
+  expect_identical(g8$by_domain$reading, c("fail", "pass"))
+  expect_identical(g8$by_rung$estimand, c("ATE", "ATO"))
+  expect_identical(g8$by_rung$verdict, c("STOP", "GO"))
+  # domains are separate within an estimand
+  t9 <- tab(rung = "r", estimand = c("ATE", "ATE", "ATO", "ATO"), domain = c("a", "b", "a", "b"),
+            estimate = c(0, 0.5, 0, 0), ci_lower = c(0, 0.4, 0, 0), ci_upper = c(0, 0.6, 0, 0),
+            status = est)
+  g9 <- .nc_grade(t9, crit("point"))
+  expect_identical(g9$by_domain$reading, c("pass", "fail", "pass", "pass"))
+  expect_identical(g9$by_rung$verdict, c("STOP", "GO"))
 })
 
-test_that("the verdict is the full cohort's, whatever the restricted rungs read", {
+test_that("the verdict is the full cohort's for each estimand, whatever the restricted rungs read", {
   # nc_sub is driven by treatment only where grp == 1, so the full cohort stops, the
   # grp == 0 rung reads the control as null (GO), and the untreated-only rung empties the
   # treated arm (FLAG). estimate_effect() analyses the full cohort, so the gate is STOP.
@@ -112,11 +169,18 @@ test_that("the verdict is the full cohort's, whatever the restricted rungs read"
   lk <- create_analysis_lock(d$design, "A", covs, p)
   ds <- assess_design(lk)
   nc <- negative_control_ladder(lk, ds)
-  expect_identical(nc$by_rung$rung, c("full cohort", "grp0", "untreated_only"))
-  expect_identical(nc$by_rung$verdict, c("STOP", "GO", "FLAG"))
-  expect_identical(nc$verdict, "STOP")
-  dr <- design_report(lk, ds, suppressMessages(simulate_design(lk, ds)), nc)
-  expect_identical(dr$decision$nc_verdict, "STOP")
+  ests <- p$estimands
+  expect_identical(nc$by_rung$rung, rep(c("full cohort", "grp0", "untreated_only"), each = 4))
+  expect_identical(nc$by_rung$estimand, rep(ests, 3))
+  rg <- function(r) nc$by_rung$verdict[nc$by_rung$rung == r]
+  expect_identical(rg("full cohort"), unname(nc$verdict))
+  expect_identical(rg("full cohort")[ests == "ATE"], "STOP")
+  expect_identical(rg("grp0")[ests == "ATE"], "GO")
+  expect_identical(rg("untreated_only")[ests == "ATE"], "FLAG")
+  expect_identical(nc$verdict[["ATE"]], "STOP")
+  sim <- suppressMessages(simulate_design(lk, ds))
+  dr <- design_report(lk, ds, sim, nc)
+  expect_identical(dr$decision$nc_verdict, nc$verdict[[dr$decision$primary]])
   expect_error(unblind(lk, dr, d$outcomes, approved_by = "Review team"),
                "negative-control verdict is STOP")
 })
@@ -132,7 +196,8 @@ test_that("a design stamped by a different lock is rejected", {
 })
 
 test_that(".nc_grade relabels an estimated row with a non-finite estimate as failed", {
-  tab <- data.frame(rung = "full cohort", negative_control = c("nc1", "nc2"), domain = "d",
+  tab <- data.frame(rung = "full cohort", estimand = "ATE", negative_control = c("nc1", "nc2"),
+                    domain = "d",
                     n = 100L, estimate = c(NaN, 0.01), ci_lower = c(-0.1, -0.05),
                     ci_upper = c(0.1, NA), status = "estimated", stringsAsFactors = FALSE)
   g <- .nc_grade(tab, list(null_band = c(-0.1, 0.1), rule = "point", min_per_domain = 1))

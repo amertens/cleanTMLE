@@ -34,10 +34,20 @@
                                      sprintf("Can the design deliver the %s?", e), dec,
                                      paste0(why, "."))
   }
-  if (!is.na(d$decision$nc_verdict))
-    rows[[length(rows) + 1L]] <- row(d$created, "Negative controls", "Residual confounding check",
-                                     d$decision$nc_verdict,
-                                     "Graded against the prespecified criteria on the full cohort.")
+  if (!is.na(d$decision$nc_verdict)) {
+    rows[[length(rows) + 1L]] <- row(
+      d$created, "Negative controls",
+      sprintf("Residual confounding check on the %s (the primary estimand)",
+              d$decision$nc_estimand),
+      d$decision$nc_verdict,
+      paste("Graded against the prespecified criteria on the full cohort, for the estimand",
+            "the analysis reports."))
+  } else if (!is.null(pl$negative_controls) && is.na(d$decision$primary)) {
+    rows[[length(rows) + 1L]] <- row(
+      d$created, "Negative controls", "Residual confounding check (no feasible estimand)",
+      "No verdict",
+      "No estimand is feasible, so no estimand's control verdict gates unblinding.")
+  }
   rows[[length(rows) + 1L]] <- row(d$created, "Pre-outcome decision", "Primary estimand",
                                    if (is.na(d$decision$primary)) "None feasible" else
                                      d$decision$primary,

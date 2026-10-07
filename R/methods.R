@@ -49,7 +49,8 @@ print.cr_simulation <- function(x, ...) {
 #' @export
 print.cr_nc_ladder <- function(x, ...) {
   if (!x$declared) { cat("No negative controls declared.\n"); return(invisible(x)) }
-  cat("Negative-control ladder: verdict ", x$verdict, "\n", sep = "")
+  cat("Negative-control ladder: full-cohort verdict by estimand: ",
+      paste(names(x$verdict), x$verdict, collapse = "; "), "\n", sep = "")
   print(x$by_rung, row.names = FALSE)
   invisible(x)
 }
@@ -62,7 +63,9 @@ print.cr_dossier <- function(x, ...) {
   flag <- ifelse(unlist(dec$unresolved[names(dec$status)]) %in% TRUE, " (unresolved)", "")
   cat("  Status: ", paste0(names(dec$status), " ", unlist(dec$status), flag, collapse = "; "),
       "\n", sep = "")
-  cat("  Negative controls: ", dec$nc_verdict, "\n", sep = "")
+  cat("  Negative controls: ", dec$nc_verdict,
+      if (isTRUE(!is.na(dec$nc_estimand))) paste0(" (read on the ", dec$nc_estimand, ")"),
+      "\n", sep = "")
   invisible(x)
 }
 

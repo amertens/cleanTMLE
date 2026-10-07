@@ -15,14 +15,27 @@ negative_control_ladder(lock, design)
 A \code{cr_nc_ladder}.
 }
 \description{
-Estimates each declared negative-control outcome on the full cohort and
-on each declared restriction, with the main-terms GLM candidate and the
-same fitter as the analysis, and grades the result against the plan's
-\code{nc_criteria}. Within a rung, a domain reads "fail" if any estimable control is out of
-the band (even when too few controls are estimable), otherwise "insufficient" if fewer than
-\code{min_per_domain} controls are estimable, otherwise "pass". A rung is STOP if any domain fails,
-FLAG if any is insufficient, and GO otherwise. An estimated control whose estimate or
-interval is not finite counts as failed, not as estimable. The verdict that gates
-unblinding is the full cohort's; restricted rungs show whether a restriction would
-remove the confounding.
+Estimates each declared negative-control outcome, for every declared
+estimand, on the full cohort and on each declared restriction, with the
+main-terms GLM candidate (the smallest declared truncation) and the same
+fitter as the analysis, and grades the result against the plan's
+\code{nc_criteria}. A control is read on the estimand the analysis reports: a
+control read on an estimand the design cannot deliver measures that
+estimand's extrapolation, not residual confounding.
+}
+\details{
+Grading is per rung and estimand. Within a rung and estimand, a domain
+reads "fail" if any estimable control is out of the band (even when too few
+controls are estimable), otherwise "insufficient" if fewer than
+\code{min_per_domain} controls are estimable, otherwise "pass". A rung is STOP
+if any domain fails, FLAG if any is insufficient, and GO otherwise. An
+estimated control whose estimate or interval is not finite counts as
+failed, not as estimable.
+
+\code{verdict} is a named character vector: the full cohort's verdict for each
+declared estimand, in ladder order. \code{\link[=design_report]{design_report()}} gates unblinding on
+the full cohort's verdict for the estimand the dossier selects (the
+primary), because \code{\link[=estimate_effect]{estimate_effect()}} analyses the full cohort. The other
+estimands' verdicts and the restricted rungs are diagnostics: they show
+whether a restriction would remove the confounding.
 }

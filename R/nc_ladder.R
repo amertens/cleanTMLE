@@ -10,18 +10,21 @@
   } else {
     tab$estimate[est] >= band[1] & tab$estimate[est] <= band[2]
   }
-  keys <- unique(tab[c("rung", "domain")])
+  # Graded per rung and estimand: a control is read on each estimand separately.
+  keys <- unique(tab[c("rung", "estimand", "domain")])
   by_domain <- do.call(rbind, lapply(seq_len(nrow(keys)), function(i) {
-    d <- tab[tab$rung == keys$rung[i] & tab$domain == keys$domain[i], , drop = FALSE]
+    d <- tab[tab$rung == keys$rung[i] & tab$estimand == keys$estimand[i] &
+               tab$domain == keys$domain[i], , drop = FALSE]
     n_est <- sum(d$status == "estimated")
     reading <- if (any(!d$in_band, na.rm = TRUE)) "fail" else
       if (n_est < crit$min_per_domain) "insufficient" else "pass"
-    data.frame(rung = keys$rung[i], domain = keys$domain[i], n_estimable = n_est,
-               reading = reading, stringsAsFactors = FALSE)
+    data.frame(rung = keys$rung[i], estimand = keys$estimand[i], domain = keys$domain[i],
+               n_estimable = n_est, reading = reading, stringsAsFactors = FALSE)
   }))
-  rungs <- unique(tab$rung)
-  by_rung <- data.frame(rung = rungs, verdict = vapply(rungs, function(r) {
-    x <- by_domain$reading[by_domain$rung == r]
+  rk <- unique(tab[c("rung", "estimand")])
+  by_rung <- data.frame(rung = rk$rung, estimand = rk$estimand,
+                        verdict = vapply(seq_len(nrow(rk)), function(i) {
+    x <- by_domain$reading[by_domain$rung == rk$rung[i] & by_domain$estimand == rk$estimand[i]]
     if (any(x == "fail")) "STOP" else if (any(x == "insufficient")) "FLAG" else "GO"
   }, character(1)), stringsAsFactors = FALSE, row.names = NULL)
   list(table = tab, by_domain = by_domain, by_rung = by_rung)
@@ -29,16 +32,28 @@
 
 #' Negative controls along the restriction ladder
 #'
-#' Estimates each declared negative-control outcome on the full cohort and
-#' on each declared restriction, with the main-terms GLM candidate and the
-#' same fitter as the analysis, and grades the result against the plan's
-#' `nc_criteria`. Within a rung, a domain reads "fail" if any estimable control is out of
-#' the band (even when too few controls are estimable), otherwise "insufficient" if fewer than
-#' `min_per_domain` controls are estimable, otherwise "pass". A rung is STOP if any domain fails,
-#' FLAG if any is insufficient, and GO otherwise. An estimated control whose estimate or
-#' interval is not finite counts as failed, not as estimable. The verdict that gates
-#' unblinding is the full cohort's; restricted rungs show whether a restriction would
-#' remove the confounding.
+#' Estimates each declared negative-control outcome, for every declared
+#' estimand, on the full cohort and on each declared restriction, with the
+#' main-terms GLM candidate (the smallest declared truncation) and the same
+#' fitter as the analysis, and grades the result against the plan's
+#' `nc_criteria`. A control is read on the estimand the analysis reports: a
+#' control read on an estimand the design cannot deliver measures that
+#' estimand's extrapolation, not residual confounding.
+#'
+#' Grading is per rung and estimand. Within a rung and estimand, a domain
+#' reads "fail" if any estimable control is out of the band (even when too few
+#' controls are estimable), otherwise "insufficient" if fewer than
+#' `min_per_domain` controls are estimable, otherwise "pass". A rung is STOP
+#' if any domain fails, FLAG if any is insufficient, and GO otherwise. An
+#' estimated control whose estimate or interval is not finite counts as
+#' failed, not as estimable.
+#'
+#' `verdict` is a named character vector: the full cohort's verdict for each
+#' declared estimand, in ladder order. [design_report()] gates unblinding on
+#' the full cohort's verdict for the estimand the dossier selects (the
+#' primary), because [estimate_effect()] analyses the full cohort. The other
+#' estimands' verdicts and the restricted rungs are diagnostics: they show
+#' whether a restriction would remove the confounding.
 #'
 #' @param lock A `cr_lock`.
 #' @param design The [assess_design()] result for `lock`.
@@ -62,10 +77,14 @@ negative_control_ladder <- function(lock, design) {
     cand <- list(id = "glm_nc", library = "glm", learners = "glm",
                  truncation = min(p$candidates$truncation))
     rows <- list()
-    row <- function(rung, nc, n, status, r = NULL) data.frame(
-      rung = rung, negative_control = nc, domain = unname(p$negative_controls[nc]), n = n,
+    row <- function(rung, est, nc, n, status, r = NULL) data.frame(
+      rung = rung, estimand = est, negative_control = nc,
+      domain = unname(p$negative_controls[nc]), n = n,
       estimate = r$estimate %||% NA_real_, ci_lower = r$ci_lower %||% NA_real_,
       ci_upper = r$ci_upper %||% NA_real_, status = status, stringsAsFactors = FALSE)
+    add_all <- function(rn, nc, n, status) {
+      for (e in p$estimands) rows[[length(rows) + 1L]] <<- row(rn, e, nc, n, status)
+    }
     for (rn in names(rungs)) {
       keep <- rungs[[rn]]
       Xr <- X[keep, , drop = FALSE]
@@ -79,29 +98,46 @@ negative_control_ladder <- function(lock, design) {
         cells <- c(sum(y[ok & Ar == 1]), sum(1 - y[ok & Ar == 1]),
                    sum(y[ok & Ar == 0]), sum(1 - y[ok & Ar == 0]))
         if (any(cells < 5)) {
-          rows[[length(rows) + 1L]] <- row(rn, nc, sum(ok), "inestimable (a cell below 5 events)")
+          add_all(rn, nc, sum(ok), "inestimable (a cell below 5 events)")
           next
         }
         if (is.character(g_fit)) {
-          rows[[length(rows) + 1L]] <- row(rn, nc, sum(ok), paste("failed:", g_fit))
+          add_all(rn, nc, sum(ok), paste("failed:", g_fit))
           next
         }
-        r <- tryCatch(fit_candidate(Xr[ok, , drop = FALSE], Ar[ok], y[ok], "ATE", cand, p,
+        # One call fits the outcome model once and targets every declared
+        # estimand on it; each estimand is read from its own row.
+        r <- tryCatch(fit_candidate(Xr[ok, , drop = FALSE], Ar[ok], y[ok], p$estimands, cand, p,
                                     folds[ok], p$seed,
                                     g_fit = list(g = g_fit$g[ok], risks = g_fit$risks)),
                       error = function(e) conditionMessage(e))
-        rows[[length(rows) + 1L]] <- if (is.character(r) || isTRUE(r$failed)) {
-          row(rn, nc, sum(ok), paste("failed:", if (is.character(r)) r else r$message))
-        } else row(rn, nc, sum(ok), "estimated", r)
+        if (is.character(r)) {
+          add_all(rn, nc, sum(ok), paste("failed:", r))
+          next
+        }
+        for (e in p$estimands) {
+          re <- r[r$estimand == e, , drop = FALSE][1, , drop = FALSE]
+          rows[[length(rows) + 1L]] <- if (isTRUE(re$failed)) {
+            row(rn, e, nc, sum(ok), paste("failed:", re$message))
+          } else row(rn, e, nc, sum(ok), "estimated", re)
+        }
       }
     }
-    gr <- .nc_grade(do.call(rbind, rows), p$nc_criteria)
+    tab <- do.call(rbind, rows)
+    # Rung, then estimand in ladder order, then control.
+    tab <- tab[order(match(tab$rung, names(rungs)), match(tab$estimand, p$estimands)), ,
+               drop = FALSE]
+    rownames(tab) <- NULL
+    gr <- .nc_grade(tab, p$nc_criteria)
     out$table <- gr$table
     out$by_domain <- gr$by_domain
     out$by_rung <- gr$by_rung
-    # estimate_effect() analyses the full cohort, so its rung gates unblinding;
-    # the restricted rungs are diagnostics.
-    out$verdict <- gr$by_rung$verdict[gr$by_rung$rung == "full cohort"][1]
+    # estimate_effect() analyses the full cohort, so its rung gates unblinding
+    # (for the estimand design_report() selects); the restricted rungs are
+    # diagnostics.
+    full <- gr$by_rung[gr$by_rung$rung == "full cohort", , drop = FALSE]
+    out$verdict <- stats::setNames(full$verdict[match(p$estimands, full$estimand)],
+                                   p$estimands)
   }
   out$stamp <- .stamp(lock, out)
   class(out) <- "cr_nc_ladder"

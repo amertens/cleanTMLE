@@ -31,6 +31,12 @@
   no longer triggers extra repetitions or sets `unresolved`. Designs and
   simulations made by 0.4.0 stop with a message to rerun `assess_design()` or
   `simulate_design()`. Every recorded time is UTC.
+* `negative_control_ladder()` now estimates each control for every declared
+  estimand, and the verdict that gates `unblind()` is the one for the primary
+  estimand. A control read on an estimand the design cannot deliver measures
+  extrapolation, not confounding. `nc$verdict` is a named vector, the tables
+  gain an `estimand` column, and ladders made before this change stop
+  `design_report()` with a message to rerun `negative_control_ladder()`.
 
 # cleanTMLE 0.4.0
 

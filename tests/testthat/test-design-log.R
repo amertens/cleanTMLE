@@ -76,3 +76,42 @@ test_that("the Muntner export names roles and records an override", {
   expect_equal(nrow(ov), 1L)
   expect_match(ov$rationale, "Proceeding to report")
 })
+
+test_that("the Muntner row names the estimand the negative controls were read on", {
+  fx <- fixture_pipeline()
+  prim <- fx$dossier$decision$primary
+  out <- export_design_log(fx$dossier, format = "muntner")
+  nc_row <- out[out$stage == "Negative controls", ]
+  expect_equal(nrow(nc_row), 1L)
+  expect_identical(nc_row$issue,
+                   sprintf("Residual confounding check on the %s (the primary estimand)", prim))
+  expect_identical(nc_row$decision, fx$dossier$decision$nc_verdict)
+  # No feasible estimand: the row says so and does not report a verdict.
+  sim <- fx$sim
+  sim$verdict$status <- "infeasible"
+  sim$stamp <- .stamp(fx$lock, sim)
+  none <- design_report(fx$lock, fx$design, sim, fx$nc)
+  out2 <- export_design_log(none, format = "muntner")
+  nc2 <- out2[out2$stage == "Negative controls", ]
+  expect_equal(nrow(nc2), 1L)
+  expect_identical(nc2$issue, "Residual confounding check (no feasible estimand)")
+  expect_false(nc2$decision %in% c("GO", "FLAG", "STOP"))
+  # No declared controls: no row.
+  nn <- fixture_pipeline(nc = NULL)
+  expect_false("Negative controls" %in%
+                 export_design_log(nn$dossier, format = "muntner")$stage)
+})
+
+test_that("the JSON log carries the by-rung verdicts by estimand and the estimand that gates", {
+  fx <- fixture_pipeline()
+  f <- withr::local_tempfile(fileext = ".json")
+  export_design_log(fx$dossier, file = f)
+  log <- jsonlite::read_json(f, simplifyVector = TRUE)
+  expect_identical(log$decision$nc_estimand, fx$dossier$decision$primary)
+  expect_identical(log$decision$nc_verdict, fx$dossier$decision$nc_verdict)
+  br <- log$negative_controls$by_rung
+  expect_true("estimand" %in% names(br))
+  expect_identical(br$estimand, fx$nc$by_rung$estimand)
+  expect_identical(br$verdict, fx$nc$by_rung$verdict)
+  expect_identical(unname(unlist(log$negative_controls$verdict)), unname(fx$nc$verdict))
+})
