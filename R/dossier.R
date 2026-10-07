@@ -60,7 +60,10 @@
 #' is feasible), records the selected candidate for each feasible estimand,
 #' flags each estimand whose decision (status or selected candidate) rests on
 #' cells still unresolved after their final repetitions
-#' (`decision$unresolved`), records the negative-control verdict, and
+#' (`decision$unresolved`), records the negative-control verdict
+#' for the primary estimand (`decision$nc_verdict`, read on the estimand
+#' `decision$nc_estimand`; `NA` when no estimand is feasible or no controls
+#' are declared), and
 #' fingerprints the result.
 #'
 #' @param lock A `cr_lock`.
@@ -80,6 +83,11 @@ design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
   if (!identical(simulation$design_hash, design$stamp$hash))
     stop("`simulation` was not run on this `design`.", call. = FALSE)
   if (!is.null(nc)) {
+    # A ladder made before the controls were read on each estimand has no
+    # estimand column; its verdict cannot be matched to the primary.
+    if (isTRUE(nc$declared) && !"estimand" %in% names(nc$by_rung))
+      stop("This negative-control ladder was made by an earlier cleanTMLE; ",
+           "rerun negative_control_ladder().", call. = FALSE)
     .check_stamp(lock, nc, "nc")
     if (!identical(nc$design_hash, design$stamp$hash))
       stop("`nc` was not run on this `design`.", call. = FALSE)
@@ -95,6 +103,7 @@ design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
     id = feas$selected[i], library = feas$library[i],
     learners = p$candidates$library[[feas$library[i]]], truncation = feas$truncation[i])),
     feas$estimand)
+  nc_read <- !is.null(nc) && isTRUE(nc$declared)
   decision <- list(primary = primary, ladder = p$estimands,
                    status = as.list(stats::setNames(v$status, v$estimand)),
                    # TRUE when the estimand's decision (status or selected
@@ -102,7 +111,11 @@ design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
                    # final repetitions; they were decided on point estimates.
                    unresolved = as.list(stats::setNames(v$unresolved, v$estimand)),
                    candidates = candidates,
-                   nc_verdict = if (is.null(nc)) NA_character_ else nc$verdict,
+                   # The controls are read on the estimand the analysis reports:
+                   # the gate is the primary estimand's full-cohort verdict.
+                   nc_verdict = if (nc_read && !is.na(primary))
+                     unname(nc$verdict[[primary]]) else NA_character_,
+                   nc_estimand = if (nc_read) primary else NA_character_,
                    K = p$K, fold_seed = p$seed)
   notes <- c("Weighting and matching are comparators and were not stress-tested.",
              simulation$scope)

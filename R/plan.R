@@ -52,8 +52,14 @@
 #' @param target_time,hazards Time-to-event only: the target time and the
 #'   hazard models passed to `concrete` as its `Model` entries.
 #' @param negative_controls Named character vector, column = domain.
-#' @param nc_criteria `list(null_band = , rule = "point" or "ci",
-#'   min_per_domain = )`.
+#' @param nc_criteria `list(null_band = , rule = , min_per_domain = )`, where
+#'   `rule` is one of `"interval"` (the default), `"point"` or `"ci"`. Under
+#'   `"interval"` a control reads
+#'   "inside" when its 95% interval lies entirely inside `null_band`,
+#'   "outside" when the interval lies entirely outside it, and "inconclusive"
+#'   otherwise (too imprecise to tell). Under `"point"` a control reads
+#'   "inside" or "outside" by its point estimate, and under `"ci"` it reads
+#'   "inside" only when its whole interval is inside the band.
 #' @param restrictions Named list of one-sided formulas, least to most
 #'   restricted.
 #' @param select Optional function of the metrics table returning a
@@ -163,10 +169,10 @@ analysis_plan <- function(outcome, estimands,
     stop_if(!is.character(negative_controls) || is.null(names(negative_controls)),
             "`negative_controls` must be a named character vector: column = domain.")
     nc_criteria <- utils::modifyList(
-      list(null_band = c(-0.02, 0.02), rule = "point", min_per_domain = 1L),
+      list(null_band = c(-0.02, 0.02), rule = "interval", min_per_domain = 1L),
       nc_criteria %||% list())
-    stop_if(!nc_criteria$rule %in% c("point", "ci"),
-            "`nc_criteria$rule` must be 'point' or 'ci'.")
+    stop_if(!nc_criteria$rule %in% c("point", "ci", "interval"),
+            "`nc_criteria$rule` must be 'point', 'ci' or 'interval'.")
   }
   if (!is.null(restrictions))
     stop_if(!is.list(restrictions) || is.null(names(restrictions)) ||

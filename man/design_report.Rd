@@ -23,6 +23,9 @@ estimand ladder (the primary is the first declared estimand whose status
 is feasible), records the selected candidate for each feasible estimand,
 flags each estimand whose decision (status or selected candidate) rests on
 cells still unresolved after their final repetitions
-(\code{decision$unresolved}), records the negative-control verdict, and
+(\code{decision$unresolved}), records the negative-control verdict
+for the primary estimand (\code{decision$nc_verdict}, read on the estimand
+\code{decision$nc_estimand}; \code{NA} when no estimand is feasible or no controls
+are declared), and
 fingerprints the result.
 }

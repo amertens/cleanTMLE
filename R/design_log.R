@@ -3,6 +3,29 @@
   if (is.null(r)) NA_character_ else paste(r, collapse = ", ")
 }
 
+# The grading rule of the negative controls and how the controls combine into
+# a verdict, for the Muntner rationale. Reads the plan summary's nc_criteria.
+.nc_rule_text <- function(crit) {
+  band <- crit$null_band
+  rng <- sprintf("[%s, %s]", band[1], band[2])
+  switch(crit$rule %||% "point",
+         interval = paste0(
+           "the interval rule: GO when every control's 95% interval lies inside the null band ",
+           rng, ", STOP when any lies entirely outside it, FLAG otherwise (an interval that ",
+           "overlaps the band edge, or fewer estimable controls than the plan requires in a ",
+           "domain); FLAG does not block unblinding."),
+         ci = paste0(
+           "the whole-interval rule: GO when every control's whole 95% interval lies inside the ",
+           "null band ", rng, ", STOP when any control's interval is not entirely inside it, ",
+           "FLAG when no control is outside but fewer controls can be estimated than the plan ",
+           "requires in a domain; FLAG does not block unblinding."),
+         paste0(
+           "the point-estimate rule: GO when every control's point estimate lies inside the ",
+           "null band ", rng, ", STOP when any lies outside it, FLAG when none is outside but ",
+           "fewer controls can be estimated than the plan requires in a domain; FLAG does not ",
+           "block unblinding."))
+}
+
 .muntner_log <- function(d, approval, fits) {
   pl <- d$plan
   an <- .role(pl, "analyst")
@@ -34,10 +57,24 @@
                                      sprintf("Can the design deliver the %s?", e), dec,
                                      paste0(why, "."))
   }
-  if (!is.na(d$decision$nc_verdict))
-    rows[[length(rows) + 1L]] <- row(d$created, "Negative controls", "Residual confounding check",
-                                     d$decision$nc_verdict,
-                                     "Graded against the prespecified criteria on the full cohort.")
+  if (!is.na(d$decision$nc_verdict)) {
+    # A dossier built before the estimand was recorded has no nc_estimand: its
+    # gate was the full cohort's single verdict.
+    ne <- d$decision$nc_estimand
+    rows[[length(rows) + 1L]] <- if (is.null(ne)) row(
+      d$created, "Negative controls", "Residual confounding check", d$decision$nc_verdict,
+      "Graded against the prespecified criteria on the full cohort.") else row(
+      d$created, "Negative controls",
+      sprintf("Residual confounding check on the %s (the primary estimand)", ne),
+      d$decision$nc_verdict,
+      paste("Graded on the full cohort, for the primary estimand, by",
+            .nc_rule_text(pl$nc_criteria)))
+  } else if (!is.null(pl$negative_controls) && is.na(d$decision$primary)) {
+    rows[[length(rows) + 1L]] <- row(
+      d$created, "Negative controls", "Residual confounding check (no feasible estimand)",
+      "No verdict",
+      "No estimand is feasible, so no estimand's control verdict gates unblinding.")
+  }
   rows[[length(rows) + 1L]] <- row(d$created, "Pre-outcome decision", "Primary estimand",
                                    if (is.na(d$decision$primary)) "None feasible" else
                                      d$decision$primary,
@@ -109,7 +146,8 @@ export_design_log <- function(x, fit = NULL, file = NULL, format = c("json", "mu
                                   "trimmed_profile"), names(d$design))],
     simulation = d$simulation[c("verdict", "scope", "reps", "K")],
     expected_events = d$expected_events_range,
-    negative_controls = d$nc[c("by_rung", "verdict")],
+    negative_controls = if (is.null(d$nc)) NULL else
+      list(by_rung = d$nc$by_rung, verdict = as.list(d$nc$verdict)),
     notes = d$notes, approval = approval,
     estimates = lapply(fits, function(f) unclass(f)))
   if (is.null(file)) return(log)

@@ -15,14 +15,41 @@ negative_control_ladder(lock, design)
 A \code{cr_nc_ladder}.
 }
 \description{
-Estimates each declared negative-control outcome on the full cohort and
-on each declared restriction, with the main-terms GLM candidate and the
-same fitter as the analysis, and grades the result against the plan's
-\code{nc_criteria}. Within a rung, a domain reads "fail" if any estimable control is out of
-the band (even when too few controls are estimable), otherwise "insufficient" if fewer than
-\code{min_per_domain} controls are estimable, otherwise "pass". A rung is STOP if any domain fails,
-FLAG if any is insufficient, and GO otherwise. An estimated control whose estimate or
-interval is not finite counts as failed, not as estimable. The verdict that gates
-unblinding is the full cohort's; restricted rungs show whether a restriction would
-remove the confounding.
+Estimates each declared negative-control outcome, for every declared
+estimand, on the full cohort and on each declared restriction, with the
+main-terms GLM candidate (the smallest declared truncation) and the same
+fitter as the analysis, and grades the result against the plan's
+\code{nc_criteria}. A control is read on the estimand the analysis reports: a
+control read on an estimand the design cannot deliver mixes extrapolation
+error with confounding, so it cannot isolate confounding.
+}
+\details{
+Each estimated control gets a \code{reading} from the plan's rule. Under the
+default \code{"interval"} rule it reads "inside" when its 95\% interval lies
+entirely inside \code{null_band}, "outside" when the interval lies entirely
+outside it, and "inconclusive" otherwise (too imprecise to tell). Under
+\code{"point"} it reads "inside" or "outside" by the point estimate, and under
+\code{"ci"} it reads "inside" only when the whole interval is inside the band.
+Neither of those two rules gives "inconclusive".
+
+Grading is per rung and estimand. Within a rung and estimand, a domain
+reads "fail" if any control is outside the band (even when too few controls
+are estimable), otherwise "inconclusive" if any control is inconclusive,
+otherwise "insufficient" if fewer than \code{min_per_domain} controls are
+estimable, otherwise "pass". A rung is STOP if any domain fails, FLAG if
+any is inconclusive or insufficient, and GO otherwise. FLAG does not block
+\code{\link[=unblind]{unblind()}}; only STOP does. An estimated control whose estimate or
+interval is not finite counts as failed, not as estimable.
+
+A control is inestimable on a rung when a cell of its 2x2 table with the
+treatment has fewer than 5 events. That check uses the whole rung, so the
+trimmed ATE (fitted on the patients inside the trim band) can rest on a
+subset with smaller cells; its interval is then wide.
+
+\code{verdict} is a named character vector: the full cohort's verdict for each
+declared estimand, in ladder order. \code{\link[=design_report]{design_report()}} gates unblinding on
+the full cohort's verdict for the estimand the dossier selects (the
+primary), because \code{\link[=estimate_effect]{estimate_effect()}} analyses the full cohort. The other
+estimands' verdicts and the restricted rungs are diagnostics: they show
+whether a restriction would remove the confounding.
 }
