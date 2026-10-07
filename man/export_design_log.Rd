@@ -2,9 +2,9 @@
 % Please edit documentation in R/design_log.R
 \name{export_design_log}
 \alias{export_design_log}
-\title{Export the design log as JSON}
+\title{Export the design log}
 \usage{
-export_design_log(x, fit = NULL, file = NULL)
+export_design_log(x, fit = NULL, file = NULL, format = c("json", "muntner"))
 }
 \arguments{
 \item{x}{A \code{\link[=unblind]{unblind()}} result, or a \code{\link[=design_report]{design_report()}} dossier for the
@@ -12,13 +12,23 @@ pre-outcome log.}
 
 \item{fit}{Optional \code{cr_estimate} or list of them.}
 
-\item{file}{Optional \code{.json} path.}
+\item{file}{Optional path: \code{.json} for \code{format = "json"}, \code{.csv} for
+\code{format = "muntner"}.}
+
+\item{format}{\code{"json"} (the full log) or \code{"muntner"} (the Table S1
+columns of Muntner et al. 2024: date, stage, issue, decision,
+rationale, decided_by).}
 }
 \value{
-The log as a list (invisibly when \code{file} is given).
+The log (a list for JSON, a data frame for Muntner), invisibly
+when \code{file} is given.
 }
 \description{
 Assembles the log from the objects it receives: plan, hashes, design
 summaries, decision, approval, overrides and estimates. Nothing is
 stored between calls.
+}
+\references{
+Muntner P et al. (2024) Pharmacoepidemiol Drug Saf
+33:e5770, supplementary Table S1.
 }

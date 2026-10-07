@@ -45,6 +45,14 @@ if (length(d$decision$candidates))
   })))
 ```
 
+## Prespecified plan
+
+Lock created `r d$lock_created`.
+
+```{r}
+kt(d$plan_table)
+```
+
 ## Design
 
 Overlap grade: **`r d$design$overlap_grade`**; share outside the band:

@@ -89,3 +89,16 @@ test_that("negative-control columns must be coded 0/1", {
   m <- d$design; m$nc_visit[1:5] <- NA
   expect_s3_class(create_analysis_lock(m, "A", covs, p), "cr_lock")
 })
+
+test_that("roles are validated and hashed, and the creation time is not", {
+  d <- make_design(100)
+  expect_error(fast_plan(roles = list("someone")), "roles")
+  p1 <- fast_plan(roles = list(analyst = "A. Analyst"))
+  p2 <- fast_plan(roles = list(analyst = "B. Analyst"))
+  l1 <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), p1)
+  l2 <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), p2)
+  expect_false(identical(l1$lock_hash, l2$lock_hash))
+  expect_match(l1$created, "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$")
+  l1$created <- "2000-01-01T00:00:00Z"
+  expect_true(verify_lock(l1))
+})

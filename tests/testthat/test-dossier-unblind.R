@@ -217,3 +217,22 @@ test_that("unblind checks the coding of a time-to-event outcome", {
   negev$s[3] <- -1
   expect_error(ok(negev), "whole numbers")
 })
+
+test_that("the dossier carries the lock's creation time and the plan table", {
+  fx <- fixture_pipeline()
+  expect_identical(fx$dossier$lock_created, fx$lock$created)
+  expect_true(all(c("Estimand ladder (in order)", "Tolerances", "Outcome surfaces") %in%
+                    fx$dossier$plan_table$setting))
+  bad <- fx$dossier
+  bad$lock_created <- "2000-01-01T00:00:00Z"
+  expect_error(.verify_dossier(bad), "modified")
+})
+
+test_that("a lock without a creation time gives a dossier with NA", {
+  fx <- fixture_pipeline()
+  old <- fx$lock
+  old$created <- NULL
+  expect_true(verify_lock(old))
+  d <- design_report(old, fx$design, fx$sim, fx$nc)
+  expect_true(is.na(d$lock_created))
+})

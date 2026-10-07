@@ -19,6 +19,7 @@ analysis_plan(
   nc_criteria = NULL,
   restrictions = NULL,
   select = NULL,
+  roles = NULL,
   K = 5L,
   V = 5L,
   reps = 200L,
@@ -68,6 +69,9 @@ restricted.}
 
 \item{select}{Optional function of the metrics table returning a
 candidate id; replaces the minimum worst-surface RMSE rule.}
+
+\item{roles}{Optional named list of who holds each role (for example
+\code{analyst}, \code{data_steward}, \code{reviewers}), each a character vector.}
 
 \item{K}{Outer cross-fitting folds (1 = no cross-fitting).}
 

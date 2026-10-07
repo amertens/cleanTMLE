@@ -58,6 +58,8 @@
 #'   restricted.
 #' @param select Optional function of the metrics table returning a
 #'   candidate id; replaces the minimum worst-surface RMSE rule.
+#' @param roles Optional named list of who holds each role (for example
+#'   `analyst`, `data_steward`, `reviewers`), each a character vector.
 #' @param K Outer cross-fitting folds (1 = no cross-fitting).
 #' @param V Inner folds of the super learner.
 #' @param reps Plasmode repetitions.
@@ -79,6 +81,7 @@ analysis_plan <- function(outcome, estimands,
                           nc_criteria = NULL,
                           restrictions = NULL,
                           select = NULL,
+                          roles = NULL,
                           K = 5L, V = 5L, reps = 200L, max_reps = 1000L, seed = 1L) {
   # Anything but a clean FALSE stops, so an NA condition is an error, not a pass.
   stop_if <- function(cond, ...) if (!isFALSE(cond)) stop(..., call. = FALSE)
@@ -175,12 +178,19 @@ analysis_plan <- function(outcome, estimands,
   stop_if(K < 1 || V < 2 || reps < 2, "Need K >= 1, V >= 2 and reps >= 2.")
   stop_if(max_reps < reps, "Need max_reps >= reps.")
 
+  stop_if(!is.null(roles) &&
+            (!is.list(roles) || is.null(names(roles)) || any(!nzchar(names(roles))) ||
+               !all(vapply(roles, function(r) is.character(r) && length(r) > 0L && !anyNA(r),
+                           logical(1)))),
+          "`roles` must be a named list of character vectors.")
+
   structure(list(
     outcome = outcome, outcome_type = outcome_type, target_time = target_time,
     hazards = hazards, estimands = estimands, ps_library = ps_library,
     candidates = candidates, tolerance = tolerance, surfaces = surfaces,
     trim_band = trim_band, negative_controls = negative_controls,
     nc_criteria = nc_criteria, restrictions = restrictions, select = select,
+    roles = roles,
     K = as.integer(K), V = as.integer(V), reps = as.integer(reps),
     max_reps = as.integer(max_reps), seed = as.integer(seed)), class = "cr_plan")
 }

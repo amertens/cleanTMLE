@@ -13,6 +13,30 @@
   p
 }
 
+.flat <- function(x) {
+  if (is.null(x)) return("none")
+  if (is.list(x)) {
+    v <- vapply(x, .flat, character(1))
+    return(paste(if (is.null(names(x))) v else paste0(names(x), ": ", v), collapse = "; "))
+  }
+  paste(format(x), collapse = ", ")
+}
+
+.plan_rows <- c(estimands = "Estimand ladder (in order)", tolerance = "Tolerances",
+                trim_band = "Trim band", ps_library = "Propensity-score library",
+                candidates = "Candidates (libraries, truncations)",
+                surfaces = "Outcome surfaces", K = "Cross-fitting folds (K)",
+                V = "Super learner folds (V)", reps = "Repetitions",
+                max_reps = "Repetition cap (max_reps)", seed = "Seed",
+                negative_controls = "Negative controls (column: domain)",
+                nc_criteria = "Negative-control criteria",
+                restrictions = "Restrictions (least to most restricted)", roles = "Roles")
+
+.plan_table <- function(ps) data.frame(
+  setting = unname(.plan_rows),
+  value = vapply(names(.plan_rows), function(r) .flat(ps[[r]]), character(1)),
+  stringsAsFactors = FALSE, row.names = NULL)
+
 .dossier_hash <- function(d) {
   d$dossier_hash <- NULL
   .hash(unclass(d))
@@ -80,7 +104,9 @@ design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
                                      "at most %s; this tolerance does not enter the ",
                                      "unresolved-cell rule."), p$tolerance$ci_halfwidth))
   d <- list(
-    lock_hash = lock$lock_hash, plan = .plan_summary(p), outcome_type = p$outcome_type,
+    lock_hash = lock$lock_hash, plan = (ps <- .plan_summary(p)),
+    plan_table = .plan_table(ps), lock_created = lock$created %||% NA_character_,
+    outcome_type = p$outcome_type,
     design = design[c("overlap", "overlap_grade", "share_outside_band", "c_statistic", "band", "ess",
                       "balance", "edge", "populations", "trimmed_profile")],
     simulation = simulation[c("metrics", "verdict", "truths", "scope", "decision_note",
