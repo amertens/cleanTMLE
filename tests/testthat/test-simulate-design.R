@@ -542,3 +542,32 @@ test_that("the simulation and the dossier carry precision and expected events", 
   expect_setequal(unique(fx$sim$expected_events$estimand), fx$plan$estimands)
   expect_setequal(fx$dossier$expected_events_range$estimand, fx$plan$estimands)
 })
+
+test_that("a half-width failure is a resolved failure: more repetitions cannot fix it", {
+  truths <- data.frame(surface = "s", estimand = "ATE", truth = 0.10)
+  tol <- list(bias = 0.021, coverage = 0.9)
+  res <- rbind(sim_cell("cov89", 200, covered = 178),    # fails coverage, unresolved; half-width 0.1
+               sim_cell("biasedge", 40, bias = 0.02))    # passes bias and coverage, bias unresolved
+  # Half-width tolerance below 0.1: both cells fail it, so neither can flip.
+  p <- fast_plan(estimands = "ATE", tolerance = c(tol, list(ci_halfwidth = 0.05)))
+  m <- .sim_metrics(res, truths, p)
+  expect_true(all(m$unresolved))
+  expect_false(any(m$pass))
+  cs <- .candidate_summary(m)
+  expect_identical(cs$could_flip, c(FALSE, FALSE))
+  v <- .sim_verdict(m, p)
+  expect_identical(v$status, "infeasible")
+  expect_false(v$unresolved)
+  expect_false(any(.decision_cells(m, v, p)))
+  # Half-width tolerance above 0.1: the coverage failure can still flip; the
+  # cell that passes bias and coverage already passes.
+  p_ok <- fast_plan(estimands = "ATE", tolerance = c(tol, list(ci_halfwidth = 0.2)))
+  m_ok <- .sim_metrics(res, truths, p_ok)
+  cs_ok <- .candidate_summary(m_ok)
+  expect_identical(cs_ok$could_flip[cs_ok$candidate == "cov89_t0.01"], TRUE)
+  expect_identical(cs_ok$pass_all[cs_ok$candidate == "biasedge_t0.01"], TRUE)
+  # A plan without the tolerance behaves as before.
+  m0 <- .sim_metrics(res, truths, fast_plan(estimands = "ATE", tolerance = tol))
+  expect_identical(.candidate_summary(m0)$could_flip, c(FALSE, TRUE))  # biasedge, cov89
+  expect_true(.sim_verdict(m0, fast_plan(estimands = "ATE", tolerance = tol))$unresolved)
+})

@@ -170,11 +170,14 @@
   # Feasibility is judged on the point estimates: the tolerances are the
   # declared margin, and no second margin is applied.
   usable <- !is.na(m$bias) & m$reps - m$failed > 1 & m$fail_rate <= 0.05
-  m$pass <- usable & abs(m$bias) <= tb & m$coverage >= tc
+  m$pass_bc <- usable & abs(m$bias) <= tb & m$coverage >= tc
   # The half-width tolerance makes feasible also mean informative. It does not
-  # enter the unresolved-cell rule.
+  # enter the unresolved-cell rule, and more repetitions do not shrink the
+  # half-width to the tolerance by chance, so failing it is a resolved failure
+  # (see .candidate_summary()).
   tw <- plan$tolerance$ci_halfwidth
-  if (!is.null(tw)) m$pass <- m$pass & !is.na(m$ci_halfwidth) & m$ci_halfwidth <= tw
+  m$pass_hw <- if (is.null(tw)) rep(TRUE, nrow(m)) else !is.na(m$ci_halfwidth) & m$ci_halfwidth <= tw
+  m$pass <- m$pass_bc & m$pass_hw
   # A usable cell is unresolved when the 95% interval for its bias, or the
   # Wilson interval for its coverage, contains the tolerance. A cell that fails
   # the failure rule is not unresolved; it fails.
@@ -192,8 +195,10 @@
   do.call(rbind, lapply(split(me, me$candidate), function(d) data.frame(
     candidate = d$candidate[1], library = d$library[1], truncation = d$truncation[1],
     pass_all = all(d$pass),
-    # Fails somewhere, but only on unresolved cells: it could still pass everywhere.
-    could_flip = !all(d$pass) && all(d$pass | d$unresolved),
+    # Fails somewhere, but only on unresolved cells whose half-width is within
+    # its tolerance: it could still pass everywhere. A cell that fails the
+    # half-width tolerance is a resolved failure.
+    could_flip = !all(d$pass) && all(d$pass | (d$unresolved & d$pass_hw)),
     worst_rmse = max(d$rmse), stringsAsFactors = FALSE)))
 }
 
