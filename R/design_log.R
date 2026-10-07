@@ -24,7 +24,7 @@
     e <- v$estimand[i]
     dec <- if (v$status[i] == "feasible") sprintf("Feasible; candidate %s", v$selected[i]) else
       "Infeasible"
-    why <- sprintf("Bias within %s and coverage at least %s on every one of %d outcome surfaces",
+    why <- sprintf("Feasible requires bias within %s and coverage at least %s on every one of %d outcome surfaces",
                    tol$bias, tol$coverage, n_surf)
     if (!is.null(tol$ci_halfwidth))
       why <- paste0(why, sprintf(", and interval half-width at most %s", tol$ci_halfwidth))

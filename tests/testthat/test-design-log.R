@@ -48,6 +48,8 @@ test_that("the Muntner export has the Table S1 columns and one row per step", {
                   c("Lock", "Design assessment", "Outcome-free simulation", "Negative controls",
                     "Pre-outcome decision", "Approval", "Estimation"))
   expect_equal(sum(out$stage == "Outcome-free simulation"), length(fx$plan$estimands))
+  # Every simulation row states the criterion, so an infeasible row does not read as met.
+  expect_match(out$rationale[out$stage == "Outcome-free simulation"], "^Feasible requires ")
   expect_identical(out$decided_by[out$stage == "Approval"], "Review team")
   expect_true(all(is.na(out$decided_by[out$stage == "Lock"])))
   pre <- export_design_log(fx$dossier, format = "muntner")
