@@ -27,6 +27,10 @@
   repetitions) it finds the ATE infeasible while the trimmed ATE and the ATO
   are feasible; under the default plan with 50 repetitions only the ATO is
   feasible.
+* A cell that fails the `ci_halfwidth` tolerance is a resolved failure, so it
+  no longer triggers extra repetitions or sets `unresolved`. Designs and
+  simulations made by 0.4.0 stop with a message to rerun `assess_design()` or
+  `simulate_design()`. Every recorded time is UTC.
 
 # cleanTMLE 0.4.0
 
