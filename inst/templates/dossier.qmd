@@ -47,7 +47,7 @@ if (length(d$decision$candidates))
 
 ## Prespecified plan
 
-Lock created `r d$lock_created`.
+Lock created: `r if (is.na(d$lock_created)) "not recorded (lock made before cleanTMLE 0.4.1)" else d$lock_created`.
 
 ```{r}
 kt(d$plan_table)
@@ -77,11 +77,19 @@ kt(d$design$populations)
 if (is.null(d$design$trimmed_profile)) cat("No trim band was declared.\n")
 ```
 
+```{r, results = "asis"}
+if (!is.null(d$design$trimmed_profile))
+  cat("Patients outside the trim band, by arm, and the covariate means of removed",
+      "and kept patients.
+")
+```
+
 ```{r}
-if (!is.null(d$design$trimmed_profile)) {
-  kt(d$design$trimmed_profile$counts)
-  kt(d$design$trimmed_profile$covariates)
-}
+if (!is.null(d$design$trimmed_profile)) kt(d$design$trimmed_profile$counts)
+```
+
+```{r}
+if (!is.null(d$design$trimmed_profile)) kt(d$design$trimmed_profile$covariates)
 ```
 
 ```{r, results = "asis"}
@@ -107,7 +115,8 @@ kt(d$simulation$metrics[c("estimand", "candidate", "surface", "reps", "bias", "c
 
 Expected events among the patients each estimator uses, from the declared
 outcome surfaces and the observed treatment (range over the surfaces). No
-outcome was read.
+outcome was read. The ATE, ATT and ATO use all patients, so their expected
+events are equal; the heterogeneity setting changes only the treated arm.
 
 ```{r}
 kt(d$expected_events_range)

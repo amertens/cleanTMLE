@@ -93,6 +93,11 @@ test_that("the dossier renders to HTML", {
   expect_match(html, "verdict")
   expect_match(html, "coverage_lower")
   expect_match(html, "judged on point estimates against the declared tolerances")
+  # The trimmed-patient counts table appears, with its lead-in and the
+  # covariate table that follows it.
+  expect_match(html, "Patients outside the trim band, by arm", fixed = TRUE)
+  expect_match(html, "group</th>.*removed</th>.*kept</th>.*treated</td>")
+  expect_match(html, "covariate</th>.*std_diff</th>")
 })
 
 test_that("a dossier for a plan with no trim band builds and renders", {
