@@ -116,7 +116,10 @@ data.frame(reps = reps, mcse_coverage = round(sqrt(0.95 * 0.05 / reps), 3))
 with a domain describing the kind of confounding it can detect, such as
 health care use. The control is estimated for every estimand on the ladder,
 on the full cohort and on each of the `restrictions`, and graded against
-`nc_criteria`. With the default interval rule, the verdict for an
+`nc_criteria`. Each estimand's control is fitted with the candidate the
+simulation selected for it, so the check tests the adjustment the analysis
+will use; for an estimand the simulation found infeasible, it uses the
+candidate with the smallest worst-case error and the table says so. With the default interval rule, the verdict for an
 estimand is GO when every control's 95% interval lies inside the null band,
 STOP when any lies entirely outside it, and FLAG otherwise, which includes
 an interval too wide to tell and too few estimable controls. Only the

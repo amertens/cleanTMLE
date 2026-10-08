@@ -45,13 +45,58 @@
   list(table = tab, by_domain = by_domain, by_rung = by_rung)
 }
 
+# The candidate each estimand's controls are fitted with: the one the
+# simulation selected when the estimand is feasible; otherwise the candidate
+# with the smallest worst-case RMSE across the simulated outcome models (the
+# worst_rmse of .candidate_summary(), which the selection also uses); and when
+# no candidate has a usable RMSE, the plan's first candidate.
+.nc_candidates <- function(simulation, plan) {
+  all_c <- .candidates(plan)
+  v <- simulation$verdict
+  out <- lapply(plan$estimands, function(e) {
+    vi <- v[v$estimand == e, , drop = FALSE]
+    feasible <- nrow(vi) == 1L && identical(vi$status, "feasible") && !is.na(vi$selected)
+    if (feasible) {
+      cand <- list(id = vi$selected, library = vi$library,
+                   learners = plan$candidates$library[[vi$library]],
+                   truncation = vi$truncation)
+      return(c(cand, list(feasible = TRUE, basis = "selected by the simulation")))
+    }
+    me <- simulation$metrics[simulation$metrics$estimand == e, , drop = FALSE]
+    cs <- if (nrow(me)) .candidate_summary(me) else NULL
+    if (!is.null(cs) && any(is.finite(cs$worst_rmse))) {
+      b <- cs[which.min(ifelse(is.finite(cs$worst_rmse), cs$worst_rmse, Inf)), , drop = FALSE]
+      cand <- list(id = b$candidate, library = b$library,
+                   learners = plan$candidates$library[[b$library]],
+                   truncation = b$truncation)
+      return(c(cand, list(feasible = FALSE,
+                          basis = "not feasible; smallest worst-case RMSE")))
+    }
+    c(all_c[[1]], list(feasible = FALSE,
+                       basis = "not feasible; no usable RMSE, first candidate"))
+  })
+  stats::setNames(out, plan$estimands)
+}
+
 #' Negative controls along the restriction ladder
 #'
 #' Estimates each declared negative-control outcome, for every declared
 #' estimand, on the full cohort and on each declared restriction, with the
-#' main-terms GLM candidate (the smallest declared truncation) and the same
-#' fitter as the analysis, and grades the result against the plan's
-#' `nc_criteria`. A control is read on the estimand the analysis reports: a
+#' same fitter as the analysis, and grades the result against the plan's
+#' `nc_criteria`.
+#'
+#' The controls test the adjustment the analysis will use, so each estimand's
+#' controls are fitted with the candidate (outcome-model library and
+#' truncation) that [simulate_design()] selected for that estimand. When the
+#' simulation finds an estimand infeasible, no candidate was selected, and its
+#' controls use the candidate with the smallest worst-case RMSE across the
+#' simulated outcome models, the same summary the selection uses; the table
+#' marks those rows `candidate_feasible = FALSE`. If no candidate has a
+#' usable RMSE, the first declared candidate is used and `candidate_basis`
+#' says so. The `candidate`, `candidate_feasible` and `candidate_basis`
+#' columns of `table` record the choice for every row.
+#'
+#' A control is read on the estimand the analysis reports: a
 #' control read on an estimand the design cannot deliver mixes extrapolation
 #' error with confounding, so it cannot isolate confounding.
 #'
@@ -86,15 +131,21 @@
 #'
 #' @param lock A `cr_lock`.
 #' @param design The [assess_design()] result for `lock`.
-#' @return A `cr_nc_ladder`.
+#' @param simulation The [simulate_design()] result for `lock` and `design`.
+#'   It supplies the candidate each estimand's controls use.
+#' @return A `cr_nc_ladder`. It stores the hash of `simulation`
+#'   (`simulation_hash`), which [design_report()] checks.
 #' @export
-negative_control_ladder <- function(lock, design) {
+negative_control_ladder <- function(lock, design, simulation) {
   verify_lock(lock)
   .check_stamp(lock, design, "design")
+  .check_stamp(lock, simulation, "simulation")
+  if (!identical(simulation$design_hash, design$stamp$hash))
+    stop("`simulation` was not run on this `design`.", call. = FALSE)
   p <- lock$plan
   out <- list(declared = !is.null(p$negative_controls), table = NULL, by_domain = NULL,
               by_rung = NULL, verdict = NA_character_, criteria = p$nc_criteria,
-              design_hash = design$stamp$hash)
+              design_hash = design$stamp$hash, simulation_hash = simulation$stamp$hash)
   if (out$declared) {
     X <- .design_matrix(lock$data, lock$covariates)
     A <- as.integer(lock$data[[lock$treatment]])
@@ -103,14 +154,18 @@ negative_control_ladder <- function(lock, design) {
       r <- eval(f[[2]], lock$data, environment(f))
       r & !is.na(r)
     }))
-    cand <- list(id = "glm_nc", library = "glm", learners = "glm",
-                 truncation = min(p$candidates$truncation))
+    cands <- .nc_candidates(simulation, p)
+    # Estimands that share a candidate share one fit of the outcome model.
+    groups <- split(p$estimands, factor(vapply(cands, function(x) x$id, ""),
+                                        levels = unique(vapply(cands, function(x) x$id, ""))))
     rows <- list()
     row <- function(rung, est, nc, n, status, r = NULL) data.frame(
       rung = rung, estimand = est, negative_control = nc,
       domain = unname(p$negative_controls[nc]), n = n,
       estimate = r$estimate %||% NA_real_, ci_lower = r$ci_lower %||% NA_real_,
-      ci_upper = r$ci_upper %||% NA_real_, status = status, stringsAsFactors = FALSE)
+      ci_upper = r$ci_upper %||% NA_real_, status = status,
+      candidate = cands[[est]]$id, candidate_feasible = cands[[est]]$feasible,
+      candidate_basis = cands[[est]]$basis, stringsAsFactors = FALSE)
     add_all <- function(rn, nc, n, status) {
       for (e in p$estimands) rows[[length(rows) + 1L]] <<- row(rn, e, nc, n, status)
     }
@@ -134,21 +189,23 @@ negative_control_ladder <- function(lock, design) {
           add_all(rn, nc, sum(ok), paste("failed:", g_fit))
           next
         }
-        # One call fits the outcome model once and targets every declared
-        # estimand on it; each estimand is read from its own row.
-        r <- tryCatch(fit_candidate(Xr[ok, , drop = FALSE], Ar[ok], y[ok], p$estimands, cand, p,
-                                    folds[ok], p$seed,
-                                    g_fit = list(g = g_fit$g[ok], risks = g_fit$risks)),
-                      error = function(e) conditionMessage(e))
-        if (is.character(r)) {
-          add_all(rn, nc, sum(ok), paste("failed:", r))
-          next
-        }
-        for (e in p$estimands) {
-          re <- r[r$estimand == e, , drop = FALSE][1, , drop = FALSE]
-          rows[[length(rows) + 1L]] <- if (isTRUE(re$failed)) {
-            row(rn, e, nc, sum(ok), paste("failed:", re$message))
-          } else row(rn, e, nc, sum(ok), "estimated", re)
+        # One call per candidate fits its outcome model once and targets the
+        # estimands that use it; each estimand is read from its own row.
+        for (ests in groups) {
+          cand <- cands[[ests[1]]][c("id", "library", "learners", "truncation")]
+          r <- tryCatch(fit_candidate(Xr[ok, , drop = FALSE], Ar[ok], y[ok], ests, cand, p,
+                                      folds[ok], p$seed,
+                                      g_fit = list(g = g_fit$g[ok], risks = g_fit$risks)),
+                        error = function(e) conditionMessage(e))
+          for (e in ests) {
+            rows[[length(rows) + 1L]] <- if (is.character(r)) {
+              row(rn, e, nc, sum(ok), paste("failed:", r))
+            } else {
+              re <- r[r$estimand == e, , drop = FALSE][1, , drop = FALSE]
+              if (isTRUE(re$failed)) row(rn, e, nc, sum(ok), paste("failed:", re$message))
+              else row(rn, e, nc, sum(ok), "estimated", re)
+            }
+          }
         }
       }
     }

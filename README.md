@@ -19,7 +19,7 @@ lock    <- create_analysis_lock(cr_example$design, treatment = "A",
                                 plan = plan)
 design  <- assess_design(lock)
 sim     <- simulate_design(lock, design)
-nc      <- negative_control_ladder(lock, design)
+nc      <- negative_control_ladder(lock, design, sim)
 dossier <- design_report(lock, design, sim, nc, file = "dossier.html")
 ub      <- unblind(lock, dossier, cr_example$outcomes, approved_by = "Review team")
 fit     <- estimate_effect(ub)

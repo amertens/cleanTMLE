@@ -65,7 +65,7 @@ test_that("the Muntner export names roles and records an override", {
   lk <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), p)
   ds <- assess_design(lk)
   sim <- suppressMessages(simulate_design(lk, ds))
-  ncl <- negative_control_ladder(lk, ds)
+  ncl <- negative_control_ladder(lk, ds, sim)
   dos <- design_report(lk, ds, sim, ncl)
   skip_if_not(identical(dos$decision$nc_verdict, "STOP"))
   ub <- unblind(lk, dos, d$outcomes, approved_by = "Review team",
@@ -90,7 +90,8 @@ test_that("the Muntner row names the estimand the negative controls were read on
   sim <- fx$sim
   sim$verdict$status <- "infeasible"
   sim$stamp <- .stamp(fx$lock, sim)
-  none <- design_report(fx$lock, fx$design, sim, fx$nc)
+  none <- design_report(fx$lock, fx$design, sim,
+                        negative_control_ladder(fx$lock, fx$design, sim))
   out2 <- export_design_log(none, format = "muntner")
   nc2 <- out2[out2$stage == "Negative controls", ]
   expect_equal(nrow(nc2), 1L)

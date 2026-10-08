@@ -1,15 +1,21 @@
 covs <- c("w1", "w2", "w3")
+# The simulation is only needed to say which candidate each control uses, so a
+# few repetitions will do.
+sim_of <- function(lk, ds) suppressMessages(simulate_design(lk, ds))
 ladder_for <- function(nc, ...) {
   d <- make_design(500, seed = 5)
-  p <- fast_plan(negative_controls = nc, ...)
+  args <- utils::modifyList(list(reps = 6L), list(...))
+  p <- do.call(fast_plan, c(list(negative_controls = nc), args))
   lk <- create_analysis_lock(d$design, "A", covs, p)
-  negative_control_ladder(lk, assess_design(lk))
+  ds <- assess_design(lk)
+  negative_control_ladder(lk, ds, sim_of(lk, ds))
 }
 
 test_that("no declared controls gives an empty ladder with no verdict", {
   d <- make_design(300)
-  lk <- create_analysis_lock(d$design, "A", covs, fast_plan())
-  nc <- negative_control_ladder(lk, assess_design(lk))
+  lk <- create_analysis_lock(d$design, "A", covs, fast_plan(reps = 6L))
+  ds <- assess_design(lk)
+  nc <- negative_control_ladder(lk, ds, sim_of(lk, ds))
   expect_false(nc$declared)
   expect_true(is.na(nc$verdict))
 })
@@ -52,9 +58,10 @@ test_that("the verdict vector is the full-cohort rung of by_rung, named by estim
     d$design$nc_sub <- stats::rbinom(500, 1, stats::plogis(-1 + 3 * d$design$A * d$design$grp))
   })
   p <- fast_plan(negative_controls = c(nc_sub = "care use"),
-                 nc_criteria = list(null_band = c(-0.1, 0.1), rule = "point"))
+                 nc_criteria = list(null_band = c(-0.1, 0.1), rule = "point"), reps = 6L)
   lk <- create_analysis_lock(d$design, "A", covs, p)
-  nc <- negative_control_ladder(lk, assess_design(lk))
+  ds <- assess_design(lk)
+  nc <- negative_control_ladder(lk, ds, sim_of(lk, ds))
   expect_identical(nc$by_rung$estimand, p$estimands)
   expect_identical(nc$verdict, stats::setNames(nc$by_rung$verdict, nc$by_rung$estimand))
   expect_identical(nc$verdict[["ATE"]], "STOP")
@@ -64,9 +71,10 @@ test_that("an inestimable control makes the domain insufficient", {
   d <- make_design(500, seed = 5)
   d$design$nc_rare <- 0L
   d$design$nc_rare[1:2] <- 1L
-  p <- fast_plan(negative_controls = c(nc_rare = "rare"))
+  p <- fast_plan(negative_controls = c(nc_rare = "rare"), reps = 6L)
   lk <- create_analysis_lock(d$design, "A", covs, p)
-  nc <- negative_control_ladder(lk, assess_design(lk))
+  ds <- assess_design(lk)
+  nc <- negative_control_ladder(lk, ds, sim_of(lk, ds))
   expect_match(nc$table$status, "inestimable")
   expect_identical(nrow(nc$table), 4L)
   expect_identical(nc$verdict, stats::setNames(rep("FLAG", 4),
@@ -76,9 +84,10 @@ test_that("an inestimable control makes the domain insufficient", {
 test_that("a rung with one arm is recorded, not fatal", {
   d <- make_design(500, seed = 5)
   p <- fast_plan(negative_controls = c(nc_visit = "care use"),
-                 restrictions = list(treated_only = ~ A == 1))
+                 restrictions = list(treated_only = ~ A == 1), reps = 6L)
   lk <- create_analysis_lock(d$design, "A", covs, p)
-  nc <- negative_control_ladder(lk, assess_design(lk))
+  ds <- assess_design(lk)
+  nc <- negative_control_ladder(lk, ds, sim_of(lk, ds))
   expect_match(nc$table$status[nc$table$rung == "treated_only"], "inestimable|failed")
   expect_identical(sum(nc$table$rung == "treated_only"), 4L)
 })
@@ -168,7 +177,8 @@ test_that("the verdict is the full cohort's for each estimand, whatever the rest
                  tolerance = list(bias = 0.1, coverage = 0.5), reps = 10L)
   lk <- create_analysis_lock(d$design, "A", covs, p)
   ds <- assess_design(lk)
-  nc <- negative_control_ladder(lk, ds)
+  sim <- sim_of(lk, ds)
+  nc <- negative_control_ladder(lk, ds, sim)
   ests <- p$estimands
   expect_identical(nc$by_rung$rung, rep(c("full cohort", "grp0", "untreated_only"), each = 4))
   expect_identical(nc$by_rung$estimand, rep(ests, 3))
@@ -178,7 +188,6 @@ test_that("the verdict is the full cohort's for each estimand, whatever the rest
   expect_identical(rg("grp0")[ests == "ATE"], "GO")
   expect_identical(rg("untreated_only")[ests == "ATE"], "FLAG")
   expect_identical(nc$verdict[["ATE"]], "STOP")
-  sim <- suppressMessages(simulate_design(lk, ds))
   dr <- design_report(lk, ds, sim, nc)
   expect_identical(dr$decision$nc_verdict, nc$verdict[[dr$decision$primary]])
   expect_error(unblind(lk, dr, d$outcomes, approved_by = "Review team"),
@@ -192,7 +201,8 @@ test_that("a design stamped by a different lock is rejected", {
   other <- create_analysis_lock(d$design, "A", covs,
                                 fast_plan(negative_controls = c(nc_visit = "care use"),
                                           seed = 99L))
-  expect_error(negative_control_ladder(lk, assess_design(other)), "not computed from this lock")
+  expect_error(negative_control_ladder(lk, assess_design(other), sim_of(lk, assess_design(lk))),
+               "not computed from this lock")
 })
 
 test_that(".nc_grade relabels an estimated row with a non-finite estimate as failed", {
@@ -290,4 +300,155 @@ test_that("a ladder under the interval rule can read FLAG where the point rule r
   pt <- ladder_for(c(nc_visit = "care use"),
                    nc_criteria = list(null_band = c(-0.001, 0.001), rule = "point"))
   expect_true(all(pt$verdict == "STOP"))
+})
+
+# A simulation whose verdict and metrics are edited, so each estimand selects a
+# visibly different candidate. fast_plan() has two candidates (truncation 0.01
+# and 0.05). ATE and trimmed_ATE are feasible and select 0.05 and 0.01. ATT and
+# ATO are infeasible; the smallest worst-case RMSE is 0.05 for ATT and 0.01 for
+# ATO.
+forged_sim <- function(fx) {
+  sim <- fx$sim
+  v <- sim$verdict
+  set <- function(e, status, sel) {
+    i <- v$estimand == e
+    v$status[i] <<- status
+    v$selected[i] <<- sel
+    v$library[i] <<- if (is.na(sel)) NA_character_ else "glm"
+    v$truncation[i] <<- if (is.na(sel)) NA_real_ else as.numeric(sub("glm_t", "", sel))
+  }
+  set("ATE", "feasible", "glm_t0.05")
+  set("trimmed_ATE", "feasible", "glm_t0.01")
+  set("ATT", "infeasible", NA_character_)
+  set("ATO", "infeasible", NA_character_)
+  sim$verdict <- v
+  m <- sim$metrics
+  m$rmse <- 0.2
+  m$rmse[m$estimand == "ATT" & m$candidate == "glm_t0.05"] <- 0.01
+  m$rmse[m$estimand == "ATO" & m$candidate == "glm_t0.01"] <- 0.01
+  sim$metrics <- m
+  sim$stamp <- .stamp(fx$lock, sim)
+  sim
+}
+
+nc_fx <- local({
+  cache <- NULL
+  function() {
+    if (is.null(cache)) cache <<- fixture_pipeline()
+    cache
+  }
+})
+
+test_that("each estimand's controls use the candidate the simulation selected for it", {
+  fx <- nc_fx()
+  sim <- forged_sim(fx)
+  nc <- negative_control_ladder(fx$lock, fx$design, sim)
+  tb <- nc$table
+  expect_true(all(c("candidate", "candidate_feasible") %in% names(tb)))
+  pick <- function(col) vapply(c("ATE", "trimmed_ATE", "ATT", "ATO"), function(e) {
+    x <- unique(tb[[col]][tb$estimand == e])
+    expect_length(x, 1L)
+    x
+  }, FUN.VALUE = tb[[col]][1])
+  expect_identical(pick("candidate"), c(ATE = "glm_t0.05", trimmed_ATE = "glm_t0.01",
+                                        ATT = "glm_t0.05", ATO = "glm_t0.01"))
+  expect_identical(pick("candidate_feasible"),
+                   c(ATE = TRUE, trimmed_ATE = TRUE, ATT = FALSE, ATO = FALSE))
+  expect_identical(nc$simulation_hash, sim$stamp$hash)
+  # The grading columns are unchanged.
+  expect_true(all(c("rung", "estimand", "negative_control", "domain", "n", "estimate",
+                    "ci_lower", "ci_upper", "status", "reading", "in_band") %in% names(tb)))
+  expect_identical(names(nc$by_rung), c("rung", "estimand", "verdict"))
+  expect_identical(names(nc$by_domain),
+                   c("rung", "estimand", "domain", "n_estimable", "reading"))
+})
+
+test_that("fit_candidate receives the selected candidate's learners and truncation", {
+  fx <- nc_fx()
+  sim <- forged_sim(fx)
+  seen <- list()
+  orig <- fit_candidate
+  local_mocked_bindings(fit_candidate = function(X, A, Y, estimand, candidate, plan, folds,
+                                                 seed, g_fit = NULL) {
+    seen[[length(seen) + 1L]] <<- list(estimand = estimand, candidate = candidate)
+    orig(X, A, Y, estimand, candidate, plan, folds, seed, g_fit)
+  })
+  negative_control_ladder(fx$lock, fx$design, sim)
+  expect_length(seen, 2L)
+  by_trunc <- stats::setNames(seen, vapply(seen, function(s) s$candidate$truncation, 0))
+  expect_setequal(by_trunc[["0.05"]]$estimand, c("ATE", "ATT"))
+  expect_setequal(by_trunc[["0.01"]]$estimand, c("trimmed_ATE", "ATO"))
+  for (s in seen) {
+    expect_identical(s$candidate$learners, fx$plan$candidates$library[["glm"]])
+    expect_identical(s$candidate$library, "glm")
+  }
+})
+
+test_that(".nc_candidates takes the learners from the selected or best library", {
+  p <- analysis_plan(outcome = "y", estimands = c("ATE", "ATT", "ATO"),
+                     ps_library = "glm",
+                     candidates = list(library = list(glm = "glm", pen = c("glmnet", "glm")),
+                                       truncation = c(0.01, 0.05)),
+                     negative_controls = c(nc1 = "d"),
+                     nc_criteria = list(null_band = c(-0.1, 0.1), rule = "point"))
+  cands <- vapply(.candidates(p), function(x) x$id, "")
+  mk <- function(e, rmse) data.frame(
+    estimand = e, candidate = cands,
+    library = vapply(.candidates(p), function(x) x$library, ""),
+    truncation = vapply(.candidates(p), function(x) x$truncation, 0),
+    pass = FALSE, unresolved = FALSE, pass_hw = TRUE, rmse = rmse, stringsAsFactors = FALSE)
+  metrics <- rbind(mk("ATE", c(0.3, 0.3, 0.3, 0.3)),
+                   mk("ATT", c(0.3, 0.2, 0.05, 0.3)),
+                   mk("ATO", rep(NA_real_, 4)))
+  verdict <- data.frame(estimand = c("ATE", "ATT", "ATO"),
+                        status = c("feasible", "infeasible", "infeasible"),
+                        selected = c("pen_t0.05", NA, NA), library = c("pen", NA, NA),
+                        truncation = c(0.05, NA, NA), stringsAsFactors = FALSE)
+  got <- .nc_candidates(list(metrics = metrics, verdict = verdict), p)
+  expect_identical(got$ATE$id, "pen_t0.05")
+  expect_identical(got$ATE$learners, c("glmnet", "glm"))
+  expect_identical(got$ATE$truncation, 0.05)
+  expect_true(got$ATE$feasible)
+  expect_false(got$ATT$feasible)
+  expect_identical(got$ATT$id, "pen_t0.01")
+  expect_identical(got$ATT$learners, c("glmnet", "glm"))
+  expect_match(got$ATT$basis, "smallest worst-case RMSE")
+  # No usable RMSE: the first candidate, and the row says so.
+  expect_false(got$ATO$feasible)
+  expect_identical(got$ATO$id, .candidates(p)[[1]]$id)
+  expect_match(got$ATO$basis, "first candidate")
+})
+
+test_that("a simulation from another design or lock is refused", {
+  fx <- nc_fx()
+  other_design <- fx$sim
+  other_design$design_hash <- "not-this-design"
+  other_design$stamp <- .stamp(fx$lock, other_design)
+  expect_error(negative_control_ladder(fx$lock, fx$design, other_design),
+               "`simulation` was not run on this `design`.", fixed = TRUE)
+  d <- make_design(400, seed = 2, strength = 0.8)
+  lk2 <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"),
+                              fast_plan(negative_controls = c(nc_visit = "care use"),
+                                        seed = 99L, reps = 6L))
+  sim2 <- sim_of(lk2, assess_design(lk2))
+  expect_error(negative_control_ladder(fx$lock, fx$design, sim2),
+               "not computed from this lock")
+  tampered <- fx$sim
+  tampered$reps <- tampered$reps + 1L
+  expect_error(negative_control_ladder(fx$lock, fx$design, tampered), "modified")
+})
+
+test_that("design_report refuses controls run on a different simulation or by an earlier version", {
+  fx <- nc_fx()
+  sim2 <- forged_sim(fx)
+  nc2 <- negative_control_ladder(fx$lock, fx$design, sim2)
+  expect_error(design_report(fx$lock, fx$design, fx$sim, nc2),
+               "`nc` was not run on this `simulation`.", fixed = TRUE)
+  expect_s3_class(design_report(fx$lock, fx$design, sim2, nc2), "cr_dossier")
+  old <- fx$nc
+  old$table$candidate <- NULL
+  old$stamp <- .stamp(fx$lock, old)
+  expect_error(design_report(fx$lock, fx$design, fx$sim, old),
+               "This negative-control ladder was made by an earlier cleanTMLE; rerun negative_control_ladder().",
+               fixed = TRUE)
 })

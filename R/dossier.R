@@ -84,13 +84,18 @@ design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
     stop("`simulation` was not run on this `design`.", call. = FALSE)
   if (!is.null(nc)) {
     # A ladder made before the controls were read on each estimand has no
-    # estimand column; its verdict cannot be matched to the primary.
-    if (isTRUE(nc$declared) && !"estimand" %in% names(nc$by_rung))
+    # estimand column, and one made before they used the selected candidate has
+    # no candidate column and no simulation hash.
+    if ((isTRUE(nc$declared) && (!"estimand" %in% names(nc$by_rung) ||
+                                 !"candidate" %in% names(nc$table))) ||
+        is.null(nc$simulation_hash))
       stop("This negative-control ladder was made by an earlier cleanTMLE; ",
            "rerun negative_control_ladder().", call. = FALSE)
     .check_stamp(lock, nc, "nc")
     if (!identical(nc$design_hash, design$stamp$hash))
       stop("`nc` was not run on this `design`.", call. = FALSE)
+    if (!identical(nc$simulation_hash, simulation$stamp$hash))
+      stop("`nc` was not run on this `simulation`.", call. = FALSE)
   }
   if (!is.null(lock$plan$negative_controls) && is.null(nc))
     stop("The plan declares negative controls, so `nc` (from negative_control_ladder()) ",

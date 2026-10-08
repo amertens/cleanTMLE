@@ -37,7 +37,7 @@ fixture_pipeline <- function(strength = 0.8, n = 400, nc = c(nc_visit = "care us
   lock <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), plan)
   design <- assess_design(lock)
   sim <- suppressMessages(simulate_design(lock, design))
-  ncl <- negative_control_ladder(lock, design)
+  ncl <- negative_control_ladder(lock, design, sim)
   list(d = d, plan = plan, lock = lock, design = design, sim = sim, nc = ncl,
        dossier = design_report(lock, design, sim, ncl))
 }

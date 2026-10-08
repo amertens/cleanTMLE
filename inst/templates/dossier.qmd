@@ -132,7 +132,11 @@ if (!is.null(d$nc) && !is.na(d$decision$nc_estimand))
       d$decision$nc_estimand, "(the primary estimand) gates unblinding, because the",
       "controls are read on the estimand the analysis reports: a control read on an",
       "estimand the design cannot deliver mixes extrapolation error with confounding,",
-      "so it cannot isolate confounding. The other rows are diagnostics.", "\n")
+      "so it cannot isolate confounding. The other rows are diagnostics. Each estimand's",
+      "controls are fitted with the candidate the simulation selected for it, so the",
+      "controls test the adjustment the analysis will use; for an estimand that is not",
+      "feasible, the candidate with the smallest worst-case RMSE is used and the table",
+      "marks it as not feasible.", "\n")
 if (!is.null(d$nc) && is.na(d$decision$nc_estimand))
   cat("No estimand is feasible, so no estimand's control verdict gates unblinding.",
       "The rows below are diagnostics.", "\n")
@@ -163,8 +167,8 @@ pe <- d$decision$nc_estimand
 if (!is.null(d$nc) && !is.na(pe)) {
   tb <- d$nc$table
   tb <- tb[tb$rung == "full cohort" & tb$estimand == pe,
-           c("negative_control", "domain", "estimate", "ci_lower", "ci_upper", "reading",
-             "status")]
+           c("negative_control", "domain", "candidate", "candidate_feasible", "estimate",
+             "ci_lower", "ci_upper", "reading", "status")]
   cat("Full-cohort controls on the ", pe, " (the primary estimand): the estimates and 95% ",
       "intervals the verdict is read from.\n\n", sep = "")
   print(kt(tb))
