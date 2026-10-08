@@ -51,6 +51,22 @@ create_analysis_lock <- function(design_data, treatment, covariates, plan,
   if (length(bad_nc))
     stop("Negative-control column(s) must be coded 0/1: ",
          paste(bad_nc, collapse = ", "), ".", call. = FALSE)
+  # A control that is a covariate is regressed on itself, so its estimate is zero
+  # by construction and the ladder would read GO. The check is by exact name.
+  same <- intersect(nc_cols, covariates)
+  if (length(same))
+    stop("Negative control `", same[1], "` is also an adjustment covariate, so its ",
+         "estimate is zero by construction. Remove it from `covariates`, or name the ",
+         "covariate it is derived from in `nc_exclude`.", call. = FALSE)
+  for (nc in names(plan$nc_exclude)) {
+    ex <- plan$nc_exclude[[nc]]
+    if (length(setdiff(ex, covariates)))
+      stop("`nc_exclude` for `", nc, "` names `", setdiff(ex, covariates)[1],
+           "`, which is not an adjustment covariate.", call. = FALSE)
+    if (!length(setdiff(covariates, ex)))
+      stop("`nc_exclude` for `", nc, "` leaves out every covariate, so no adjustment ",
+           "set remains.", call. = FALSE)
+  }
   if (!is.null(plan$surfaces$q0) && length(plan$surfaces$q0) != nrow(design_data))
     stop("`surfaces$q0` must have one value per row of `design_data`.", call. = FALSE)
 

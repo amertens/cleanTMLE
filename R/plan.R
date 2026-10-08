@@ -52,6 +52,18 @@
 #' @param target_time,hazards Time-to-event only: the target time and the
 #'   hazard models passed to `concrete` as its `Model` entries.
 #' @param negative_controls Named character vector, column = domain.
+#' @param nc_exclude Optional named list: a negative-control column, then the
+#'   adjustment covariates to leave out when that control is fitted. A control
+#'   that is a covariate, or is derived from one (for example "cooking with
+#'   wood or charcoal" derived from the covariate "cooking fuel"), would be
+#'   regressed on its own source, so its estimate would be near zero by
+#'   construction and the ladder would read GO whatever the confounding.
+#'   [create_analysis_lock()] stops when a control is itself a covariate, but
+#'   that check catches only exact column names: the analyst must list a
+#'   control derived from a covariate here. Each name must be a declared
+#'   control, and [create_analysis_lock()] checks that each value is a
+#'   covariate and that not every covariate is left out. The list is part of
+#'   the plan, so it is locked. Controls without an entry use every covariate.
 #' @param nc_criteria `list(null_band = , rule = , min_per_domain = )`, where
 #'   `rule` is one of `"interval"` (the default), `"point"` or `"ci"`. Under
 #'   `"interval"` a control reads
@@ -84,6 +96,7 @@ analysis_plan <- function(outcome, estimands,
                           target_time = NULL,
                           hazards = NULL,
                           negative_controls = NULL,
+                          nc_exclude = NULL,
                           nc_criteria = NULL,
                           restrictions = NULL,
                           select = NULL,
@@ -174,6 +187,22 @@ analysis_plan <- function(outcome, estimands,
     stop_if(!nc_criteria$rule %in% c("point", "ci", "interval"),
             "`nc_criteria$rule` must be 'point', 'ci' or 'interval'.")
   }
+  if (length(nc_exclude)) {
+    stop_if(!is.list(nc_exclude) || is.null(names(nc_exclude)) ||
+              any(!nzchar(names(nc_exclude))) || anyDuplicated(names(nc_exclude)),
+            "`nc_exclude` must be a named list: control column = covariates to leave out.")
+    unknown <- setdiff(names(nc_exclude), names(negative_controls))
+    stop_if(length(unknown) > 0L, "`nc_exclude` names `", paste(unknown, collapse = "`, `"),
+            "`, which is not a declared negative control.")
+    stop_if(!all(vapply(nc_exclude, function(v) is.character(v) && length(v) > 0L &&
+                          !anyNA(v) && all(nzchar(v)), logical(1))),
+            "Each `nc_exclude` entry must be a character vector of covariate names.")
+    nc_exclude <- lapply(nc_exclude, unique)
+  } else {
+    stop_if(!is.null(nc_exclude) && !is.list(nc_exclude),
+            "`nc_exclude` must be a named list: control column = covariates to leave out.")
+    nc_exclude <- NULL
+  }
   if (!is.null(restrictions))
     stop_if(!is.list(restrictions) || is.null(names(restrictions)) ||
               !all(vapply(restrictions, function(f)
@@ -194,7 +223,7 @@ analysis_plan <- function(outcome, estimands,
     outcome = outcome, outcome_type = outcome_type, target_time = target_time,
     hazards = hazards, estimands = estimands, ps_library = ps_library,
     candidates = candidates, tolerance = tolerance, surfaces = surfaces,
-    trim_band = trim_band, negative_controls = negative_controls,
+    trim_band = trim_band, negative_controls = negative_controls, nc_exclude = nc_exclude,
     nc_criteria = nc_criteria, restrictions = restrictions, select = select,
     roles = roles,
     K = as.integer(K), V = as.integer(V), reps = as.integer(reps),

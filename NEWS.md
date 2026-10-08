@@ -1,5 +1,12 @@
 # cleanTMLE 0.4.1
 
+* A negative control that is also an adjustment covariate is now an error in
+  `create_analysis_lock()`, because it would be regressed on itself and read
+  GO. A new `analysis_plan()` argument `nc_exclude` names, for a control
+  derived from a covariate, the covariates to leave out of that control's
+  adjustment set. It is locked, `negative_control_ladder()` reports it in a
+  new `excluded_covariates` column, and the dossier lists it.
+
 * `assess_design()` reports who each estimand describes: covariate means in
   each estimand's target population with their standardized shift from the
   full cohort, and a profile of the patients a trimmed analysis drops. Means

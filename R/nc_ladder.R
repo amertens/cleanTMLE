@@ -96,6 +96,16 @@
 #' says so. The `candidate`, `candidate_feasible` and `candidate_basis`
 #' columns of `table` record the choice for every row.
 #'
+#' Each control is adjusted for the plan's covariates except those the plan
+#' lists for it in `nc_exclude` (see [analysis_plan()]). A control that is
+#' itself a covariate, or is derived from one, would otherwise be regressed on
+#' its own source, so its estimate would be near zero by construction and the
+#' ladder would read GO. The `excluded_covariates` column of `table` lists, for
+#' each control, the covariates left out of its adjustment set (empty when
+#' none). Controls with the same excluded set share their propensity-score
+#' fit. A control derived from a covariate under a different name is caught
+#' only if the analyst lists it in `nc_exclude`.
+#'
 #' A control is read on the estimand the analysis reports: a
 #' control read on an estimand the design cannot deliver mixes extrapolation
 #' error with confounding, so it cannot isolate confounding.
@@ -150,9 +160,19 @@ negative_control_ladder <- function(lock, design, simulation) {
               by_rung = NULL, verdict = NA_character_, criteria = p$nc_criteria,
               design_hash = design$stamp$hash, simulation_hash = simulation$stamp$hash)
   if (out$declared) {
-    X <- .design_matrix(lock$data, lock$covariates)
     A <- as.integer(lock$data[[lock$treatment]])
-    n <- nrow(X)
+    n <- nrow(lock$data)
+    # Each control is adjusted for the covariates except those the plan lists in
+    # nc_exclude for it (a control derived from a covariate). Controls with the
+    # same excluded set share one design matrix and one propensity-score fit per
+    # rung. The key is the excluded covariates in the order of `covariates`.
+    nc_names <- names(p$negative_controls)
+    excluded <- stats::setNames(lapply(nc_names, function(nc)
+      intersect(lock$covariates, p$nc_exclude[[nc]])), nc_names)
+    keys <- vapply(excluded, paste, "", collapse = ", ")
+    key_id <- stats::setNames(match(keys, unique(keys)), nc_names)
+    Xs <- lapply(unique(key_id), function(i)
+      .design_matrix(lock$data, setdiff(lock$covariates, excluded[[match(i, key_id)]])))
     rungs <- c(list(`full cohort` = rep(TRUE, n)), lapply(p$restrictions, function(f) {
       r <- eval(f[[2]], lock$data, environment(f))
       r & !is.na(r)
@@ -170,18 +190,22 @@ negative_control_ladder <- function(lock, design, simulation) {
       estimate = r$estimate %||% NA_real_, ci_lower = r$ci_lower %||% NA_real_,
       ci_upper = r$ci_upper %||% NA_real_, status = status,
       candidate = cands[[est]]$id, candidate_feasible = cands[[est]]$feasible,
-      candidate_basis = cands[[est]]$basis, stringsAsFactors = FALSE)
+      candidate_basis = cands[[est]]$basis,
+      excluded_covariates = unname(keys[nc]), stringsAsFactors = FALSE)
     add_all <- function(rn, nc, n, status) {
       for (e in p$estimands) rows[[length(rows) + 1L]] <<- row(rn, e, nc, n, status)
     }
     for (rn in names(rungs)) {
       keep <- rungs[[rn]]
-      Xr <- X[keep, , drop = FALSE]
       Ar <- A[keep]
       folds <- .make_folds(sum(keep), p$K, p$seed)
-      g_fit <- tryCatch(.fit_g(Xr, Ar, p$ps_library, folds, p$V, p$seed),
-                        error = function(e) conditionMessage(e))
-      for (nc in names(p$negative_controls)) {
+      Xk <- lapply(Xs, function(x) x[keep, , drop = FALSE])
+      g_fits <- lapply(Xk, function(Xr)
+        tryCatch(.fit_g(Xr, Ar, p$ps_library, folds, p$V, p$seed),
+                 error = function(e) conditionMessage(e)))
+      for (nc in nc_names) {
+        Xr <- Xk[[key_id[[nc]]]]
+        g_fit <- g_fits[[key_id[[nc]]]]
         y <- lock$data[[nc]][keep]
         ok <- !is.na(y)
         cells <- c(sum(y[ok & Ar == 1]), sum(1 - y[ok & Ar == 1]),

@@ -32,6 +32,7 @@
                 V = "Super learner folds (V)", reps = "Repetitions",
                 max_reps = "Repetition cap (max_reps)", seed = "Seed",
                 negative_controls = "Negative controls (column: domain)",
+                nc_exclude = "Covariates left out of each negative control's adjustment",
                 nc_criteria = "Negative-control criteria",
                 restrictions = "Restrictions (least to most restricted)", roles = "Roles")
 
