@@ -103,8 +103,9 @@
 #' ladder would read GO. The `excluded_covariates` column of `table` lists, for
 #' each control, the covariates left out of its adjustment set (empty when
 #' none). Controls with the same excluded set share their propensity-score
-#' fit. A control derived from a covariate under a different name is caught
-#' only if the analyst lists it in `nc_exclude`.
+#' fit. A control derived from a covariate under a different name is not
+#' detected; list its source covariate in `nc_exclude`. A control that is
+#' itself a covariate is an error here, as it is in [create_analysis_lock()].
 #'
 #' A control is read on the estimand the analysis reports: a
 #' control read on an estimand the design cannot deliver mixes extrapolation
@@ -148,6 +149,8 @@
 #' @export
 negative_control_ladder <- function(lock, design, simulation) {
   verify_lock(lock)
+  .check_nc_not_covariate(names(lock$plan$negative_controls), lock$covariates,
+                          "Re-lock without it in `covariates`.")
   if (!"expected_events" %in% names(simulation))
     stop("This simulation was made by an earlier cleanTMLE; rerun simulate_design().",
          call. = FALSE)

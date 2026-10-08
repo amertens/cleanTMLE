@@ -13,7 +13,10 @@ contain the plan's outcome columns.}
 
 \item{treatment}{Name of the 0/1 treatment column.}
 
-\item{covariates}{Names of the adjustment covariates (complete, no NA).}
+\item{covariates}{Names of the adjustment covariates (complete, no NA). A
+negative-control column must not be one of them; a control derived from a
+covariate under another name is not detected, so list its source in
+\code{nc_exclude} of \code{\link[=analysis_plan]{analysis_plan()}}.}
 
 \item{plan}{A \code{\link[=analysis_plan]{analysis_plan()}}.}
 

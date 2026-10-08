@@ -192,8 +192,8 @@ analysis_plan <- function(outcome, estimands,
               any(!nzchar(names(nc_exclude))) || anyDuplicated(names(nc_exclude)),
             "`nc_exclude` must be a named list: control column = covariates to leave out.")
     unknown <- setdiff(names(nc_exclude), names(negative_controls))
-    stop_if(length(unknown) > 0L, "`nc_exclude` names `", paste(unknown, collapse = "`, `"),
-            "`, which is not a declared negative control.")
+    stop_if(length(unknown) > 0L, "`nc_exclude` has entries for columns that are not ",
+            "declared negative controls: `", paste(unknown, collapse = "`, `"), "`.")
     stop_if(!all(vapply(nc_exclude, function(v) is.character(v) && length(v) > 0L &&
                           !anyNA(v) && all(nzchar(v)), logical(1))),
             "Each `nc_exclude` entry must be a character vector of covariate names.")

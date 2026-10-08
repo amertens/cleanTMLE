@@ -136,3 +136,11 @@ test_that("nc_exclude is part of the lock hash", {
   t1 <- a; t1$plan$nc_exclude$nc_visit <- "w2"
   expect_error(verify_lock(t1), "hash mismatch")
 })
+
+test_that("nc_exclude does not excuse a control that is also a covariate", {
+  d <- make_design()
+  p <- fast_plan(negative_controls = c(nc_visit = "care use"),
+                 nc_exclude = list(nc_visit = "nc_visit"))
+  expect_error(create_analysis_lock(d$design, "A", c("w1", "w2", "nc_visit"), p),
+               "also an adjustment covariate.*Remove it from `covariates` or from `negative_controls`")
+})

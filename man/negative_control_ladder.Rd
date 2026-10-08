@@ -43,8 +43,9 @@ its own source, so its estimate would be near zero by construction and the
 ladder would read GO. The \code{excluded_covariates} column of \code{table} lists, for
 each control, the covariates left out of its adjustment set (empty when
 none). Controls with the same excluded set share their propensity-score
-fit. A control derived from a covariate under a different name is caught
-only if the analyst lists it in \code{nc_exclude}.
+fit. A control derived from a covariate under a different name is not
+detected; list its source covariate in \code{nc_exclude}. A control that is
+itself a covariate is an error here, as it is in \code{\link[=create_analysis_lock]{create_analysis_lock()}}.
 
 A control is read on the estimand the analysis reports: a
 control read on an estimand the design cannot deliver mixes extrapolation

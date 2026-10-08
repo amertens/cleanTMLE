@@ -525,7 +525,10 @@ test_that("negative_control_ladder refuses a simulation made by an earlier clean
 nc_excl_fx <- function(exclude) {
   d <- make_design(400, seed = 3)
   d$design$site <- factor(withr::with_seed(9, sample(c("A", "B", "C"), 400, TRUE)))
-  cv <- c("w1", "w2", "w3", "site")
+  # site2 shares the prefix "site", so a rewrite that drops columns by prefix
+  # would remove it with the factor.
+  d$design$site2 <- withr::with_seed(10, stats::rnorm(400))
+  cv <- c("w1", "w2", "w3", "site", "site2")
   p <- fast_plan(negative_controls = c(nc_visit = "care use", nc_bad = "other"),
                  nc_criteria = list(null_band = c(-0.1, 0.1), rule = "point"),
                  nc_exclude = exclude, reps = 6L)
@@ -537,7 +540,8 @@ nc_excl_fx <- function(exclude) {
 mock_record <- function(env, d) {
   function(X, A, Y, estimand, candidate, plan, folds, seed, g_fit = NULL) {
     ctl <- if (identical(as.numeric(Y), as.numeric(d$design$nc_visit))) "nc_visit" else "nc_bad"
-    env$seen[[length(env$seen) + 1L]] <- list(control = ctl, cols = colnames(X), estimand = estimand)
+    env$seen[[length(env$seen) + 1L]] <- list(control = ctl, cols = colnames(X),
+                                              estimand = estimand, n = length(Y))
     data.frame(estimand = estimand, truncation = candidate$truncation, estimate = 0,
                se = 0.01, ci_lower = -0.02, ci_upper = 0.02, n_population = length(Y),
                failed = FALSE, message = NA_character_, stringsAsFactors = FALSE)
@@ -551,8 +555,11 @@ test_that("each control is fitted without the covariates it excludes, and only t
   nc <- negative_control_ladder(fx$lock, fx$design, fx$sim)
   cols <- function(ctl) unique(lapply(Filter(function(s) s$control == ctl, env$seen),
                                       `[[`, "cols"))
-  expect_identical(cols("nc_visit"), list(c("w2", "w3")))
-  expect_identical(cols("nc_bad"), list(c("w1", "w2", "w3", "siteB", "siteC")))
+  expect_identical(cols("nc_visit"), list(c("w2", "w3", "site2")))
+  expect_identical(cols("nc_bad"), list(c("w1", "w2", "w3", "siteB", "siteC", "site2")))
+  # Every call came from the full-cohort rung, so the control labels are right.
+  expect_true(all(vapply(env$seen, `[[`, 1L, "n") == nrow(fx$lock$data)))
+  expect_setequal(vapply(env$seen, `[[`, "", "control"), c("nc_visit", "nc_bad"))
   tb <- nc$table
   expect_identical(unique(tb$excluded_covariates[tb$negative_control == "nc_visit"]), "w1, site")
   expect_identical(unique(tb$excluded_covariates[tb$negative_control == "nc_bad"]), "")
@@ -566,8 +573,8 @@ test_that("excluding a factor covariate removes all of its columns", {
   negative_control_ladder(fx$lock, fx$design, fx$sim)
   bad <- unique(lapply(Filter(function(s) s$control == "nc_bad", env$seen), `[[`, "cols"))
   vis <- unique(lapply(Filter(function(s) s$control == "nc_visit", env$seen), `[[`, "cols"))
-  expect_identical(bad, list(c("w1", "w2", "w3")))
-  expect_identical(vis, list(c("w1", "w2", "w3", "siteB", "siteC")))
+  expect_identical(bad, list(c("w1", "w2", "w3", "site2")))
+  expect_identical(vis, list(c("w1", "w2", "w3", "siteB", "siteC", "site2")))
 })
 
 test_that("without nc_exclude every control uses every covariate and the column is empty", {
@@ -576,7 +583,7 @@ test_that("without nc_exclude every control uses every covariate and the column 
   local_mocked_bindings(fit_candidate = mock_record(env, fx$d))
   nc <- negative_control_ladder(fx$lock, fx$design, fx$sim)
   expect_identical(unique(lapply(env$seen, `[[`, "cols")),
-                   list(c("w1", "w2", "w3", "siteB", "siteC")))
+                   list(c("w1", "w2", "w3", "siteB", "siteC", "site2")))
   expect_identical(unique(nc$table$excluded_covariates), "")
 })
 
@@ -603,4 +610,14 @@ test_that("a ladder with exclusions and the real fitter returns finite rows", {
   nc <- negative_control_ladder(fx$lock, fx$design, fx$sim)
   expect_true(all(nc$table$status == "estimated"))
   expect_true(all(is.finite(nc$table$estimate)))
+})
+
+test_that("the ladder refuses a control that is also a covariate, even under a valid hash", {
+  fx <- nc_fx()
+  lk <- fx$lock
+  lk$covariates <- c(lk$covariates, "nc_visit")
+  lk$lock_hash <- .lock_hash(lk)
+  expect_true(verify_lock(lk))
+  expect_error(negative_control_ladder(lk, fx$design, fx$sim),
+               "Negative control `nc_visit` is also an adjustment covariate")
 })

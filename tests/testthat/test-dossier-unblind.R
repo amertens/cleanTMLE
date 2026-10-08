@@ -391,3 +391,11 @@ test_that("the dossier records the covariates left out of a negative control", {
   expect_no_match(paste(readLines(g, warn = FALSE), collapse = ""),
                   "near zero by construction")
 })
+
+test_that("design_report refuses a control that is also a covariate, even under a valid hash", {
+  lk <- fx$lock
+  lk$covariates <- c(lk$covariates, "nc_visit")
+  lk$lock_hash <- .lock_hash(lk)
+  expect_error(design_report(lk, fx$design, fx$sim, fx$nc),
+               "Negative control `nc_visit` is also an adjustment covariate")
+})
