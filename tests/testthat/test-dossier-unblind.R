@@ -110,7 +110,7 @@ test_that("with no feasible estimand the nc verdict is NA and the plan is blocke
   sim <- fx$sim
   sim$verdict$status <- "infeasible"
   sim$stamp <- .stamp(fx$lock, sim)
-  d <- design_report(fx$lock, fx$design, sim, fx$nc)
+  d <- design_report(fx$lock, fx$design, sim, negative_control_ladder(fx$lock, fx$design, sim))
   expect_true(is.na(d$decision$primary))
   expect_true(is.na(d$decision$nc_verdict))
   expect_true(is.na(d$decision$nc_estimand))

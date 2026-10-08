@@ -10,7 +10,7 @@ cr_vignette <- local({
       design <- assess_design(lock)
       sim <- suppressMessages(simulate_design(lock, design))
       cache <<- list(lock = lock, design = design, sim = sim,
-                     nc = negative_control_ladder(lock, design))
+                     nc = negative_control_ladder(lock, design, sim))
     }
     cache
   }

@@ -4,26 +4,42 @@
 \alias{negative_control_ladder}
 \title{Negative controls along the restriction ladder}
 \usage{
-negative_control_ladder(lock, design)
+negative_control_ladder(lock, design, simulation)
 }
 \arguments{
 \item{lock}{A \code{cr_lock}.}
 
 \item{design}{The \code{\link[=assess_design]{assess_design()}} result for \code{lock}.}
+
+\item{simulation}{The \code{\link[=simulate_design]{simulate_design()}} result for \code{lock} and \code{design}.
+It supplies the candidate each estimand's controls use.}
 }
 \value{
-A \code{cr_nc_ladder}.
+A \code{cr_nc_ladder}. It stores the hash of \code{simulation}
+(\code{simulation_hash}), which \code{\link[=design_report]{design_report()}} checks.
 }
 \description{
 Estimates each declared negative-control outcome, for every declared
 estimand, on the full cohort and on each declared restriction, with the
-main-terms GLM candidate (the smallest declared truncation) and the same
-fitter as the analysis, and grades the result against the plan's
-\code{nc_criteria}. A control is read on the estimand the analysis reports: a
-control read on an estimand the design cannot deliver mixes extrapolation
-error with confounding, so it cannot isolate confounding.
+same fitter as the analysis, and grades the result against the plan's
+\code{nc_criteria}.
 }
 \details{
+The controls test the adjustment the analysis will use, so each estimand's
+controls are fitted with the candidate (outcome-model library and
+truncation) that \code{\link[=simulate_design]{simulate_design()}} selected for that estimand. When the
+simulation finds an estimand infeasible, no candidate was selected, and its
+controls use the candidate with the smallest worst-case RMSE across the
+simulated outcome models, the same summary the selection uses; the table
+marks those rows \code{candidate_feasible = FALSE}. If no candidate has a
+usable RMSE, the first declared candidate is used and \code{candidate_basis}
+says so. The \code{candidate}, \code{candidate_feasible} and \code{candidate_basis}
+columns of \code{table} record the choice for every row.
+
+A control is read on the estimand the analysis reports: a
+control read on an estimand the design cannot deliver mixes extrapolation
+error with confounding, so it cannot isolate confounding.
+
 Each estimated control gets a \code{reading} from the plan's rule. Under the
 default \code{"interval"} rule it reads "inside" when its 95\% interval lies
 entirely inside \code{null_band}, "outside" when the interval lies entirely

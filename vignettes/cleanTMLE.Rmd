@@ -240,12 +240,18 @@ If adjustment removes confounding, its estimated effect should be near
 zero.
 
 ```{r nc}
-nc <- negative_control_ladder(lock, design)
+nc <- negative_control_ladder(lock, design, sim)
 nc$by_rung
 ```
 
 The control is estimated for every estimand, first on the full cohort and
-then under each restriction; the `rung` column says which. Here the
+then under each restriction; the `rung` column says which. Each estimand's
+control is fitted with the candidate the simulation selected for that
+estimand, so the check tests the adjustment the analysis will use (the
+`candidate` column of `nc$table` names it). For an estimand the simulation found
+infeasible, which has no selected candidate, the control uses the candidate
+with the smallest worst-case error in the simulation, and
+`candidate_feasible` is `FALSE`. Here the
 restriction excludes patients transferred in from another hospital, who may
 differ in ways the covariates do not capture. For each estimand the verdict
 is GO when every control's 95% interval lies inside the null band, STOP
