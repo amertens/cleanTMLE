@@ -46,7 +46,8 @@
   `candidate_feasible = FALSE`. The table gains `candidate`,
   `candidate_feasible` and `candidate_basis` columns. `design_report()` checks
   that the controls were run on the same `simulation`, and stops with a
-  message to rerun `negative_control_ladder()` for ladders made without it.
+  message to rerun `negative_control_ladder()` for ladders made before this
+  change.
 * The default negative-control rule is now `"interval"`. A control reads
   inside the null band, outside it, or inconclusive, from its 95% interval.
   The verdict is GO when every control's interval lies inside the band, STOP

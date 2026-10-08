@@ -138,6 +138,9 @@
 #' @export
 negative_control_ladder <- function(lock, design, simulation) {
   verify_lock(lock)
+  if (!"expected_events" %in% names(simulation))
+    stop("This simulation was made by an earlier cleanTMLE; rerun simulate_design().",
+         call. = FALSE)
   .check_stamp(lock, design, "design")
   .check_stamp(lock, simulation, "simulation")
   if (!identical(simulation$design_hash, design$stamp$hash))
@@ -156,6 +159,8 @@ negative_control_ladder <- function(lock, design, simulation) {
     }))
     cands <- .nc_candidates(simulation, p)
     # Estimands that share a candidate share one fit of the outcome model.
+    # Candidates that differ only in truncation refit it once each: correct,
+    # at the cost of extra fitting time.
     groups <- split(p$estimands, factor(vapply(cands, function(x) x$id, ""),
                                         levels = unique(vapply(cands, function(x) x$id, ""))))
     rows <- list()
