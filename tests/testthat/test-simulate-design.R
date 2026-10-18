@@ -265,8 +265,8 @@ test_that("unresolved cells at or above the primary get extra repetitions up to 
 #   wide  always covered, larger errors (passes; not selected)
 run_mocked <- function(beh, reps, max_reps) {
   libs <- names(beh[[1]])
-  # analysis_plan() directly: fast_plan() would merge in its default glm library.
-  p <- analysis_plan(outcome = "y", estimands = names(beh), ps_library = "glm",
+  # plan_fx() rather than fast_plan(): fast_plan() would merge in its default glm library.
+  p <- plan_fx(outcome = "y", estimands = names(beh), ps_library = "glm",
                      candidates = list(library = stats::setNames(
                        as.list(rep("glm", length(libs))), libs), truncation = 0.05),
                      tolerance = list(bias = 0.05, coverage = 0.9),

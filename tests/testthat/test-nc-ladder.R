@@ -426,7 +426,7 @@ test_that("fit_candidate receives the whole selected candidate, including a non-
 })
 
 test_that(".nc_candidates takes the learners from the selected or best library", {
-  p <- analysis_plan(outcome = "y", estimands = c("ATE", "ATT", "ATO"),
+  p <- plan_fx(outcome = "y", estimands = c("ATE", "ATT", "ATO"),
                      ps_library = "glm",
                      candidates = list(library = list(glm = "glm", pen = c("glmnet", "glm")),
                                        truncation = c(0.01, 0.05)),

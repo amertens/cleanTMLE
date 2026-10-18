@@ -67,9 +67,9 @@ included. With the default two forms, the plan below has 2 x 2 x 3 x 2
 surfaces, and `analysis_plan()` says so:
 
 ```{r grid}
-p <- analysis_plan("y", "ATE", surfaces = list(log_or = c(0, 0.5),
-                                               heterogeneity = c(0.5, 1),
-                                               prognostic = c(0.5, 1)))
+p <- analysis_plan("y", "ATE", time_zero = "treatment assignment",
+                    surfaces = list(log_or = c(0, 0.5), heterogeneity = c(0.5, 1),
+                                    prognostic = c(0.5, 1)))
 p$surfaces[c("log_or", "heterogeneity", "prognostic", "forms")]
 ```
 
@@ -137,7 +137,7 @@ control to the covariates to leave out when that control is fitted:
 
 ```r
 analysis_plan(
-  outcome = "death_30d", estimands = "ATE",
+  outcome = "death_30d", estimands = "ATE", time_zero = "treatment assignment",
   negative_controls = c(wood_or_charcoal = "household environment"),
   nc_exclude = list(wood_or_charcoal = "cooking_fuel"))
 ```

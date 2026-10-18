@@ -15,6 +15,70 @@
   x
 }
 
+# TRUE for one non-missing string with something other than white space in it.
+.has_text <- function(x) is.character(x) && length(x) == 1L && !is.na(x) && nzchar(trimws(x))
+
+.time_zero_fields <- c("event", "measured_as", "follow_up_from", "response")
+
+# A single string is the event; a list may also give measured_as,
+# follow_up_from and response. Follow-up from an event other than time zero
+# needs a response.
+.norm_time_zero <- function(x) {
+  if (is.null(x))
+    stop("`time_zero` is required: the event at which treatment is assigned, ",
+         "eligibility is met and follow-up starts (a string, or list(event = , ",
+         "measured_as = , follow_up_from = , response = )).", call. = FALSE)
+  if (is.character(x) && is.null(names(x)) && length(x) == 1L) x <- list(event = x)
+  if (!is.list(x) || is.null(names(x)) || any(!names(x) %in% .time_zero_fields))
+    stop("`time_zero` must be a string, or a list with fields from: ",
+         paste(.time_zero_fields, collapse = ", "), ". Give the event at which ",
+         "treatment is assigned as `event`.", call. = FALSE)
+  if (!.has_text(x$event))
+    stop("`time_zero$event` must be a non-blank string: the event at which treatment ",
+         "is assigned, eligibility is met and follow-up starts.", call. = FALSE)
+  for (f in c("measured_as", "follow_up_from", "response"))
+    if (!is.null(x[[f]]) && !is.character(x[[f]]))
+      stop("`time_zero$", f, "` must be a string or NULL.", call. = FALSE)
+  event <- x$event
+  from <- if (.has_text(x$follow_up_from)) x$follow_up_from else event
+  response <- if (.has_text(x$response)) x$response else NULL
+  if (!identical(trimws(from), trimws(event)) && is.null(response))
+    stop("Follow-up starts at `", from, "`, not at time zero (`", event, "`). ",
+         "Give `time_zero$response`: why that is acceptable here.", call. = FALSE)
+  list(event = event,
+       measured_as = if (.has_text(x$measured_as)) x$measured_as else NULL,
+       follow_up_from = from, response = response)
+}
+
+.eligibility_timing <- c("before", "at", "after")
+
+# Each criterion says when it was assessed relative to time zero. One assessed
+# after time zero selects the cohort on something treatment can change, so it
+# needs a response.
+.norm_eligibility <- function(x) {
+  if (!length(x)) return(NULL)
+  if (!is.list(x) || is.null(names(x)) || any(!nzchar(names(x))) || anyDuplicated(names(x)))
+    stop("`eligibility` must be a named list: criterion = list(description = , ",
+         "assessed = , response = ).", call. = FALSE)
+  out <- lapply(names(x), function(nm) {
+    e <- x[[nm]]
+    if (!is.list(e) || !.has_text(e$description))
+      stop("Eligibility criterion `", nm, "` needs a `description`: a non-blank string ",
+           "saying what the criterion is.", call. = FALSE)
+    if (!.has_text(e$assessed) || !e$assessed %in% .eligibility_timing)
+      stop("Eligibility criterion `", nm, "` needs `assessed`, which must be one of ",
+           paste(.eligibility_timing, collapse = ", "), " (relative to time zero).",
+           call. = FALSE)
+    response <- if (.has_text(e$response)) e$response else NULL
+    if (identical(e$assessed, "after") && is.null(response))
+      stop("Eligibility criterion `", nm, "` is assessed after time zero, so the ",
+           "cohort is selected on something treatment can change. Give its `response`: ",
+           "how that selection is handled.", call. = FALSE)
+    list(description = e$description, assessed = e$assessed, response = response)
+  })
+  stats::setNames(out, names(x))
+}
+
 .n_surfaces <- function(s) {
   forms <- if (is.null(s$q0)) length(s$forms) else 1L
   as.integer(forms * length(s$prognostic %||% 1) * length(s$log_or) *
@@ -30,6 +94,19 @@
 #'   for a time-to-event outcome (event 0 = censored, 1 = the event).
 #' @param estimands Ordered ladder, from `"ATE"`, `"trimmed_ATE"`, `"ATT"`,
 #'   `"ATO"`. The first feasible one becomes the primary.
+#' @param time_zero Required. The event at which treatment is assigned,
+#'   eligibility is met and follow-up starts, as in a target trial. A string,
+#'   or `list(event = , measured_as = , follow_up_from = , response = )`.
+#'   `measured_as` names the proxy the data index time zero on, if it is not
+#'   the event itself. `follow_up_from` is the event from which the outcome's
+#'   follow-up is counted (default: `event`); when it differs, `response` must
+#'   say why that is acceptable.
+#' @param eligibility Optional named list of the criteria that formed the
+#'   cohort, each `list(description = , assessed = , response = )`, where
+#'   `assessed` is `"before"`, `"at"` or `"after"` time zero. A criterion
+#'   assessed after time zero selects the cohort on something treatment can
+#'   change, so it needs a `response`. The criteria are recorded, not
+#'   evaluated: the cohort is built before the lock.
 #' @param ps_library Learners for the propensity score, used by every
 #'   candidate: any of `"glm"`, `"glmnet"`, `"earth"`, `"xgboost"`,
 #'   `"nnet"`, or `"default"` (the last four).
@@ -86,7 +163,7 @@
 #' @param seed Seed for every random step.
 #' @return A `cr_plan`.
 #' @export
-analysis_plan <- function(outcome, estimands,
+analysis_plan <- function(outcome, estimands, time_zero, eligibility = NULL,
                           ps_library = "default",
                           candidates = list(library = list(glm = "glm", sl = "default"),
                                             truncation = c(0.01, 0.05)),
@@ -134,6 +211,9 @@ analysis_plan <- function(outcome, estimands,
               !(0 < trim_band[1] && trim_band[1] < trim_band[2] && trim_band[2] < 1),
             "`trim_band` must be c(lower, upper) with 0 < lower < upper < 1 ",
             "when trimmed_ATE is declared.")
+
+  time_zero <- .norm_time_zero(if (missing(time_zero)) NULL else time_zero)
+  eligibility <- .norm_eligibility(eligibility)
 
   ps_library <- .expand_library(ps_library, "ps_library")
   lib <- candidates$library
@@ -221,7 +301,8 @@ analysis_plan <- function(outcome, estimands,
 
   structure(list(
     outcome = outcome, outcome_type = outcome_type, target_time = target_time,
-    hazards = hazards, estimands = estimands, ps_library = ps_library,
+    hazards = hazards, estimands = estimands,
+    time_zero = time_zero, eligibility = eligibility, ps_library = ps_library,
     candidates = candidates, tolerance = tolerance, surfaces = surfaces,
     trim_band = trim_band, negative_controls = negative_controls, nc_exclude = nc_exclude,
     nc_criteria = nc_criteria, restrictions = restrictions, select = select,

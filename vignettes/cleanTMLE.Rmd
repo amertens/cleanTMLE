@@ -84,6 +84,7 @@ added after the next step.
 plan <- analysis_plan(
   outcome = "death_30d",
   estimands = c("ATE", "trimmed_ATE", "ATT", "ATO"),
+  time_zero = "treatment assignment",
   trim_band = c(0.05, 0.95),
   ps_library = "glm",
   candidates = list(library = list(glm = "glm"), truncation = 0.01),

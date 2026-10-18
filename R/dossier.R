@@ -10,6 +10,12 @@
   if (!is.null(p$hazards))
     p$hazards <- lapply(p$hazards, function(h) if (is.list(h)) vapply(h, .deparse1, "") else .deparse1(h))
   if (!is.null(p$negative_controls)) p$negative_controls <- as.list(p$negative_controls)
+  p$time_zero <- Filter(Negate(is.null), p$time_zero)
+  if (!is.null(p$eligibility))
+    p$eligibility <- unname(as.list(vapply(names(p$eligibility), function(nm) {
+      e <- p$eligibility[[nm]]
+      sprintf("%s: %s (%s)", nm, e$description, e$assessed)
+    }, character(1))))
   p
 }
 
@@ -25,7 +31,8 @@
         collapse = ", ")
 }
 
-.plan_rows <- c(estimands = "Estimand ladder (in order)", tolerance = "Tolerances",
+.plan_rows <- c(estimands = "Estimand ladder (in order)", time_zero = "Time zero",
+                eligibility = "Eligibility (when assessed)", tolerance = "Tolerances",
                 trim_band = "Trim band", ps_library = "Propensity-score library",
                 candidates = "Candidates (libraries, truncations)",
                 surfaces = "Outcome surfaces", K = "Cross-fitting folds (K)",

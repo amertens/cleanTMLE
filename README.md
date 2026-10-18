@@ -11,6 +11,7 @@ library(cleanTMLE)
 plan <- analysis_plan(
   outcome = "death_30d",
   estimands = c("ATE", "trimmed_ATE", "ATT", "ATO"),
+  time_zero = "treatment assignment",
   trim_band = c(0.05, 0.95),
   negative_controls = c(health_seeking = "health care use"),
   restrictions = list(no_transfer = ~ transfer == 0))
