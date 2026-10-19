@@ -127,6 +127,25 @@ verdict for the primary estimand on the full cohort can block unblinding.
 The rules `"point"` (the point estimate inside the band) and `"ci"` (the
 interval inside the band, with anything else a failure) are stricter.
 
+A control must not be one of the adjustment covariates, and
+`create_analysis_lock()` stops if it is, because a control regressed on
+itself has an estimate near zero by construction and would read GO. The same
+holds for a control derived from a covariate under another name, such as
+"cooking with wood or charcoal" derived from "cooking fuel". The lock
+cannot see that link, so name the source in `nc_exclude`, a list from each
+control to the covariates to leave out when that control is fitted:
+
+```r
+analysis_plan(
+  outcome = "death_30d", estimands = "ATE",
+  negative_controls = c(wood_or_charcoal = "household environment"),
+  nc_exclude = list(wood_or_charcoal = "cooking_fuel"))
+```
+
+The control is then adjusted for every other covariate. The dossier lists
+the covariates left out of each control. The plan in this vignette has no
+derived control, so it needs no exclusion.
+
 Choose the null band as you would the bias tolerance: the largest residual
 bias you would accept. A null band narrower than the precision your cohort
 allows will give FLAG; that is information for the review team, not a

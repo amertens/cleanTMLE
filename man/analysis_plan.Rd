@@ -16,6 +16,7 @@ analysis_plan(
   target_time = NULL,
   hazards = NULL,
   negative_controls = NULL,
+  nc_exclude = NULL,
   nc_criteria = NULL,
   restrictions = NULL,
   select = NULL,
@@ -61,6 +62,19 @@ surface.}
 hazard models passed to \code{concrete} as its \code{Model} entries.}
 
 \item{negative_controls}{Named character vector, column = domain.}
+
+\item{nc_exclude}{Optional named list: a negative-control column, then the
+adjustment covariates to leave out when that control is fitted. A control
+that is a covariate, or is derived from one (for example "cooking with
+wood or charcoal" derived from the covariate "cooking fuel"), would be
+regressed on its own source, so its estimate would be near zero by
+construction and the ladder would read GO whatever the confounding.
+\code{\link[=create_analysis_lock]{create_analysis_lock()}} stops when a control is itself a covariate, but
+that check catches only exact column names: the analyst must list a
+control derived from a covariate here. Each name must be a declared
+control, and \code{\link[=create_analysis_lock]{create_analysis_lock()}} checks that each value is a
+covariate and that not every covariate is left out. The list is part of
+the plan, so it is locked. Controls without an entry use every covariate.}
 
 \item{nc_criteria}{\code{list(null_band = , rule = , min_per_domain = )}, where
 \code{rule} is one of \code{"interval"} (the default), \code{"point"} or \code{"ci"}. Under

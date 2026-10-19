@@ -172,6 +172,21 @@ if (!is.null(d$nc$table)) {
 ```
 
 ```{r, results = "asis"}
+if (!is.null(d$nc$table) && "excluded_covariates" %in% names(d$nc$table)) {
+  ex <- unique(d$nc$table[d$nc$table$excluded_covariates != "",
+                          c("negative_control", "excluded_covariates")])
+  if (nrow(ex)) {
+    cat("A negative control derived from an adjustment covariate would be adjusted ",
+        "for its own source, so its estimate would be near zero by construction and could not ",
+        "reveal confounding. The covariates left out of each such control's adjustment set:\n\n",
+        sep = "")
+    print(kt(ex))
+    cat("\n")
+  }
+}
+```
+
+```{r, results = "asis"}
 pe <- d$decision$nc_estimand
 if (!is.null(d$nc) && !is.na(pe)) {
   tb <- d$nc$table

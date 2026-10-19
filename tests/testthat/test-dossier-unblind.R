@@ -368,3 +368,34 @@ test_that("every recorded time is UTC with a trailing Z", {
   ub <- unblind(fx$lock, fx$dossier, fx$d$outcomes, approved_by = "Review team")
   expect_match(ub$approval$approved_at, utc)
 })
+
+test_that("the dossier records the covariates left out of a negative control", {
+  fx2 <- fixture_pipeline(nc_exclude = list(nc_visit = "w1"))
+  expect_identical(unique(fx2$dossier$nc$table$excluded_covariates), "w1")
+  row_label <- "Covariates left out of each negative control's adjustment"
+  pt <- fx2$dossier$plan_table
+  expect_identical(pt$value[pt$setting == row_label], "nc_visit: w1")
+  none <- fixture_pipeline()$dossier$plan_table
+  expect_identical(none$value[none$setting == row_label], "none")
+  skip_on_cran()
+  skip_if_not_installed("quarto")
+  skip_if(is.null(quarto::quarto_path()))
+  f <- withr::local_tempfile(fileext = ".html")
+  design_report(fx2$lock, fx2$design, fx2$sim, fx2$nc, file = f)
+  html <- paste(readLines(f, warn = FALSE), collapse = "")
+  expect_match(html, "near zero by construction", fixed = TRUE)
+  expect_match(html, "excluded_covariates</th>")
+  # A plan with no exclusions does not carry the sentence.
+  g <- withr::local_tempfile(fileext = ".html")
+  design_report(fx$lock, fx$design, fx$sim, fx$nc, file = g)
+  expect_no_match(paste(readLines(g, warn = FALSE), collapse = ""),
+                  "near zero by construction")
+})
+
+test_that("design_report refuses a control that is also a covariate, even under a valid hash", {
+  lk <- fx$lock
+  lk$covariates <- c(lk$covariates, "nc_visit")
+  lk$lock_hash <- .lock_hash(lk)
+  expect_error(design_report(lk, fx$design, fx$sim, fx$nc),
+               "Negative control `nc_visit` is also an adjustment covariate")
+})

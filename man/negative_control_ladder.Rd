@@ -36,6 +36,17 @@ usable RMSE, the first declared candidate is used and \code{candidate_basis}
 says so. The \code{candidate}, \code{candidate_feasible} and \code{candidate_basis}
 columns of \code{table} record the choice for every row.
 
+Each control is adjusted for the plan's covariates except those the plan
+lists for it in \code{nc_exclude} (see \code{\link[=analysis_plan]{analysis_plan()}}). A control that is
+itself a covariate, or is derived from one, would otherwise be regressed on
+its own source, so its estimate would be near zero by construction and the
+ladder would read GO. The \code{excluded_covariates} column of \code{table} lists, for
+each control, the covariates left out of its adjustment set (empty when
+none). Controls with the same excluded set share their propensity-score
+fit. A control derived from a covariate under a different name is not
+detected; list its source covariate in \code{nc_exclude}. A control that is
+itself a covariate is an error here, as it is in \code{\link[=create_analysis_lock]{create_analysis_lock()}}.
+
 A control is read on the estimand the analysis reports: a
 control read on an estimand the design cannot deliver mixes extrapolation
 error with confounding, so it cannot isolate confounding.

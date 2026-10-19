@@ -6,6 +6,10 @@ print.cr_plan <- function(x, ...) {
   cat("  Ladder:      ", paste(x$estimands, collapse = " > "), "\n")
   cat("  Candidates:  ", paste(vapply(.candidates(x), `[[`, "", "id"), collapse = ", "), "\n")
   cat("  Tolerance:    bias ", x$tolerance$bias, ", coverage ", x$tolerance$coverage, "\n", sep = "")
+  if (length(x$nc_exclude))
+    cat("  NC excluded:  ",
+        paste0(names(x$nc_exclude), ": ", vapply(x$nc_exclude, paste, "", collapse = ", "),
+               collapse = "; "), "\n", sep = "")
   cat("  K = ", x$K, ", V = ", x$V, ", reps = ", x$reps, " (up to ", x$max_reps,
       " for unresolved cells), seed = ", x$seed, "\n", sep = "")
   invisible(x)

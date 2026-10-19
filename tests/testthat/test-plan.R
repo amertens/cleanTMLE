@@ -85,3 +85,35 @@ test_that("the negative-control rule accepts point, ci and interval, and default
   expect_error(analysis_plan("y", "ATE", negative_controls = nc,
                              nc_criteria = list(rule = "bayes")), "point.*ci.*interval")
 })
+
+test_that("nc_exclude is validated against the declared controls", {
+  nc <- c(nc_visit = "care use", nc_bad = "other")
+  p <- analysis_plan("y", "ATE", negative_controls = nc,
+                     nc_exclude = list(nc_visit = c("w1", "w1", "w2")))
+  expect_identical(p$nc_exclude, list(nc_visit = c("w1", "w2")))
+  expect_null(analysis_plan("y", "ATE", negative_controls = nc)$nc_exclude)
+  expect_null(analysis_plan("y", "ATE", negative_controls = nc, nc_exclude = list())$nc_exclude)
+  expect_error(analysis_plan("y", "ATE", negative_controls = nc,
+                             nc_exclude = list(nc_other = "w1")), "not declared negative controls: `nc_other`")
+  expect_error(analysis_plan("y", "ATE", negative_controls = nc,
+                             nc_exclude = list(a = "w1", b = "w1")), "`a`, `b`")
+  expect_error(analysis_plan("y", "ATE", nc_exclude = list(nc_visit = "w1")),
+               "not declared negative controls")
+  expect_error(analysis_plan("y", "ATE", negative_controls = nc, nc_exclude = "w1"),
+               "named list")
+  expect_error(analysis_plan("y", "ATE", negative_controls = nc,
+                             nc_exclude = list(nc_visit = character())), "character vector")
+  expect_error(analysis_plan("y", "ATE", negative_controls = nc,
+                             nc_exclude = list(nc_visit = 1)), "character vector")
+  expect_error(analysis_plan("y", "ATE", negative_controls = nc,
+                             nc_exclude = list(nc_visit = "w1", nc_visit = "w2")), "named list")
+})
+
+test_that("the plan print shows nc_exclude when it is declared", {
+  nc <- c(nc_visit = "care use")
+  shown <- capture.output(print(analysis_plan("y", "ATE", negative_controls = nc,
+                                              nc_exclude = list(nc_visit = "w1"))))
+  expect_true(any(grepl("^  NC excluded: +nc_visit: w1$", shown)))
+  expect_false(any(grepl("left out", capture.output(
+    print(analysis_plan("y", "ATE", negative_controls = nc))))))
+})

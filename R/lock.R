@@ -1,5 +1,17 @@
 .pkg_version <- function() as.character(utils::packageVersion("cleanTMLE"))
 
+# A negative control that is also an adjustment covariate is regressed on
+# itself, so its estimate is zero by construction. Checked by exact name when
+# the lock is made, and again by the ladder and the dossier, because a lock
+# saved before the check existed, or re-hashed by hand, still verifies.
+.check_nc_not_covariate <- function(controls, covariates, advice) {
+  same <- intersect(controls, covariates)
+  if (length(same))
+    stop("Negative control `", same[1], "` is also an adjustment covariate, so its ",
+         "estimate is zero by construction. ", advice, call. = FALSE)
+  invisible(TRUE)
+}
+
 .lock_hash <- function(lock) {
   .hash(list(plan = lock$plan, data = lock$data, id = lock$id,
              treatment = lock$treatment, covariates = lock$covariates,
@@ -12,7 +24,10 @@
 #'   any negative-control outcomes and restriction variables. It must not
 #'   contain the plan's outcome columns.
 #' @param treatment Name of the 0/1 treatment column.
-#' @param covariates Names of the adjustment covariates (complete, no NA).
+#' @param covariates Names of the adjustment covariates (complete, no NA). A
+#'   negative-control column must not be one of them; a control derived from a
+#'   covariate under another name is not detected, so list its source in
+#'   `nc_exclude` of [analysis_plan()].
 #' @param plan A [analysis_plan()].
 #' @param id Name of the unique row id, used later to join the outcomes.
 #' @return A `cr_lock`.
@@ -51,6 +66,20 @@ create_analysis_lock <- function(design_data, treatment, covariates, plan,
   if (length(bad_nc))
     stop("Negative-control column(s) must be coded 0/1: ",
          paste(bad_nc, collapse = ", "), ".", call. = FALSE)
+  # A control that is a covariate is regressed on itself, so its estimate is zero
+  # by construction and the ladder would read GO. The check is by exact name.
+  .check_nc_not_covariate(nc_cols, covariates, paste0(
+    "Remove it from `covariates` or from `negative_controls`. A control derived from a ",
+    "covariate under another name is not caught here; list that covariate in `nc_exclude`."))
+  for (nc in names(plan$nc_exclude)) {
+    ex <- plan$nc_exclude[[nc]]
+    if (length(setdiff(ex, covariates)))
+      stop("`nc_exclude` for `", nc, "` names `", setdiff(ex, covariates)[1],
+           "`, which is not an adjustment covariate.", call. = FALSE)
+    if (!length(setdiff(covariates, ex)))
+      stop("`nc_exclude` for `", nc, "` leaves out every covariate, so no adjustment ",
+           "set remains.", call. = FALSE)
+  }
   if (!is.null(plan$surfaces$q0) && length(plan$surfaces$q0) != nrow(design_data))
     stop("`surfaces$q0` must have one value per row of `design_data`.", call. = FALSE)
 

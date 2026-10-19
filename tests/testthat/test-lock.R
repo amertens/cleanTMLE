@@ -102,3 +102,45 @@ test_that("roles are validated and hashed, and the creation time is not", {
   l1$created <- "2000-01-01T00:00:00Z"
   expect_true(verify_lock(l1))
 })
+
+test_that("a negative control that is also a covariate is refused", {
+  d <- make_design()
+  p <- fast_plan(negative_controls = c(nc_visit = "care use"))
+  expect_error(create_analysis_lock(d$design, "A", c("w1", "w2", "nc_visit"), p),
+               "Negative control `nc_visit` is also an adjustment covariate.*nc_exclude")
+  expect_s3_class(create_analysis_lock(d$design, "A", c("w1", "w2"), p), "cr_lock")
+})
+
+test_that("nc_exclude values must be covariates and cannot remove every covariate", {
+  d <- make_design()
+  nc <- c(nc_visit = "care use")
+  mk <- function(ex, covs = c("w1", "w2", "w3"))
+    create_analysis_lock(d$design, "A", covs,
+                         fast_plan(negative_controls = nc, nc_exclude = list(nc_visit = ex)))
+  expect_error(mk("nope"), "`nope`.*not an adjustment covariate")
+  expect_error(mk(c("w1", "w2", "w3")), "every covariate")
+  expect_error(mk("w1", covs = "w1"), "every covariate")
+  expect_s3_class(mk(c("w1", "w2")), "cr_lock")
+})
+
+test_that("nc_exclude is part of the lock hash", {
+  d <- make_design()
+  mk <- function(...) create_analysis_lock(d$design, "A", c("w1", "w2", "w3"),
+                                           fast_plan(negative_controls = c(nc_visit = "care use"), ...))
+  base <- mk()
+  a <- mk(nc_exclude = list(nc_visit = "w1"))
+  b <- mk(nc_exclude = list(nc_visit = "w2"))
+  expect_false(identical(base$lock_hash, a$lock_hash))
+  expect_false(identical(a$lock_hash, b$lock_hash))
+  expect_identical(a$lock_hash, mk(nc_exclude = list(nc_visit = "w1"))$lock_hash)
+  t1 <- a; t1$plan$nc_exclude$nc_visit <- "w2"
+  expect_error(verify_lock(t1), "hash mismatch")
+})
+
+test_that("nc_exclude does not excuse a control that is also a covariate", {
+  d <- make_design()
+  p <- fast_plan(negative_controls = c(nc_visit = "care use"),
+                 nc_exclude = list(nc_visit = "nc_visit"))
+  expect_error(create_analysis_lock(d$design, "A", c("w1", "w2", "nc_visit"), p),
+               "also an adjustment covariate.*Remove it from `covariates` or from `negative_controls`")
+})
