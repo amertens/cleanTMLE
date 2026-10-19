@@ -171,13 +171,16 @@ design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
   d
 }
 
-# Free text with a line break would split a row of the rendered pipe table, so the
-# template replaces each run of line breaks in a character column with one space
-# before it prints the table. The stored (hashed) data are not changed.
+# A line break in free text would split a row of a pipe table, so the copy of
+# the dossier handed to Quarto has its table cells flattened, at any depth.
+# Only that copy changes; the dossier and its hash do not.
 .flatten_text <- function(x) {
-  if (!is.data.frame(x)) return(x)
-  for (j in seq_along(x))
-    if (is.character(x[[j]])) x[[j]] <- gsub("[\r\n]+", " ", x[[j]])
+  if (is.data.frame(x)) {
+    for (j in seq_along(x))
+      if (is.character(x[[j]])) x[[j]] <- gsub("[\r\n]+", " ", x[[j]])
+    return(x)
+  }
+  if (is.list(x)) x[] <- lapply(x, .flatten_text)
   x
 }
 
@@ -193,7 +196,7 @@ design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
                         work)))
     stop("Could not copy the dossier template.", call. = FALSE)
   rds <- normalizePath(file.path(work, "dossier.rds"), winslash = "/", mustWork = FALSE)
-  saveRDS(d, rds)
+  saveRDS(.flatten_text(d), rds)
   fmt <- if (grepl("\\.docx$", file, ignore.case = TRUE)) "docx" else "html"
   # Render from inside the work directory with a bare input name: given an
   # absolute input path, Quarto can hand its R process a relative path that
