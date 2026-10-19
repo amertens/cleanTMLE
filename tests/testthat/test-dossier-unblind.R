@@ -399,3 +399,76 @@ test_that("design_report refuses a control that is also a covariate, even under 
   expect_error(design_report(lk, fx$design, fx$sim, fx$nc),
                "Negative control `nc_visit` is also an adjustment covariate")
 })
+
+id_pipeline <- function() {
+  fixture_pipeline(
+    time_zero = list(event = "transport decision", measured_as = "time of injury",
+                     follow_up_from = "arrival", response = "r0"),
+    eligibility = list(arrived_alive = list(description = "Arrived alive",
+                                            assessed = "after", response = "r1")),
+    dictionary_edit = function(dict) {
+      dict$recorded[dict$column == "w1"] <- "after"
+      i <- dict$column == "w3"
+      dict$role[i] <- "stand_in"; dict$fixed[i] <- "after"
+      dict$reason[i] <- "r2"; dict$sensitivity[i] <- "s2"
+      extra <- data.frame(column = "nc_bad", variable = "nc_bad", source = "test fixture",
+                          follow_up = FALSE, recorded = "after", fixed = "after",
+                          role = "after_treatment", reason = "mediator of interest",
+                          sensitivity = "", stringsAsFactors = FALSE)
+      rbind(dict, extra)
+    })
+}
+
+test_that("the dossier carries the identification table", {
+  ip <- id_pipeline()
+  d <- ip$dossier
+  idt <- d$identification
+  expect_identical(names(idt), c("component", "item", "declared", "flag", "response"))
+  expect_true(all(vapply(idt, is.character, logical(1))))
+  expect_true(all(idt$flag %in% c("flag", "note", "")))
+  expect_identical(
+    unique(idt$component),
+    c("Time zero", "Start of follow-up", "Eligibility", "Treatment",
+      "Adjustment set: fixed before time zero", "Adjustment set: stand-in",
+      "Node after treatment", "Negative control"))
+  expect_identical(sum(idt$flag == "flag"), 3L)
+  tz <- idt[idt$component == "Time zero", ]
+  expect_identical(tz$declared, "transport decision (measured as time of injury)")
+  fu <- idt[idt$component == "Start of follow-up", ]
+  expect_identical(c(fu$flag, fu$response), c("flag", "r0"))
+  el <- idt[idt$component == "Eligibility", ]
+  expect_identical(c(el$flag, el$response), c("flag", "r1"))
+  si <- idt[idt$component == "Adjustment set: stand-in", ]
+  expect_identical(si$response, "r2; sensitivity: s2")
+  adj <- idt[idt$component == "Adjustment set: fixed before time zero", ]
+  expect_identical(adj$item, "2 variables")
+  expect_match(adj$declared, "w1", fixed = TRUE)
+  expect_identical(adj$flag, "note")
+  expect_identical(idt$flag[idt$component == "Node after treatment"], "note")
+  expect_identical(idt$flag[idt$component == "Treatment"], "")
+  expect_identical(d$dossier_hash, cleanTMLE:::.dossier_hash(d))
+  # The table is part of the hash: editing a response is detected.
+  ed <- d
+  ed$identification$response[1] <- "changed"
+  expect_error(unblind(ip$lock, ed, ip$d$outcomes, "Review team"), "modified")
+})
+
+test_that("a plan with no flags has an identification table without flags", {
+  idt <- fx$dossier$identification
+  expect_identical(sum(idt$flag == "flag"), 0L)
+  expect_identical(idt$declared[idt$component == "Time zero"], "treatment assignment")
+  expect_identical(idt$declared[idt$component == "Adjustment set: fixed before time zero"],
+                   "all recorded at or before time zero")
+  expect_false("Eligibility" %in% idt$component)
+})
+
+test_that("the rendered dossier shows the identification section", {
+  skip_on_cran()
+  skip_if_not_installed("quarto")
+  skip_if(is.null(quarto::quarto_path()))
+  ip <- id_pipeline()
+  f <- withr::local_tempfile(fileext = ".html")
+  design_report(ip$lock, ip$design, ip$sim, ip$nc, file = f)
+  expect_match(paste(readLines(f, warn = FALSE), collapse = " "),
+               "Identification: what the plan declares", fixed = TRUE)
+})

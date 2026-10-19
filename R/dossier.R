@@ -73,7 +73,11 @@
 #' for the primary estimand (`decision$nc_verdict`, read on the estimand
 #' `decision$nc_estimand`; `NA` when no estimand is feasible or no controls
 #' are declared), and
-#' fingerprints the result.
+#' fingerprints the result. The dossier also carries `identification`, a table
+#' of what the plan and the variable dictionary declare about time zero, the
+#' start of follow-up, eligibility and the timing of every locked column, with
+#' each flag's declared response. It lists what was declared; it does not grade
+#' identification.
 #'
 #' @param lock A `cr_lock`.
 #' @param design,simulation,nc Results of [assess_design()],
@@ -142,7 +146,8 @@ design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
                                      "unresolved-cell rule."), p$tolerance$ci_halfwidth))
   d <- list(
     lock_hash = lock$lock_hash, plan = (ps <- .plan_summary(p)),
-    plan_table = .plan_table(ps), lock_created = lock$created %||% NA_character_,
+    plan_table = .plan_table(ps), identification = .identification_table(lock),
+    lock_created = lock$created %||% NA_character_,
     outcome_type = p$outcome_type,
     design = design[c("overlap", "overlap_grade", "share_outside_band", "c_statistic", "band", "ess",
                       "balance", "edge", "populations", "trimmed_profile")],

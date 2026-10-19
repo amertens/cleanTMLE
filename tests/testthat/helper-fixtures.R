@@ -29,13 +29,16 @@ fast_plan <- function(...) {
 
 fixture_pipeline <- function(strength = 0.8, n = 400, nc = c(nc_visit = "care use"),
                              seed = 11L, tolerance = list(bias = 0.1, coverage = 0.5),
-                             max_reps = NULL, nc_rule = "point", nc_exclude = NULL) {
+                             max_reps = NULL, nc_rule = "point", nc_exclude = NULL,
+                             dictionary_edit = identity, ...) {
   d <- make_design(n, seed = 2, strength = strength)
   plan <- fast_plan(negative_controls = nc,
                     nc_criteria = if (is.null(nc)) NULL else list(null_band = c(-0.1, 0.1), rule = nc_rule),
                     tolerance = tolerance, reps = 10L, max_reps = max_reps, seed = seed,
-                    nc_exclude = nc_exclude)
-  lock <- lock_fx(d$design, "A", c("w1", "w2", "w3"), plan)
+                    nc_exclude = nc_exclude, ...)
+  lock <- lock_fx(d$design, "A", c("w1", "w2", "w3"), plan,
+                  dictionary = dictionary_edit(
+                    fx_dictionary(d$design, "A", c("w1", "w2", "w3"), plan)))
   design <- assess_design(lock)
   sim <- suppressMessages(simulate_design(lock, design))
   ncl <- negative_control_ladder(lock, design, sim)

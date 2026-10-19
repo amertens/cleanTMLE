@@ -53,6 +53,17 @@ Lock created: `r if (is.na(d$lock_created)) "not recorded (lock made before clea
 kt(d$plan_table)
 ```
 
+## Identification: what the plan declares
+
+A feasible verdict says an estimator can recover the estimand if identification
+holds; this table, the negative controls and any bias analysis speak to whether
+it does. Flags need the declared response shown; notes are listed for the
+reviewer to dispute.
+
+```{r}
+kt(d$identification)
+```
+
 ## Design
 
 Overlap grade: **`r d$design$overlap_grade`**; share outside the band:
