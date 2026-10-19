@@ -107,3 +107,25 @@ lock_fx <- function(design_data, treatment, covariates, plan, id = "id",
   create_analysis_lock(design_data, treatment, covariates, plan, id = id,
                        dictionary = dictionary)
 }
+
+# A pipeline whose plan raises three identification flags (follow-up start,
+# eligibility assessed after, stand-in covariate).
+id_pipeline <- function() {
+  fixture_pipeline(
+    time_zero = list(event = "transport decision", measured_as = "time of injury",
+                     follow_up_from = "arrival", response = "r0"),
+    eligibility = list(arrived_alive = list(description = "Arrived alive",
+                                            assessed = "after", response = "r1")),
+    dictionary_edit = function(dict) {
+      dict$recorded[dict$column == "w1"] <- "after"
+      dict$reason[dict$column == "w1"] <- "x"
+      i <- dict$column == "w3"
+      dict$role[i] <- "stand_in"; dict$fixed[i] <- "after"
+      dict$reason[i] <- "r2"; dict$sensitivity[i] <- "s2"
+      extra <- data.frame(column = "nc_bad", variable = "nc_bad", source = "test fixture",
+                          follow_up = FALSE, recorded = "after", fixed = "after",
+                          role = "after_treatment", reason = "mediator of interest",
+                          sensitivity = "", stringsAsFactors = FALSE)
+      rbind(dict, extra)
+    })
+}

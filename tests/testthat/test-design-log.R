@@ -167,3 +167,29 @@ test_that("the rule text says how the controls combine into a verdict, for each 
   expect_match(pt, "STOP when any lies outside it", fixed = TRUE)
   expect_match(pt, "FLAG when none is outside but fewer controls can be estimated", fixed = TRUE)
 })
+
+test_that("each identification flag is a Muntner row", {
+  ip <- id_pipeline()
+  d <- ip$dossier
+  log <- export_design_log(d, format = "muntner")
+  expect_identical(sum(log$stage == "Identification"), 3L)
+  k <- which(log$stage == "Lock")
+  expect_identical(which(log$stage == "Identification"), k + 1:3)
+  idr <- log[log$stage == "Identification", ]
+  expect_true(any(grepl("r1", idr$rationale, fixed = TRUE)))
+  fl <- d$identification[d$identification$flag == "flag", ]
+  expect_identical(idr$issue, paste0(fl$component, ": ", fl$item))
+  expect_identical(idr$decision, fl$declared)
+  expect_identical(idr$rationale, fl$response)
+  expect_true(all(idr$date == d$lock_created))
+  expect_true(all(idr$decided_by == d$plan$roles$analyst))
+  expect_identical(export_design_log(d)$identification, d$identification)
+})
+
+test_that("a dossier without an identification table has no Identification rows", {
+  d <- fixture_pipeline()$dossier
+  d$identification <- NULL
+  d$dossier_hash <- cleanTMLE:::.dossier_hash(d)
+  expect_false("Identification" %in% export_design_log(d, format = "muntner")$stage)
+  expect_null(export_design_log(d)$identification)
+})
