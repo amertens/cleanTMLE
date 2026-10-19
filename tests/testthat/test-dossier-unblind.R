@@ -408,6 +408,7 @@ id_pipeline <- function() {
                                             assessed = "after", response = "r1")),
     dictionary_edit = function(dict) {
       dict$recorded[dict$column == "w1"] <- "after"
+      dict$reason[dict$column == "w1"] <- "x"
       i <- dict$column == "w3"
       dict$role[i] <- "stand_in"; dict$fixed[i] <- "after"
       dict$reason[i] <- "r2"; dict$sensitivity[i] <- "s2"
@@ -443,6 +444,7 @@ test_that("the dossier carries the identification table", {
   adj <- idt[idt$component == "Adjustment set: fixed before time zero", ]
   expect_identical(adj$item, "2 variables")
   expect_match(adj$declared, "w1", fixed = TRUE)
+  expect_match(adj$response, "w1: x", fixed = TRUE)
   expect_identical(adj$flag, "note")
   expect_identical(idt$flag[idt$component == "Node after treatment"], "note")
   expect_identical(idt$flag[idt$component == "Treatment"], "")
@@ -471,4 +473,49 @@ test_that("the rendered dossier shows the identification section", {
   design_report(ip$lock, ip$design, ip$sim, ip$nc, file = f)
   expect_match(paste(readLines(f, warn = FALSE), collapse = " "),
                "Identification: what the plan declares", fixed = TRUE)
+})
+
+test_that("a plan restriction on a variable fixed after time zero is flagged, whatever its role", {
+  # The table is built from the lock alone, so no pipeline is needed.
+  idt_for <- function(var, edit) {
+    d <- make_design()$design
+    plan <- fast_plan(negative_controls = c(nc_visit = "care use"),
+                      restrictions = list(direct = stats::as.formula(paste("~", var, ">= -100"))))
+    covs <- c("w1", "w2", "w3")
+    lk <- lock_fx(d, "A", covs, plan,
+                  dictionary = edit(fx_dictionary(d, "A", covs, plan)))
+    cleanTMLE:::.identification_table(lk)
+  }
+  # A stand-in that is also a restriction variable.
+  idt <- idt_for("w3", function(dict) {
+    i <- dict$column == "w3"
+    dict$role[i] <- "stand_in"; dict$fixed[i] <- "after"
+    dict$reason[i] <- "r2"; dict$sensitivity[i] <- "s2"
+    dict
+  })
+  r <- idt[idt$component == "Restriction variable", ]
+  expect_identical(nrow(r), 1L)
+  expect_identical(c(r$item, r$flag, r$response), c("w3", "flag", "r2"))
+  expect_identical(sum(idt$component == "Adjustment set: stand-in"), 1L)
+  # A negative control that is also a restriction variable.
+  idt <- idt_for("nc_visit", function(dict) {
+    i <- dict$column == "nc_visit"
+    dict$fixed[i] <- "after"; dict$reason[i] <- "r3"
+    dict
+  })
+  r <- idt[idt$component == "Restriction variable", ]
+  expect_identical(nrow(r), 1L)
+  expect_identical(c(r$flag, r$response), c("flag", "r3"))
+  expect_identical(idt$flag[idt$component == "Negative control"], "note")
+  # A restriction variable fixed before time zero is not flagged.
+  idt <- idt_for("w3", identity)
+  expect_false("Restriction variable" %in% idt$component)
+  # A role-restriction variable fixed after gets one row, not two.
+  idt <- idt_for("transfer", function(dict) {
+    i <- dict$column == "transfer"
+    dict$fixed[i] <- "after"; dict$reason[i] <- "r4"
+    dict
+  })
+  r <- idt[idt$component == "Restriction variable", ]
+  expect_identical(c(nrow(r), r$response), c("1", "r4"))
 })

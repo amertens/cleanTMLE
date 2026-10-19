@@ -60,9 +60,9 @@ treatment (\code{after_treatment} or \code{observation}) is in \code{covariates}
 treatment is not fixed at time zero. It stops unless a response is given for
 a \code{stand_in} (a \code{reason} and a \code{sensitivity} analysis that leaves it out), an
 \code{observation} column (a \code{reason}, such as the approval), a negative control
-from the follow-up source (a \code{reason}), and a restriction variable fixed
-after time zero (a \code{reason}). The lock checks that each response is text; it
-cannot judge whether it is adequate, and it cannot check that the declared
+from the follow-up source (a \code{reason}), and a variable the plan restricts on
+that is fixed after time zero, whatever its role (a \code{reason}). The lock checks that each response is
+text; it cannot judge whether it is adequate, and it cannot check that the declared
 timings are true. The dictionary is stored in the lock and hashed with it.}
 }
 \value{

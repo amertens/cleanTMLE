@@ -296,6 +296,30 @@ test_that("a restriction variable fixed after time zero needs a reason", {
                   "cr_lock")
 })
 
+test_that("any plan restriction variable fixed after time zero needs a reason, whatever its role", {
+  # A negative control used in a restriction.
+  plan <- fast_plan(negative_controls = c(nc_visit = "care use"),
+                    restrictions = list(direct = ~ nc_visit == 0))
+  fx <- dct_fx(plan)
+  expect_equal(fx$dct$role[fx$dct$column == "nc_visit"], "negative_control")
+  late <- dct_set(fx$dct, "nc_visit", fixed = "after")
+  expect_error(create_analysis_lock(fx$d, "A", fx$covs, plan, dictionary = late),
+               "Restriction variable `nc_visit` is fixed after time zero")
+  late <- dct_set(late, "nc_visit", reason = "Care use is recorded after the transport decision")
+  expect_s3_class(create_analysis_lock(fx$d, "A", fx$covs, plan, dictionary = late),
+                  "cr_lock")
+  # Fixed before time zero, no reason is needed.
+  expect_s3_class(create_analysis_lock(fx$d, "A", fx$covs, plan, dictionary = fx$dct),
+                  "cr_lock")
+  # A stand-in used in a restriction: its reason is the response.
+  plan2 <- fast_plan(negative_controls = c(nc_visit = "care use"),
+                     restrictions = list(direct = ~ w3 > 0))
+  fx2 <- dct_fx(plan2)
+  si <- dct_set(fx2$dct, "w3", role = "stand_in", fixed = "after", reason = "r", sensitivity = "s")
+  expect_s3_class(create_analysis_lock(fx2$d, "A", fx2$covs, plan2, dictionary = si),
+                  "cr_lock")
+})
+
 test_that("a restriction variable that is also a covariate takes its covariate role", {
   plan <- fast_plan(negative_controls = c(nc_visit = "care use"),
                     restrictions = list(direct = ~ transfer == 0))

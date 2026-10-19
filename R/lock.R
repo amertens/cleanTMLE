@@ -65,9 +65,9 @@
 #'   treatment is not fixed at time zero. It stops unless a response is given for
 #'   a `stand_in` (a `reason` and a `sensitivity` analysis that leaves it out), an
 #'   `observation` column (a `reason`, such as the approval), a negative control
-#'   from the follow-up source (a `reason`), and a restriction variable fixed
-#'   after time zero (a `reason`). The lock checks that each response is text; it
-#'   cannot judge whether it is adequate, and it cannot check that the declared
+#'   from the follow-up source (a `reason`), and a variable the plan restricts on
+#'   that is fixed after time zero, whatever its role (a `reason`). The lock checks that each response is
+#'   text; it cannot judge whether it is adequate, and it cannot check that the declared
 #'   timings are true. The dictionary is stored in the lock and hashed with it.
 #' @return A `cr_lock`.
 #' @export

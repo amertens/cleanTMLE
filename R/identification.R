@@ -53,10 +53,13 @@
   cv <- per_variable(dict$role == "covariate")
   late <- vapply(cv, function(x) identical(x$recorded, "after"), logical(1))
   late_vars <- vapply(cv[late], function(x) x$variable, character(1))
+  late_reasons <- vapply(cv[late], function(x)
+    if (nzchar(x$reason)) paste0(x$variable, ": ", x$reason) else "", character(1))
   add("Adjustment set: fixed before time zero", sprintf("%d variables", length(cv)),
       if (length(late_vars)) paste(late_vars, collapse = ", ")
       else "all recorded at or before time zero",
-      if (length(late_vars)) "note" else "")
+      if (length(late_vars)) "note" else "",
+      paste(late_reasons[nzchar(late_reasons)], collapse = "; "))
   for (x in per_variable(dict$role == "stand_in"))
     add("Adjustment set: stand-in", x$variable, timing(x), "flag",
         paste0(x$reason, "; sensitivity: ", x$sensitivity))
@@ -64,7 +67,10 @@
     add("Node after treatment", x$variable, timing(x), "note", x$reason)
   for (x in per_variable(dict$role == "observation"))
     add("Outcome-observation indicator", x$variable, timing(x), "flag", x$reason)
-  for (x in per_variable(dict$role == "restriction" & dict$fixed == "after"))
+  # Every variable the plan restricts on and that was fixed after time zero, whatever
+  # its role; a variable with another role also appears under that role.
+  r_vars <- unique(unlist(lapply(lock$plan$restrictions, all.vars)))
+  for (x in per_variable(dict$column %in% r_vars & dict$fixed == "after"))
     add("Restriction variable", x$variable, timing(x), "flag", x$reason)
   for (x in per_variable(dict$role == "negative_control"))
     add("Negative control", x$variable, timing(x),

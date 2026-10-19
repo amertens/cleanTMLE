@@ -206,7 +206,7 @@
       .dictionary_stop("Negative control `", d$column[i], "` comes from the follow-up source, ",
                        "so it is observed only for patients reached and reveals who was followed ",
                        "up. Give a `reason` in its dictionary row for using it.")
-  for (i in which(d$role == "restriction" & d$fixed == "after"))
+  for (i in which(d$column %in% r_vars & d$fixed == "after"))
     if (!.has_text(d$reason[i]))
       .dictionary_stop("Restriction variable `", d$column[i], "` is fixed after time zero, so the ",
                        "restriction can select on events after assignment. Give a `reason` in its ",
