@@ -216,3 +216,12 @@
   rownames(d) <- NULL
   d
 }
+
+# A lock made by cleanTMLE 0.4.x has no dictionary. It still verifies, but no
+# verb accepts it, because nothing in it says when each column was recorded.
+.need_dictionary <- function(lock) {
+  if (is.null(lock$dictionary))
+    stop("This lock was made by an earlier cleanTMLE; re-lock with a variable dictionary.",
+         call. = FALSE)
+  invisible(TRUE)
+}

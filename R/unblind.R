@@ -44,6 +44,7 @@
   if (!inherits(ub, "cr_unblinded"))
     stop("`unblinded` must come from unblind().", call. = FALSE)
   verify_lock(ub$lock)
+  .need_dictionary(ub$lock)
   .verify_dossier(ub$dossier)
   if (!identical(ub$dossier$lock_hash, ub$lock$lock_hash))
     stop("The dossier does not belong to this lock.", call. = FALSE)
@@ -77,6 +78,7 @@
 #' @export
 unblind <- function(lock, dossier, outcomes, approved_by, override = NULL) {
   verify_lock(lock)
+  .need_dictionary(lock)
   .verify_dossier(dossier)
   if (!identical(dossier$lock_hash, lock$lock_hash))
     stop("This dossier was built for a different lock.", call. = FALSE)

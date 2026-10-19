@@ -394,3 +394,21 @@ test_that("the dictionary is hashed", {
   lk$dictionary$fixed[1] <- "after"
   expect_error(verify_lock(lk), "Lock hash mismatch")
 })
+
+test_that("a lock without a dictionary verifies but no verb accepts it", {
+  fx <- fixture_pipeline()
+  msg <- "re-lock with a variable dictionary"
+  old <- fx$lock
+  old$dictionary <- NULL
+  old$lock_hash <- cleanTMLE:::.lock_hash(old)
+  expect_silent(verify_lock(old))
+  expect_error(assess_design(old), msg)
+  expect_error(simulate_design(old, fx$design), msg)
+  expect_error(negative_control_ladder(old, fx$design, fx$sim), msg)
+  expect_error(design_report(old, fx$design, fx$sim, fx$nc), msg)
+  expect_error(unblind(old, fx$dossier, fx$d$outcomes, approved_by = "x"), msg)
+  ub <- unblind(fx$lock, fx$dossier, fx$d$outcomes, approved_by = "x")
+  ub$lock$dictionary <- NULL
+  ub$lock$lock_hash <- cleanTMLE:::.lock_hash(ub$lock)
+  expect_error(estimate_effect(ub, method = "weighting", estimand = "ATE"), msg)
+})

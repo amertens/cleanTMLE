@@ -83,6 +83,7 @@
 #' @export
 design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
   verify_lock(lock)
+  .need_dictionary(lock)
   .check_nc_not_covariate(names(lock$plan$negative_controls), lock$covariates,
                           "Re-lock without it in `covariates`.")
   .need_design_fields(design, c("A", "c_statistic", "populations"))

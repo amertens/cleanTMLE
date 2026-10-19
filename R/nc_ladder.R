@@ -149,6 +149,7 @@
 #' @export
 negative_control_ladder <- function(lock, design, simulation) {
   verify_lock(lock)
+  .need_dictionary(lock)
   .check_nc_not_covariate(names(lock$plan$negative_controls), lock$covariates,
                           "Re-lock without it in `covariates`.")
   if (!"expected_events" %in% names(simulation))
