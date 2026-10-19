@@ -1,3 +1,38 @@
+# cleanTMLE 0.5.0 (development)
+
+* `analysis_plan()` takes `time_zero`, now required, and `eligibility`.
+  `time_zero` names the event that defines time zero, how it was measured, and
+  where follow-up starts. When follow-up starts at a different moment from time
+  zero, the plan must say why. `eligibility` lists each criterion with whether
+  it was assessed before or after time zero, and a criterion assessed after
+  needs a stated response. Both are locked and hashed.
+* `create_analysis_lock()` takes a variable `dictionary`, one row per column the
+  lock keeps, giving the source, whether the column comes from the follow-up
+  source, when it was recorded and when the attribute it describes was fixed
+  (before, at or after time zero), and its role. The lock refuses a covariate
+  fixed after time zero, a covariate from the follow-up source, a node after
+  treatment in `covariates`, a treatment not fixed at time zero, and roles that
+  disagree with how the column is used. It also requires a response to each
+  flag: a reason and a sensitivity analysis for a stand-in, and a reason for an
+  outcome-observation indicator, for a negative control from the follow-up
+  source and for a restriction variable fixed after time zero. The lock cannot
+  check that the declared timings are true; it makes them part of the hashed
+  record, before the outcome is read.
+* Every verb now refuses a lock made by cleanTMLE 0.4.x, which has no
+  dictionary, with a message to re-lock.
+* The dossier carries an identification table: time zero, the start of
+  follow-up, each eligibility criterion, the treatment, and the timing of the
+  adjustment set, the stand-ins, the nodes after treatment, the
+  outcome-observation indicators, the restriction variables and the negative
+  controls, each with the response given to its flag. The table lists what was
+  declared; it does not grade identification. `design_report()` stores it as
+  `identification` and the rendered report shows it.
+* Each flag in the identification table is a row at stage Identification in
+  `export_design_log(format = "muntner")`, and the JSON log has an
+  `identification` element.
+* `cr_example$dictionary` is the variable dictionary for the example data, and
+  the examples and the vignettes use it.
+
 # cleanTMLE 0.4.1
 
 * A negative control that is also an adjustment covariate is now an error in
