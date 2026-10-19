@@ -335,6 +335,15 @@ test_that("dummies of one variable must agree", {
   dct <- dct_set(dct, "w3", recorded = "before")
   expect_s3_class(create_analysis_lock(fx$d, "A", fx$covs, fx$plan, dictionary = dct),
                   "cr_lock")
+  # One dummy a covariate and another a stand-in: the variable would split.
+  mixed <- dct_set(dct, "w3", role = "stand_in", reason = "Closest record",
+                   sensitivity = "Lock without w3")
+  expect_error(create_analysis_lock(fx$d, "A", fx$covs, fx$plan, dictionary = mixed),
+               "Columns of variable `v` disagree on role")
+  # follow_up disagreement is named too.
+  fu <- dct_set(dct, "w3", follow_up = TRUE)
+  expect_error(create_analysis_lock(fx$d, "A", fx$covs, fx$plan, dictionary = fu),
+               "Columns of variable `v` disagree on follow_up")
 })
 
 test_that("blank responses count as missing", {

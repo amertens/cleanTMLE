@@ -97,14 +97,15 @@
                      "the covariates, the negative controls and the restriction variables), ",
                      "and for each column you declare `after_treatment` or `observation`.")
 
-  # The columns of one variable (the dummies of a factor) share their timing.
+  # The columns of one variable (the dummies of a factor) share their timing and
+  # their role, so the identification table does not split a variable.
   for (v in unique(d$variable[duplicated(d$variable)])) {
     g <- d[d$variable == v, , drop = FALSE]
-    for (f in c("follow_up", "recorded", "fixed"))
+    for (f in c("follow_up", "recorded", "fixed", "role"))
       if (length(unique(g[[f]])) > 1L)
         .dictionary_stop("Columns of variable `", v, "` disagree on ", f, ": ",
                          paste0(g$column, " = ", g[[f]], collapse = ", "),
-                         ". Columns of one variable are recorded and fixed together; give them ",
+                         ". Columns of one variable are recorded, fixed and used together; give them ",
                          "the same value, or different `variable` names if they are not one variable.")
   }
 
