@@ -14,7 +14,8 @@
   if (!is.null(p$eligibility))
     p$eligibility <- unname(as.list(vapply(names(p$eligibility), function(nm) {
       e <- p$eligibility[[nm]]
-      sprintf("%s: %s (%s)", nm, e$description, e$assessed)
+      if (is.null(e$response)) sprintf("%s: %s (%s)", nm, e$description, e$assessed)
+      else sprintf("%s: %s (%s; response: %s)", nm, e$description, e$assessed, e$response)
     }, character(1))))
   p
 }

@@ -150,3 +150,13 @@ test_that("the plan table shows time zero and eligibility", {
   tab <- cleanTMLE:::.plan_table(cleanTMLE:::.plan_summary(p))
   expect_true(all(c("Time zero", "Eligibility (when assessed)") %in% tab$setting))
 })
+test_that("the plan table shows an eligibility response when there is one", {
+  el <- list(arrived_alive = list(description = "Arrived alive", assessed = "after", response = "r1"),
+             adult = list(description = "Age 18+", assessed = "at"))
+  p <- plan_fx(outcome = "y", estimands = "ATE", eligibility = el)
+  tab <- cleanTMLE:::.plan_table(cleanTMLE:::.plan_summary(p))
+  val <- tab$value[tab$setting == "Eligibility (when assessed)"]
+  expect_match(val, "arrived_alive: Arrived alive (after; response: r1)", fixed = TRUE)
+  expect_match(val, "adult: Age 18+ (at)", fixed = TRUE)
+  expect_false(grepl("response: ", sub(".*adult", "", val), fixed = TRUE))
+})
