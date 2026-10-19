@@ -116,3 +116,20 @@ test_that("the dossier tables flatten line breaks in free text", {
   expect_identical(out$response, c("a b", "c d", "e"))
   expect_identical(out$n, 1:3)
 })
+
+test_that("the copy of the dossier sent to Quarto has no line breaks in its tables", {
+  d <- structure(list(identification = data.frame(response = "r\nx", stringsAsFactors = FALSE),
+                      design = list(overlap = data.frame(arm = "a\nb", n = 1L)),
+                      lock_hash = "abc"), class = "cr_dossier")
+  out <- cleanTMLE:::.flatten_text(d)
+  expect_s3_class(out, "cr_dossier")
+  expect_identical(out$identification$response, "r x")
+  expect_identical(out$design$overlap$arm, "a b")
+  expect_identical(out$lock_hash, "abc")
+  expect_identical(d$identification$response, "r\nx")
+})
+
+test_that("the dossier template does not depend on an installed cleanTMLE", {
+  tpl <- readLines(system.file("templates", "dossier.qmd", package = "cleanTMLE"))
+  expect_false(any(grepl("cleanTMLE:::", tpl, fixed = TRUE)))
+})
