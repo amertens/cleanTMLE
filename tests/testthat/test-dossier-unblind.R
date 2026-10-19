@@ -410,7 +410,7 @@ test_that("the dossier carries the identification table", {
   expect_identical(
     unique(idt$component),
     c("Time zero", "Start of follow-up", "Eligibility", "Treatment",
-      "Adjustment set: fixed before time zero", "Adjustment set: stand-in",
+      "Adjustment set: fixed at or before time zero", "Adjustment set: stand-in",
       "Node after treatment", "Negative control"))
   expect_identical(sum(idt$flag == "flag"), 3L)
   tz <- idt[idt$component == "Time zero", ]
@@ -421,7 +421,7 @@ test_that("the dossier carries the identification table", {
   expect_identical(c(el$flag, el$response), c("flag", "r1"))
   si <- idt[idt$component == "Adjustment set: stand-in", ]
   expect_identical(si$response, "r2; sensitivity: s2")
-  adj <- idt[idt$component == "Adjustment set: fixed before time zero", ]
+  adj <- idt[idt$component == "Adjustment set: fixed at or before time zero", ]
   expect_identical(adj$item, "2 variables")
   expect_match(adj$declared, "w1", fixed = TRUE)
   expect_match(adj$response, "w1: x", fixed = TRUE)
@@ -439,9 +439,10 @@ test_that("a plan with no flags has an identification table without flags", {
   idt <- fx$dossier$identification
   expect_identical(sum(idt$flag == "flag"), 0L)
   expect_identical(idt$declared[idt$component == "Time zero"], "treatment assignment")
-  expect_identical(idt$declared[idt$component == "Adjustment set: fixed before time zero"],
+  expect_identical(idt$declared[idt$component == "Adjustment set: fixed at or before time zero"],
                    "all recorded at or before time zero")
-  expect_false("Eligibility" %in% idt$component)
+  el <- idt[idt$component == "Eligibility", ]
+  expect_identical(c(nrow(el), el$item, el$flag), c("1", "none declared", ""))
 })
 
 test_that("the rendered dossier shows the identification section", {
@@ -498,4 +499,23 @@ test_that("a plan restriction on a variable fixed after time zero is flagged, wh
   })
   r <- idt[idt$component == "Restriction variable", ]
   expect_identical(c(nrow(r), r$response), c("1", "r4"))
+})
+
+test_that("a negative control from the follow-up source is flagged with its reason", {
+  edit <- function(dict) {
+    i <- dict$column == "nc_visit"
+    dict$follow_up[i] <- TRUE; dict$reason[i] <- "r5"
+    dict
+  }
+  fp <- fixture_pipeline(dictionary_edit = edit)
+  nc <- fp$dossier$identification
+  nc <- nc[nc$component == "Negative control", ]
+  expect_identical(nrow(nc), 1L)
+  expect_identical(c(nc$flag, nc$response), c("flag", "r5"))
+  expect_match(nc$declared, "follow-up source", fixed = TRUE)
+  n_id <- function(d) sum(export_design_log(d, format = "muntner")$stage == "Identification")
+  expect_identical(n_id(fp$dossier), n_id(fx$dossier) + 1L)
+  # A control not from the follow-up source keeps its plain declared text.
+  base <- fx$dossier$identification
+  expect_false(grepl("follow-up source", base$declared[base$component == "Negative control"]))
 })

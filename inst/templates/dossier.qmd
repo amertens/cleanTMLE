@@ -12,7 +12,10 @@ execute:
 
 ```{r}
 d <- readRDS(params$dossier)
-kt <- function(x) knitr::kable(x, digits = 3, row.names = FALSE)
+# A line break in free text would split a row of the pipe table, so flatten it
+# here; the dossier data themselves are not changed.
+flat <- if (requireNamespace("cleanTMLE", quietly = TRUE)) cleanTMLE:::.flatten_text else identity
+kt <- function(x) knitr::kable(flat(x), digits = 3, row.names = FALSE)
 ```
 
 Lock `r substr(d$lock_hash, 1, 12)`, dossier `r substr(d$dossier_hash, 1, 12)`,

@@ -77,7 +77,8 @@ plan_fx <- function(...) {
 }
 
 # A dictionary for test fixtures: one row per kept column that exists in
-# design_data, recorded and fixed before time zero (the treatment at it), with
+# design_data, recorded and fixed before time zero (the treatment at it, since a
+# value cannot be recorded before it is fixed), with
 # the role the column has in the call. Internal to the tests, because a
 # generated dictionary would defeat the check for a user.
 fx_dictionary <- function(design_data, treatment, covariates, plan, id = "id") {
@@ -93,7 +94,8 @@ fx_dictionary <- function(design_data, treatment, covariates, plan, id = "id") {
     else "restriction"
   }, character(1))
   data.frame(column = cols, variable = cols, source = "test fixture",
-             follow_up = FALSE, recorded = "before",
+             follow_up = FALSE,
+             recorded = ifelse(cols == treatment, "at", "before"),
              fixed = ifelse(cols == treatment, "at", "before"),
              role = unname(role), reason = "", sensitivity = "",
              stringsAsFactors = FALSE)

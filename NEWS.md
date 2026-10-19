@@ -5,7 +5,9 @@
   where follow-up starts. When follow-up starts at a different moment from time
   zero, the plan must say why. `eligibility` lists each criterion with whether
   it was assessed before or after time zero, and a criterion assessed after
-  needs a stated response. Both are locked and hashed.
+  needs a stated response. Both are locked and hashed. `time_zero` is now the
+  third argument of `analysis_plan()`, after `estimands`, so a 0.4.x call that
+  passed `ps_library` or a later argument by position must name it.
 * `create_analysis_lock()` takes a variable `dictionary`, one row per column the
   lock keeps, giving the source, whether the column comes from the follow-up
   source, when it was recorded and when the attribute it describes was fixed
@@ -15,7 +17,8 @@
   disagree with how the column is used. It also requires a response to each
   flag: a reason and a sensitivity analysis for a stand-in, and a reason for an
   outcome-observation indicator, for a negative control from the follow-up
-  source and for a restriction variable fixed after time zero. The lock cannot
+  source and for a restriction variable fixed after time zero, whatever its
+  role. The lock cannot
   check that the declared timings are true; it makes them part of the hashed
   record, before the outcome is read.
 * Every verb now refuses a lock made by cleanTMLE 0.4.x, which has no
@@ -24,7 +27,10 @@
   follow-up, each eligibility criterion, the treatment, and the timing of the
   adjustment set, the stand-ins, the nodes after treatment, the
   outcome-observation indicators, the restriction variables and the negative
-  controls, each with the response given to its flag. The table lists what was
+  controls, each with the response given to its flag. The adjustment set row is
+  "Adjustment set: fixed at or before time zero". A negative control from the
+  follow-up source is flagged with its reason, and a plan with no eligibility
+  criteria shows one Eligibility row, "none declared". The table lists what was
   declared; it does not grade identification. `design_report()` stores it as
   `identification` and the rendered report shows it.
 * Each flag in the identification table is a row at stage Identification in

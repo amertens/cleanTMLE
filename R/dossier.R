@@ -171,6 +171,16 @@ design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
   d
 }
 
+# Free text with a line break would split a row of the rendered pipe table, so the
+# template replaces each run of line breaks in a character column with one space
+# before it prints the table. The stored (hashed) data are not changed.
+.flatten_text <- function(x) {
+  if (!is.data.frame(x)) return(x)
+  for (j in seq_along(x))
+    if (is.character(x[[j]])) x[[j]] <- gsub("[\r\n]+", " ", x[[j]])
+  x
+}
+
 .render_dossier <- function(d, file) {
   if (!requireNamespace("quarto", quietly = TRUE))
     stop("Rendering the dossier needs the quarto package.", call. = FALSE)

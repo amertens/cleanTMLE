@@ -39,14 +39,15 @@
   for (f in c("measured_as", "follow_up_from", "response"))
     if (!is.null(x[[f]]) && !is.character(x[[f]]))
       stop("`time_zero$", f, "` must be a string or NULL.", call. = FALSE)
-  event <- x$event
-  from <- if (.has_text(x$follow_up_from)) x$follow_up_from else event
-  response <- if (.has_text(x$response)) x$response else NULL
-  if (!identical(trimws(from), trimws(event)) && is.null(response))
+  # Stored trimmed, so the comparison here and the identification table agree.
+  event <- trimws(x$event)
+  from <- if (.has_text(x$follow_up_from)) trimws(x$follow_up_from) else event
+  response <- if (.has_text(x$response)) trimws(x$response) else NULL
+  if (!identical(from, event) && is.null(response))
     stop("Follow-up starts at `", from, "`, not at time zero (`", event, "`). ",
          "Give `time_zero$response`: why that is acceptable here.", call. = FALSE)
   list(event = event,
-       measured_as = if (.has_text(x$measured_as)) x$measured_as else NULL,
+       measured_as = if (.has_text(x$measured_as)) trimws(x$measured_as) else NULL,
        follow_up_from = from, response = response)
 }
 
@@ -65,16 +66,17 @@
     if (!is.list(e) || !.has_text(e$description))
       stop("Eligibility criterion `", nm, "` needs a `description`: a non-blank string ",
            "saying what the criterion is.", call. = FALSE)
-    if (!.has_text(e$assessed) || !e$assessed %in% .eligibility_timing)
+    assessed <- if (.has_text(e$assessed)) trimws(e$assessed) else NA_character_
+    if (!assessed %in% .eligibility_timing)
       stop("Eligibility criterion `", nm, "` needs `assessed`, which must be one of ",
            paste(.eligibility_timing, collapse = ", "), " (relative to time zero).",
            call. = FALSE)
-    response <- if (.has_text(e$response)) e$response else NULL
-    if (identical(e$assessed, "after") && is.null(response))
+    response <- if (.has_text(e$response)) trimws(e$response) else NULL
+    if (identical(assessed, "after") && is.null(response))
       stop("Eligibility criterion `", nm, "` is assessed after time zero, so the ",
            "cohort is selected on something treatment can change. Give its `response`: ",
            "how that selection is handled.", call. = FALSE)
-    list(description = e$description, assessed = e$assessed, response = response)
+    list(description = trimws(e$description), assessed = assessed, response = response)
   })
   stats::setNames(out, names(x))
 }

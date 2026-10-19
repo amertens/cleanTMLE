@@ -6,7 +6,7 @@
 
 .identification_components <- c(
   "Time zero", "Start of follow-up", "Eligibility", "Treatment",
-  "Adjustment set: fixed before time zero", "Adjustment set: stand-in",
+  "Adjustment set: fixed at or before time zero", "Adjustment set: stand-in",
   "Node after treatment", "Outcome-observation indicator",
   "Restriction variable", "Negative control")
 
@@ -28,18 +28,20 @@
     lapply(unique(d$variable), function(v) {
       g <- d[d$variable == v, , drop = FALSE]
       first <- function(x) { x <- x[nzchar(trimws(x))]; if (length(x)) x[1] else "" }
-      list(variable = v, source = g$source[1], recorded = g$recorded[1],
-           fixed = g$fixed[1], reason = first(g$reason), sensitivity = first(g$sensitivity))
+      list(variable = v, source = g$source[1], follow_up = g$follow_up[1],
+           recorded = g$recorded[1], fixed = g$fixed[1], reason = first(g$reason), sensitivity = first(g$sensitivity))
     })
   }
-  timing <- function(x) sprintf("recorded %s time zero, fixed %s time zero (%s)",
-                                x$recorded, x$fixed, x$source)
+  timing <- function(x) paste0(
+    sprintf("recorded %s time zero, fixed %s time zero (%s)", x$recorded, x$fixed, x$source),
+    if (isTRUE(x$follow_up)) "; follow-up source" else "")
 
   add("Time zero", "time zero",
       paste0(tz$event, if (!is.null(tz$measured_as))
         paste0(" (measured as ", tz$measured_as, ")") else ""))
   add("Start of follow-up", "follow-up", tz$follow_up_from,
       if (!identical(tz$follow_up_from, tz$event)) "flag" else "", tz$response)
+  if (!length(el)) add("Eligibility", "none declared", "")
   for (nm in names(el)) {
     e <- el[[nm]]
     add("Eligibility", nm, paste0(e$description, " (assessed ", e$assessed, " time zero)"),
@@ -55,7 +57,7 @@
   late_vars <- vapply(cv[late], function(x) x$variable, character(1))
   late_reasons <- vapply(cv[late], function(x)
     if (nzchar(x$reason)) paste0(x$variable, ": ", x$reason) else "", character(1))
-  add("Adjustment set: fixed before time zero", sprintf("%d variables", length(cv)),
+  add("Adjustment set: fixed at or before time zero", sprintf("%d variables", length(cv)),
       if (length(late_vars)) paste(late_vars, collapse = ", ")
       else "all recorded at or before time zero",
       if (length(late_vars)) "note" else "",
@@ -74,7 +76,8 @@
     add("Restriction variable", x$variable, timing(x), "flag", x$reason)
   for (x in per_variable(dict$role == "negative_control"))
     add("Negative control", x$variable, timing(x),
-        if (identical(x$fixed, "after")) "note" else "", x$reason)
+        if (isTRUE(x$follow_up)) "flag" else if (identical(x$fixed, "after")) "note" else "",
+        x$reason)
   out <- do.call(rbind, rows)
   rownames(out) <- NULL
   out

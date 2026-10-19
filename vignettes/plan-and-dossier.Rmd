@@ -40,6 +40,35 @@ off the ladder. A ladder that ends in an estimand nobody will use only
 postpones the decision. `trim_band` is required when the trimmed ATE is on
 the ladder; 0.05 to 0.95 and 0.1 to 0.9 are common choices.
 
+### Time zero and eligibility
+
+`time_zero` is required. It names the event at which treatment is assigned,
+eligibility is met and follow-up starts, as in a target trial. Give it as a
+string, or as a list. `measured_as` says what the data index time zero on when
+that is a proxy, for example the time of injury when treatment is assigned at
+the transport decision. `follow_up_from` is the event from which the outcome's
+follow-up is counted; it defaults to the event itself. When it is a different
+moment, the plan stops until you give a `response`, a sentence on why starting
+follow-up there is acceptable here.
+
+`eligibility` is optional. It lists each criterion that formed the cohort with
+a `description` and `assessed`, which says whether the criterion was assessed
+before, at or after time zero. A criterion assessed after time zero selects the
+cohort on something treatment can change, so it needs a `response` saying how
+that selection is handled. The criteria are recorded, not checked: the cohort
+is built before the lock.
+
+```r
+analysis_plan(
+  outcome = "death_30d", estimands = "ATE",
+  time_zero = list(event = "transport decision", measured_as = "time of injury",
+                   follow_up_from = "arrival",
+                   response = "Arrival follows the decision by minutes."),
+  eligibility = list(arrived_alive = list(
+    description = "Arrived alive", assessed = "after",
+    response = "Deaths before arrival are excluded in both arms.")))
+```
+
 ### Tolerances
 
 An estimand is feasible when an estimator meets the tolerances on every
@@ -169,9 +198,10 @@ on a covariate fixed after time zero, on a treatment not fixed at time zero,
 and on a column from the follow-up source that is neither an
 outcome-observation indicator nor a negative control. A stand-in covariate,
 an outcome-observation indicator, a follow-up negative control and a
-restriction variable fixed after time zero each need a written `reason` in
-their row. The lock checks that the response is there, not that it is
-adequate, and it cannot check that the declared timings are true. The
+restriction variable fixed after time zero, whatever its role, each need a
+written `reason` in their row, and a stand-in also needs a `sensitivity`, the
+analysis that leaves it out. The lock checks that the response is there, not
+that it is adequate, and it cannot check that the declared timings are true. The
 dictionary for the example cohort is:
 
 ```{r dictionary}
@@ -196,6 +226,19 @@ Was the plan sensible before anyone saw the data?
 Check that the ladder starts with the estimand the question needs, that the
 tolerances are tight enough to matter, and that the outcome surfaces
 include effect heterogeneity.
+
+### Identification: what the plan declares
+
+What did the analyst say about time zero and about when each variable was
+recorded and fixed? The table lists what was declared: time zero, the start of
+follow-up, each eligibility criterion, the treatment, and the adjustment set,
+the stand-ins, the nodes after treatment, the outcome-observation indicators,
+the restriction variables and the negative controls. A row marked flag carries
+the response the analyst gave, and the review team should read each one and
+decide whether it is adequate. A row marked note has no required response; it
+is listed so the reviewer can dispute it. The table is not a verdict that
+identification holds, and a feasible estimand does not say so either. It
+shows what the lock was told, which the lock cannot check.
 
 ### Design
 
@@ -235,8 +278,10 @@ goes into the record.
 
 `export_design_log()` returns the full record as a JSON file, or with
 `format = "muntner"` as the decision log of @muntner2024staging, with one
-row per decision: the lock, the design assessment, the simulation verdict
-for each estimand, the negative control, the pre-outcome decision, the
-approval and any override, and each estimate. Release it with the paper.
+row per decision: the lock, each flagged row of the identification table, the
+design assessment, the simulation verdict for each estimand, the negative
+control, the pre-outcome decision, the approval and any override, and each
+estimate. The JSON log also carries the whole identification table. Release it
+with the paper.
 
 ## References

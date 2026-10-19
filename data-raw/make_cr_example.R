@@ -37,13 +37,14 @@ make_cr_example <- function(assign, modifier, seed = 20261005, n = 1500) {
 
 # One row per design column. Everything is recorded on the enrolment form before
 # treatment is assigned and describes an attribute fixed before it, except the
-# treatment, which is assigned at time zero.
+# treatment, which is assigned, and so recorded, at time zero.
 cr_example_dictionary <- function() {
   cols <- c("id", "A", "age", "female", "severity", "prior_visits", "transfer",
             "health_seeking")
   data.frame(
     column = cols, variable = cols, source = "enrolment form", follow_up = FALSE,
-    recorded = "before", fixed = ifelse(cols == "A", "at", "before"),
+    recorded = ifelse(cols == "A", "at", "before"),
+    fixed = ifelse(cols == "A", "at", "before"),
     role = c("id", "treatment", rep("covariate", 4), "restriction", "negative_control"),
     reason = "", sensitivity = "", stringsAsFactors = FALSE)
 }

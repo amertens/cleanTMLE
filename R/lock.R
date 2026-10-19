@@ -131,8 +131,7 @@ create_analysis_lock <- function(design_data, treatment, covariates, plan,
 
   # Nodes after treatment and outcome-observation indicators are kept, out of the
   # adjustment set, for the analysis of how the outcome is observed.
-  keep <- unique(c(id, treatment, covariates, nc_cols, r_vars,
-                   dictionary$column[dictionary$role %in% c("after_treatment", "observation")]))
+  keep <- .kept_columns(id, treatment, covariates, plan, dictionary)
   data <- design_data[, keep, drop = FALSE]
   rownames(data) <- NULL
   lock <- list(data = data, id = id, treatment = treatment,

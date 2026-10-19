@@ -141,10 +141,11 @@ not fixed at time zero. Its hash is a fingerprint of all three:
 substr(lock$lock_hash, 1, 16)
 ```
 
-If the plan or the design data change after this point, the hash no longer
-matches and every later step stops. The lock cannot stop anyone from
-analyzing the outcome outside the package; what it guarantees is that any
-change to the plan or the design data is detectable. The outcome enters
+If the plan, the variable dictionary or the design data change after this
+point, the hash no longer matches and every later step stops. The lock cannot
+stop anyone from analyzing the outcome outside the package; what it guarantees
+is that any change to the plan, the dictionary or the design data is
+detectable. The outcome enters
 the package only at step 6.
 
 ## Step 3: assess the design
@@ -287,9 +288,11 @@ rule out residual confounding as large as the band. FLAG does not block
 unblinding; the dossier reports it for the review team.
 
 The rendered dossier, `design_report(..., file = "dossier.html")`, also
-shows the plan, the population tables, the full simulation results, and the
-expected number of events in each arm, computed from the outcome surfaces
-and the observed treatment without reading the outcome:
+shows the plan, an identification section that lists what the plan and the
+dictionary declare about time zero and the timing of each variable, the
+population tables, the full simulation results, and the expected number of
+events in each arm, computed from the outcome surfaces and the observed
+treatment without reading the outcome:
 
 ```{r events}
 ev <- dossier$expected_events_range

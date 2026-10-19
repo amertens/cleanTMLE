@@ -21,8 +21,8 @@
 #'     requires, one row for each of `id`, `A`, `age`, `female`, `severity`,
 #'     `prior_visits`, `transfer` and `health_seeking`. Every column was recorded
 #'     on the enrolment form before treatment was assigned and describes an
-#'     attribute fixed before it, except the treatment, which is fixed at time
-#'     zero. It declares `transfer` a restriction variable and `health_seeking`
+#'     attribute fixed before it, except the treatment, which is recorded and
+#'     fixed at time zero. It declares `transfer` a restriction variable and `health_seeking`
 #'     a negative control.}
 #'   \item{truth}{`estimand`, `truth` (the true risk difference, computed
 #'     from the generating model over this cohort's covariates) and

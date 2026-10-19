@@ -15,8 +15,8 @@ negative-control outcome \code{health_seeking}.}
 requires, one row for each of \code{id}, \code{A}, \code{age}, \code{female}, \code{severity},
 \code{prior_visits}, \code{transfer} and \code{health_seeking}. Every column was recorded
 on the enrolment form before treatment was assigned and describes an
-attribute fixed before it, except the treatment, which is fixed at time
-zero. It declares \code{transfer} a restriction variable and \code{health_seeking}
+attribute fixed before it, except the treatment, which is recorded and
+fixed at time zero. It declares \code{transfer} a restriction variable and \code{health_seeking}
 a negative control.}
 \item{truth}{\code{estimand}, \code{truth} (the true risk difference, computed
 from the generating model over this cohort's covariates) and

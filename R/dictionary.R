@@ -45,6 +45,16 @@
   as.data.frame(out, stringsAsFactors = FALSE)
 }
 
+# The columns the lock keeps, in the order it keeps them: the id, the treatment,
+# the covariates, the negative controls, the restriction variables, and any column
+# the dictionary declares a node after treatment or an outcome-observation
+# indicator. Used by the dictionary check and by the lock, so they agree.
+.kept_columns <- function(id, treatment, covariates, plan, dictionary) {
+  r_vars <- unique(unlist(lapply(plan$restrictions, all.vars)))
+  unique(c(id, treatment, covariates, names(plan$negative_controls), r_vars,
+           dictionary$column[dictionary$role %in% c("after_treatment", "observation")]))
+}
+
 # Validate the dictionary against the lock's inputs and return it normalized: a
 # base data frame in the field order above, sorted by `column` (in C order, so the
 # order does not depend on the locale), without row names. The lock hashes this
@@ -88,8 +98,7 @@
   if (length(extra))
     .dictionary_stop("Dictionary row(s) for column(s) not in `design_data`: ",
                      paste(extra, collapse = ", "), ". Remove those rows or fix the names.")
-  kept <- unique(c(id, treatment, covariates, nc_cols, r_vars,
-                   d$column[d$role %in% c("after_treatment", "observation")]))
+  kept <- .kept_columns(id, treatment, covariates, plan, d)
   missing_rows <- setdiff(kept, d$column)
   if (length(missing_rows))
     .dictionary_stop("No dictionary row for column(s): ", paste(missing_rows, collapse = ", "),

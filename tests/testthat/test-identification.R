@@ -80,10 +80,39 @@ test_that("a cohort with Rescue.Co's timing problems is caught at the lock", {
                      "Outcome-observation indicator: seen_6m", "Restriction variable: direct"))
   nt <- idt[idt$flag == "note", ]
   expect_identical(nt$component,
-                   c("Adjustment set: fixed before time zero", "Node after treatment"))
-  expect_identical(nt$declared[nt$component == "Adjustment set: fixed before time zero"], "age")
+                   c("Adjustment set: fixed at or before time zero", "Node after treatment"))
+  expect_identical(nt$declared[nt$component == "Adjustment set: fixed at or before time zero"], "age")
   expect_identical(nt$item[nt$component == "Node after treatment"], "arr_gcs")
 
   log <- export_design_log(dossier, format = "muntner")
   expect_identical(sum(log$stage == "Identification"), 4L)
+})
+
+test_that("white space around the follow-up event does not make a flag", {
+  tz <- list(event = "arrival", follow_up_from = "arrival ")
+  expect_silent(p <- analysis_plan("y", "ATE", time_zero = tz))
+  expect_identical(p$time_zero$follow_up_from, "arrival")
+  expect_null(p$time_zero$response)
+  expect_identical(analysis_plan("y", "ATE", time_zero = list(event = " arrival "))$time_zero$event,
+                   "arrival")
+  d <- make_design()$design
+  plan <- fast_plan(time_zero = tz)
+  lk <- lock_fx(d, "A", c("w1", "w2", "w3"), plan)
+  idt <- cleanTMLE:::.identification_table(lk)
+  fu <- idt[idt$component == "Start of follow-up", ]
+  expect_identical(c(fu$flag, fu$response), c("", ""))
+})
+
+test_that("white space in an eligibility criterion is trimmed", {
+  p <- analysis_plan("y", "ATE", time_zero = "t0",
+                     eligibility = list(a = list(description = " Adult ", assessed = " at ")))
+  expect_identical(p$eligibility$a$description, "Adult")
+  expect_identical(p$eligibility$a$assessed, "at")
+})
+
+test_that("the dossier tables flatten line breaks in free text", {
+  x <- data.frame(response = c("a\nb", "c\r\n\r\nd", "e"), n = 1:3, stringsAsFactors = FALSE)
+  out <- cleanTMLE:::.flatten_text(x)
+  expect_identical(out$response, c("a b", "c d", "e"))
+  expect_identical(out$n, 1:3)
 })
