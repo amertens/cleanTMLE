@@ -10,6 +10,13 @@
   if (!is.null(p$hazards))
     p$hazards <- lapply(p$hazards, function(h) if (is.list(h)) vapply(h, .deparse1, "") else .deparse1(h))
   if (!is.null(p$negative_controls)) p$negative_controls <- as.list(p$negative_controls)
+  p$time_zero <- Filter(Negate(is.null), p$time_zero)
+  if (!is.null(p$eligibility))
+    p$eligibility <- unname(as.list(vapply(names(p$eligibility), function(nm) {
+      e <- p$eligibility[[nm]]
+      if (is.null(e$response)) sprintf("%s: %s (%s)", nm, e$description, e$assessed)
+      else sprintf("%s: %s (%s; response: %s)", nm, e$description, e$assessed, e$response)
+    }, character(1))))
   p
 }
 
@@ -25,7 +32,8 @@
         collapse = ", ")
 }
 
-.plan_rows <- c(estimands = "Estimand ladder (in order)", tolerance = "Tolerances",
+.plan_rows <- c(estimands = "Estimand ladder (in order)", time_zero = "Time zero",
+                eligibility = "Eligibility (when assessed)", tolerance = "Tolerances",
                 trim_band = "Trim band", ps_library = "Propensity-score library",
                 candidates = "Candidates (libraries, truncations)",
                 surfaces = "Outcome surfaces", K = "Cross-fitting folds (K)",
@@ -65,7 +73,11 @@
 #' for the primary estimand (`decision$nc_verdict`, read on the estimand
 #' `decision$nc_estimand`; `NA` when no estimand is feasible or no controls
 #' are declared), and
-#' fingerprints the result.
+#' fingerprints the result. The dossier also carries `identification`, a table
+#' of what the plan and the variable dictionary declare about time zero, the
+#' start of follow-up, eligibility and the timing of every locked column, with
+#' each flag's declared response. It lists what was declared; it does not grade
+#' identification.
 #'
 #' @param lock A `cr_lock`.
 #' @param design,simulation,nc Results of [assess_design()],
@@ -75,6 +87,7 @@
 #' @export
 design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
   verify_lock(lock)
+  .need_dictionary(lock)
   .check_nc_not_covariate(names(lock$plan$negative_controls), lock$covariates,
                           "Re-lock without it in `covariates`.")
   .need_design_fields(design, c("A", "c_statistic", "populations"))
@@ -133,7 +146,8 @@ design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
                                      "unresolved-cell rule."), p$tolerance$ci_halfwidth))
   d <- list(
     lock_hash = lock$lock_hash, plan = (ps <- .plan_summary(p)),
-    plan_table = .plan_table(ps), lock_created = lock$created %||% NA_character_,
+    plan_table = .plan_table(ps), identification = .identification_table(lock),
+    lock_created = lock$created %||% NA_character_,
     outcome_type = p$outcome_type,
     design = design[c("overlap", "overlap_grade", "share_outside_band", "c_statistic", "band", "ess",
                       "balance", "edge", "populations", "trimmed_profile")],
@@ -155,6 +169,16 @@ design_report <- function(lock, design, simulation, nc = NULL, file = NULL) {
   d$dossier_hash <- .dossier_hash(d)
   if (!is.null(file)) .render_dossier(d, file)
   d
+}
+
+# Free text with a line break would split a row of the rendered pipe table, so the
+# template replaces each run of line breaks in a character column with one space
+# before it prints the table. The stored (hashed) data are not changed.
+.flatten_text <- function(x) {
+  if (!is.data.frame(x)) return(x)
+  for (j in seq_along(x))
+    if (is.character(x[[j]])) x[[j]] <- gsub("[\r\n]+", " ", x[[j]])
+  x
 }
 
 .render_dossier <- function(d, file) {

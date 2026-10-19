@@ -90,6 +90,7 @@
 #' @export
 assess_design <- function(lock) {
   verify_lock(lock)
+  .need_dictionary(lock)
   p <- lock$plan
   X <- .design_matrix(lock$data, lock$covariates)
   A <- as.integer(lock$data[[lock$treatment]])

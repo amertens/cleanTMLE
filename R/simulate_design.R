@@ -281,6 +281,7 @@
 #' @export
 simulate_design <- function(lock, design) {
   verify_lock(lock)
+  .need_dictionary(lock)
   .need_design_fields(design)
   .check_stamp(lock, design, "design")
   p <- lock$plan

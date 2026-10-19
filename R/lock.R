@@ -12,10 +12,14 @@
   invisible(TRUE)
 }
 
+# The dictionary enters the hash only when the lock has one, so a lock made by
+# cleanTMLE 0.4.x, which has none, still verifies.
 .lock_hash <- function(lock) {
-  .hash(list(plan = lock$plan, data = lock$data, id = lock$id,
-             treatment = lock$treatment, covariates = lock$covariates,
-             seed = lock$plan$seed, K = lock$plan$K, version = lock$version))
+  x <- list(plan = lock$plan, data = lock$data, id = lock$id,
+            treatment = lock$treatment, covariates = lock$covariates,
+            seed = lock$plan$seed, K = lock$plan$K, version = lock$version)
+  if (!is.null(lock$dictionary)) x$dictionary <- lock$dictionary
+  .hash(x)
 }
 
 #' Lock the plan and the outcome-free design data
@@ -30,14 +34,54 @@
 #'   `nc_exclude` of [analysis_plan()].
 #' @param plan A [analysis_plan()].
 #' @param id Name of the unique row id, used later to join the outcomes.
+#' @param dictionary Required. A data frame with one row per column the lock
+#'   keeps: the id, the treatment, the covariates, the negative controls, the
+#'   restriction variables, and any column you declare `after_treatment` or
+#'   `observation`. A dummy-coded variable has one row per dummy. Its fields are
+#'   \describe{
+#'   \item{`column`}{A column of `design_data`.}
+#'   \item{`variable`}{The variable the column comes from, so the dummies of one
+#'     variable share a value (and must share their timing).}
+#'   \item{`source`}{The form or file it was recorded on.}
+#'   \item{`follow_up`}{`TRUE` if it was recorded only for patients reached at
+#'     follow-up.}
+#'   \item{`recorded`}{`"before"`, `"at"` or `"after"` time zero: when the value
+#'     was recorded.}
+#'   \item{`fixed`}{`"before"`, `"at"` or `"after"` time zero: when the attribute
+#'     it describes was fixed. Age is recorded after injury but fixed before it;
+#'     heart rate on arrival is fixed after.}
+#'   \item{`role`}{`"id"`, `"treatment"`, `"covariate"`, `"stand_in"`,
+#'     `"after_treatment"`, `"observation"`, `"negative_control"` or
+#'     `"restriction"`. A column that is both a restriction variable and a
+#'     covariate takes the covariate role.}
+#'   \item{`reason`, `sensitivity`}{Text, may be empty. The declared responses
+#'     described below.}
+#'   }
+#'   The lock stops, whatever is declared, when a kept column has no row or a row
+#'   names a column that is absent, a role does not match how the column is used,
+#'   a covariate is fixed after time zero, a column from the follow-up source is
+#'   neither an outcome-observation indicator nor a negative control, a node after
+#'   treatment (`after_treatment` or `observation`) is in `covariates`, or the
+#'   treatment is not fixed at time zero. It stops unless a response is given for
+#'   a `stand_in` (a `reason` and a `sensitivity` analysis that leaves it out), an
+#'   `observation` column (a `reason`, such as the approval), a negative control
+#'   from the follow-up source (a `reason`), and a variable the plan restricts on
+#'   that is fixed after time zero, whatever its role (a `reason`). The lock checks that each response is
+#'   text; it cannot judge whether it is adequate, and it cannot check that the declared
+#'   timings are true. The dictionary is stored in the lock and hashed with it.
 #' @return A `cr_lock`.
 #' @export
 create_analysis_lock <- function(design_data, treatment, covariates, plan,
-                                 id = "id") {
+                                 id = "id", dictionary) {
   if (!is.data.frame(design_data))
     stop("`design_data` must be a data frame.", call. = FALSE)
   if (!inherits(plan, "cr_plan"))
     stop("`plan` must come from analysis_plan().", call. = FALSE)
+  if (missing(dictionary) || is.null(dictionary))
+    stop("`create_analysis_lock()` needs a variable `dictionary`: a data frame with one row ",
+         "per column the lock keeps, saying where and when each was recorded and when the ",
+         "attribute it describes was fixed, relative to time zero. See ?create_analysis_lock ",
+         "and `cr_example$dictionary`.", call. = FALSE)
   oc <- intersect(.outcome_columns(plan), names(design_data))
   if (length(oc))
     stop("`design_data` contains the outcome column(s) ", paste(oc, collapse = ", "),
@@ -83,11 +127,16 @@ create_analysis_lock <- function(design_data, treatment, covariates, plan,
   if (!is.null(plan$surfaces$q0) && length(plan$surfaces$q0) != nrow(design_data))
     stop("`surfaces$q0` must have one value per row of `design_data`.", call. = FALSE)
 
-  keep <- unique(c(id, treatment, covariates, nc_cols, r_vars))
+  dictionary <- .check_dictionary(dictionary, design_data, id, treatment, covariates, plan)
+
+  # Nodes after treatment and outcome-observation indicators are kept, out of the
+  # adjustment set, for the analysis of how the outcome is observed.
+  keep <- .kept_columns(id, treatment, covariates, plan, dictionary)
   data <- design_data[, keep, drop = FALSE]
   rownames(data) <- NULL
   lock <- list(data = data, id = id, treatment = treatment,
-               covariates = covariates, plan = plan, version = .pkg_version())
+               covariates = covariates, plan = plan, dictionary = dictionary,
+               version = .pkg_version())
   lock$lock_hash <- .lock_hash(lock)
   # The creation time is recorded but not hashed, so the hash stays
   # reproducible from its inputs; the dossier copies it under its own hash.

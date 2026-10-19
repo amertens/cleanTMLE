@@ -179,7 +179,7 @@ test_that("the dossier renders to HTML", {
 test_that("a dossier for a plan with no trim band builds and renders", {
   d <- make_design(300, seed = 2)
   plan <- fast_plan(estimands = c("ATE", "ATO"), trim_band = NULL, reps = 10L)
-  lock <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), plan)
+  lock <- lock_fx(d$design, "A", c("w1", "w2", "w3"), plan)
   design <- assess_design(lock)
   sim <- suppressMessages(simulate_design(lock, design))
   dos <- design_report(lock, design, sim, NULL)
@@ -293,7 +293,7 @@ test_that("unblind checks the coding of a time-to-event outcome", {
                                                    `1` = list(Surv(t, s == 1) ~ .)),
                  candidates = list(library = list(glm = "glm"), truncation = 0.01),
                  surfaces = list(forms = "linear", heterogeneity = 0), reps = 2L)
-  lk <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), p)
+  lk <- lock_fx(d$design, "A", c("w1", "w2", "w3"), p)
   ds <- assess_design(lk)
   dr <- design_report(lk, ds, suppressMessages(simulate_design(lk, ds)))
   oc <- data.frame(id = d$design$id, t = seq(10, 400, length.out = 300),
@@ -398,4 +398,124 @@ test_that("design_report refuses a control that is also a covariate, even under 
   lk$lock_hash <- .lock_hash(lk)
   expect_error(design_report(lk, fx$design, fx$sim, fx$nc),
                "Negative control `nc_visit` is also an adjustment covariate")
+})
+
+test_that("the dossier carries the identification table", {
+  ip <- id_pipeline()
+  d <- ip$dossier
+  idt <- d$identification
+  expect_identical(names(idt), c("component", "item", "declared", "flag", "response"))
+  expect_true(all(vapply(idt, is.character, logical(1))))
+  expect_true(all(idt$flag %in% c("flag", "note", "")))
+  expect_identical(
+    unique(idt$component),
+    c("Time zero", "Start of follow-up", "Eligibility", "Treatment",
+      "Adjustment set: fixed at or before time zero", "Adjustment set: stand-in",
+      "Node after treatment", "Negative control"))
+  expect_identical(sum(idt$flag == "flag"), 3L)
+  tz <- idt[idt$component == "Time zero", ]
+  expect_identical(tz$declared, "transport decision (measured as time of injury)")
+  fu <- idt[idt$component == "Start of follow-up", ]
+  expect_identical(c(fu$flag, fu$response), c("flag", "r0"))
+  el <- idt[idt$component == "Eligibility", ]
+  expect_identical(c(el$flag, el$response), c("flag", "r1"))
+  si <- idt[idt$component == "Adjustment set: stand-in", ]
+  expect_identical(si$response, "r2; sensitivity: s2")
+  adj <- idt[idt$component == "Adjustment set: fixed at or before time zero", ]
+  expect_identical(adj$item, "2 variables")
+  expect_match(adj$declared, "w1", fixed = TRUE)
+  expect_match(adj$response, "w1: x", fixed = TRUE)
+  expect_identical(adj$flag, "note")
+  expect_identical(idt$flag[idt$component == "Node after treatment"], "note")
+  expect_identical(idt$flag[idt$component == "Treatment"], "")
+  expect_identical(d$dossier_hash, cleanTMLE:::.dossier_hash(d))
+  # The table is part of the hash: editing a response is detected.
+  ed <- d
+  ed$identification$response[1] <- "changed"
+  expect_error(unblind(ip$lock, ed, ip$d$outcomes, "Review team"), "modified")
+})
+
+test_that("a plan with no flags has an identification table without flags", {
+  idt <- fx$dossier$identification
+  expect_identical(sum(idt$flag == "flag"), 0L)
+  expect_identical(idt$declared[idt$component == "Time zero"], "treatment assignment")
+  expect_identical(idt$declared[idt$component == "Adjustment set: fixed at or before time zero"],
+                   "all recorded at or before time zero")
+  el <- idt[idt$component == "Eligibility", ]
+  expect_identical(c(nrow(el), el$item, el$flag), c("1", "none declared", ""))
+})
+
+test_that("the rendered dossier shows the identification section", {
+  skip_on_cran()
+  skip_if_not_installed("quarto")
+  skip_if(is.null(quarto::quarto_path()))
+  ip <- id_pipeline()
+  f <- withr::local_tempfile(fileext = ".html")
+  design_report(ip$lock, ip$design, ip$sim, ip$nc, file = f)
+  expect_match(paste(readLines(f, warn = FALSE), collapse = " "),
+               "Identification: what the plan declares", fixed = TRUE)
+})
+
+test_that("a plan restriction on a variable fixed after time zero is flagged, whatever its role", {
+  # The table is built from the lock alone, so no pipeline is needed.
+  idt_for <- function(var, edit) {
+    d <- make_design()$design
+    plan <- fast_plan(negative_controls = c(nc_visit = "care use"),
+                      restrictions = list(direct = stats::as.formula(paste("~", var, ">= -100"))))
+    covs <- c("w1", "w2", "w3")
+    lk <- lock_fx(d, "A", covs, plan,
+                  dictionary = edit(fx_dictionary(d, "A", covs, plan)))
+    cleanTMLE:::.identification_table(lk)
+  }
+  # A stand-in that is also a restriction variable.
+  idt <- idt_for("w3", function(dict) {
+    i <- dict$column == "w3"
+    dict$role[i] <- "stand_in"; dict$fixed[i] <- "after"
+    dict$reason[i] <- "r2"; dict$sensitivity[i] <- "s2"
+    dict
+  })
+  r <- idt[idt$component == "Restriction variable", ]
+  expect_identical(nrow(r), 1L)
+  expect_identical(c(r$item, r$flag, r$response), c("w3", "flag", "r2"))
+  expect_identical(sum(idt$component == "Adjustment set: stand-in"), 1L)
+  # A negative control that is also a restriction variable.
+  idt <- idt_for("nc_visit", function(dict) {
+    i <- dict$column == "nc_visit"
+    dict$fixed[i] <- "after"; dict$reason[i] <- "r3"
+    dict
+  })
+  r <- idt[idt$component == "Restriction variable", ]
+  expect_identical(nrow(r), 1L)
+  expect_identical(c(r$flag, r$response), c("flag", "r3"))
+  expect_identical(idt$flag[idt$component == "Negative control"], "note")
+  # A restriction variable fixed before time zero is not flagged.
+  idt <- idt_for("w3", identity)
+  expect_false("Restriction variable" %in% idt$component)
+  # A role-restriction variable fixed after gets one row, not two.
+  idt <- idt_for("transfer", function(dict) {
+    i <- dict$column == "transfer"
+    dict$fixed[i] <- "after"; dict$reason[i] <- "r4"
+    dict
+  })
+  r <- idt[idt$component == "Restriction variable", ]
+  expect_identical(c(nrow(r), r$response), c("1", "r4"))
+})
+
+test_that("a negative control from the follow-up source is flagged with its reason", {
+  edit <- function(dict) {
+    i <- dict$column == "nc_visit"
+    dict$follow_up[i] <- TRUE; dict$reason[i] <- "r5"
+    dict
+  }
+  fp <- fixture_pipeline(dictionary_edit = edit)
+  nc <- fp$dossier$identification
+  nc <- nc[nc$component == "Negative control", ]
+  expect_identical(nrow(nc), 1L)
+  expect_identical(c(nc$flag, nc$response), c("flag", "r5"))
+  expect_match(nc$declared, "follow-up source", fixed = TRUE)
+  n_id <- function(d) sum(export_design_log(d, format = "muntner")$stage == "Identification")
+  expect_identical(n_id(fp$dossier), n_id(fx$dossier) + 1L)
+  # A control not from the follow-up source keeps its plain declared text.
+  base <- fx$dossier$identification
+  expect_false(grepl("follow-up source", base$declared[base$component == "Negative control"]))
 })

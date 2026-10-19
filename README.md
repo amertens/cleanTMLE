@@ -11,12 +11,13 @@ library(cleanTMLE)
 plan <- analysis_plan(
   outcome = "death_30d",
   estimands = c("ATE", "trimmed_ATE", "ATT", "ATO"),
+  time_zero = "treatment assignment",
   trim_band = c(0.05, 0.95),
   negative_controls = c(health_seeking = "health care use"),
   restrictions = list(no_transfer = ~ transfer == 0))
 lock    <- create_analysis_lock(cr_example$design, treatment = "A",
                                 covariates = c("age", "female", "severity", "prior_visits"),
-                                plan = plan)
+                                plan = plan, dictionary = cr_example$dictionary)
 design  <- assess_design(lock)
 sim     <- simulate_design(lock, design)
 nc      <- negative_control_ladder(lock, design, sim)

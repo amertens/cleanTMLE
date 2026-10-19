@@ -7,6 +7,8 @@
 analysis_plan(
   outcome,
   estimands,
+  time_zero,
+  eligibility = NULL,
   ps_library = "default",
   candidates = list(library = list(glm = "glm", sl = "default"), truncation = c(0.01,
     0.05)),
@@ -34,6 +36,21 @@ for a time-to-event outcome (event 0 = censored, 1 = the event).}
 
 \item{estimands}{Ordered ladder, from \code{"ATE"}, \code{"trimmed_ATE"}, \code{"ATT"},
 \code{"ATO"}. The first feasible one becomes the primary.}
+
+\item{time_zero}{Required. The event at which treatment is assigned,
+eligibility is met and follow-up starts, as in a target trial. A string,
+or \code{list(event = , measured_as = , follow_up_from = , response = )}.
+\code{measured_as} names the proxy the data index time zero on, if it is not
+the event itself. \code{follow_up_from} is the event from which the outcome's
+follow-up is counted (default: \code{event}); when it differs, \code{response} must
+say why that is acceptable.}
+
+\item{eligibility}{Optional named list of the criteria that formed the
+cohort, each \code{list(description = , assessed = , response = )}, where
+\code{assessed} is \code{"before"}, \code{"at"} or \code{"after"} time zero. A criterion
+assessed after time zero selects the cohort on something treatment can
+change, so it needs a \code{response}. The criteria are recorded, not
+evaluated: the cohort is built before the lock.}
 
 \item{ps_library}{Learners for the propensity score, used by every
 candidate: any of \code{"glm"}, \code{"glmnet"}, \code{"earth"}, \code{"xgboost"},

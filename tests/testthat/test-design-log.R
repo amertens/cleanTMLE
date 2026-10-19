@@ -20,7 +20,7 @@ test_that("a dossier alone exports the pre-outcome log", {
 })
 
 test_that("the example dataset keeps the outcome separate and carries the truth", {
-  expect_setequal(names(cr_example), c("design", "outcomes", "truth"))
+  expect_setequal(names(cr_example), c("design", "outcomes", "truth", "dictionary"))
   expect_false("death_30d" %in% names(cr_example$design))
   expect_identical(cr_example$design$id, cr_example$outcomes$id)
   expect_setequal(cr_example$truth$estimand, c("ATE", "trimmed_ATE", "ATT", "ATO"))
@@ -62,7 +62,7 @@ test_that("the Muntner export names roles and records an override", {
                  nc_criteria = list(null_band = c(-0.01, 0.01), rule = "point"),
                  tolerance = list(bias = 0.1, coverage = 0.5), reps = 10L,
                  roles = list(analyst = "A. Analyst"))
-  lk <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), p)
+  lk <- lock_fx(d$design, "A", c("w1", "w2", "w3"), p)
   ds <- assess_design(lk)
   sim <- suppressMessages(simulate_design(lk, ds))
   ncl <- negative_control_ladder(lk, ds, sim)
@@ -166,4 +166,30 @@ test_that("the rule text says how the controls combine into a verdict, for each 
   expect_match(pt, "GO when every control's point estimate lies inside the null band", fixed = TRUE)
   expect_match(pt, "STOP when any lies outside it", fixed = TRUE)
   expect_match(pt, "FLAG when none is outside but fewer controls can be estimated", fixed = TRUE)
+})
+
+test_that("each identification flag is a Muntner row", {
+  ip <- id_pipeline()
+  d <- ip$dossier
+  log <- export_design_log(d, format = "muntner")
+  expect_identical(sum(log$stage == "Identification"), 3L)
+  k <- which(log$stage == "Lock")
+  expect_identical(which(log$stage == "Identification"), k + 1:3)
+  idr <- log[log$stage == "Identification", ]
+  expect_true(any(grepl("r1", idr$rationale, fixed = TRUE)))
+  fl <- d$identification[d$identification$flag == "flag", ]
+  expect_identical(idr$issue, paste0(fl$component, ": ", fl$item))
+  expect_identical(idr$decision, fl$declared)
+  expect_identical(idr$rationale, fl$response)
+  expect_true(all(idr$date == d$lock_created))
+  expect_true(all(idr$decided_by == d$plan$roles$analyst))
+  expect_identical(export_design_log(d)$identification, d$identification)
+})
+
+test_that("a dossier without an identification table has no Identification rows", {
+  d <- fixture_pipeline()$dossier
+  d$identification <- NULL
+  d$dossier_hash <- cleanTMLE:::.dossier_hash(d)
+  expect_false("Identification" %in% export_design_log(d, format = "muntner")$stage)
+  expect_null(export_design_log(d)$identification)
 })

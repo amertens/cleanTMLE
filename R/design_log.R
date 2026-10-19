@@ -26,6 +26,18 @@
            "block unblinding."))
 }
 
+# One Muntner row per flagged row of the identification table, dated at the
+# lock. A dossier built before the table existed has none.
+.identification_rows <- function(d, row) {
+  idt <- d$identification
+  if (is.null(idt)) return(NULL)
+  fl <- idt[idt$flag == "flag", , drop = FALSE]
+  if (!nrow(fl)) return(NULL)
+  do.call(rbind, lapply(seq_len(nrow(fl)), function(i)
+    row(d$lock_created, "Identification", paste0(fl$component[i], ": ", fl$item[i]),
+        fl$declared[i], fl$response[i])))
+}
+
 .muntner_log <- function(d, approval, fits) {
   pl <- d$plan
   an <- .role(pl, "analyst")
@@ -39,6 +51,7 @@
     row(d$lock_created, "Lock", "Analysis plan and design data",
         paste("Locked, hash", substr(d$lock_hash, 1, 12)),
         "The plan and the outcome-free design data were fingerprinted before any outcome access."),
+    .identification_rows(d, row),
     row(d$created, "Design assessment", "Propensity-score overlap",
         sprintf("Overlap %s; %.1f%% outside [%s, %s]", d$design$overlap_grade,
                 100 * d$design$share_outside_band, d$design$band[1], d$design$band[2]),
@@ -140,7 +153,7 @@ export_design_log <- function(x, fit = NULL, file = NULL, format = c("json", "mu
   log <- list(
     package_version = d$version, lock_hash = d$lock_hash, dossier_hash = d$dossier_hash,
     lock_created = d$lock_created, dossier_created = d$created, plan = d$plan,
-    decision = d$decision,
+    decision = d$decision, identification = d$identification,
     design = d$design[intersect(c("overlap", "overlap_grade", "share_outside_band",
                                   "c_statistic", "ess", "balance", "edge", "populations",
                                   "trimmed_profile"), names(d$design))],

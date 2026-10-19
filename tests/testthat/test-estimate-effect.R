@@ -53,7 +53,7 @@ test_that("factor and oddly named covariates run through every backend", {
     d$design[["age group"]] <- stats::rnorm(400)
   })
   p <- fast_plan(tolerance = list(bias = 0.1, coverage = 0.5), reps = 20L)
-  lk <- create_analysis_lock(d$design, "A", c("w1", "site", "age group"), p)
+  lk <- lock_fx(d$design, "A", c("w1", "site", "age group"), p)
   ds <- assess_design(lk)
   dr <- design_report(lk, ds, suppressMessages(simulate_design(lk, ds)))
   expect_false(is.na(dr$decision$primary))
@@ -66,7 +66,7 @@ test_that("tmle without a candidate names the status the dossier gave the estima
   d <- make_design(300, seed = 3)
   # A near-zero bias tolerance with few repetitions leaves no estimand feasible.
   p <- fast_plan(tolerance = list(bias = 1e-6, coverage = 0.99), reps = 4L)
-  lk <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), p)
+  lk <- lock_fx(d$design, "A", c("w1", "w2", "w3"), p)
   ds <- assess_design(lk)
   dr <- design_report(lk, ds, suppressMessages(simulate_design(lk, ds)))
   expect_true(is.na(dr$decision$primary))
@@ -101,7 +101,7 @@ test_that("a time-to-event plan runs through concrete", {
                  target_time = 300, hazards = list(`0` = list(Surv(t, s == 0) ~ .),
                                                    `1` = list(Surv(t, s == 1) ~ .)),
                  tolerance = list(bias = 0.1, coverage = 0.5), reps = 10L)
-  lk <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), p)
+  lk <- lock_fx(d$design, "A", c("w1", "w2", "w3"), p)
   ds <- assess_design(lk)
   dr <- design_report(lk, ds, suppressMessages(simulate_design(lk, ds)))
   u <- unblind(lk, dr, oc, approved_by = "Review team", override = "fixture")

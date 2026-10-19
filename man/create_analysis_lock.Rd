@@ -4,7 +4,14 @@
 \alias{create_analysis_lock}
 \title{Lock the plan and the outcome-free design data}
 \usage{
-create_analysis_lock(design_data, treatment, covariates, plan, id = "id")
+create_analysis_lock(
+  design_data,
+  treatment,
+  covariates,
+  plan,
+  id = "id",
+  dictionary
+)
 }
 \arguments{
 \item{design_data}{Data frame with the id, treatment, covariates, and
@@ -21,6 +28,42 @@ covariate under another name is not detected, so list its source in
 \item{plan}{A \code{\link[=analysis_plan]{analysis_plan()}}.}
 
 \item{id}{Name of the unique row id, used later to join the outcomes.}
+
+\item{dictionary}{Required. A data frame with one row per column the lock
+keeps: the id, the treatment, the covariates, the negative controls, the
+restriction variables, and any column you declare \code{after_treatment} or
+\code{observation}. A dummy-coded variable has one row per dummy. Its fields are
+\describe{
+\item{\code{column}}{A column of \code{design_data}.}
+\item{\code{variable}}{The variable the column comes from, so the dummies of one
+variable share a value (and must share their timing).}
+\item{\code{source}}{The form or file it was recorded on.}
+\item{\code{follow_up}}{\code{TRUE} if it was recorded only for patients reached at
+follow-up.}
+\item{\code{recorded}}{\code{"before"}, \code{"at"} or \code{"after"} time zero: when the value
+was recorded.}
+\item{\code{fixed}}{\code{"before"}, \code{"at"} or \code{"after"} time zero: when the attribute
+it describes was fixed. Age is recorded after injury but fixed before it;
+heart rate on arrival is fixed after.}
+\item{\code{role}}{\code{"id"}, \code{"treatment"}, \code{"covariate"}, \code{"stand_in"},
+\code{"after_treatment"}, \code{"observation"}, \code{"negative_control"} or
+\code{"restriction"}. A column that is both a restriction variable and a
+covariate takes the covariate role.}
+\item{\code{reason}, \code{sensitivity}}{Text, may be empty. The declared responses
+described below.}
+}
+The lock stops, whatever is declared, when a kept column has no row or a row
+names a column that is absent, a role does not match how the column is used,
+a covariate is fixed after time zero, a column from the follow-up source is
+neither an outcome-observation indicator nor a negative control, a node after
+treatment (\code{after_treatment} or \code{observation}) is in \code{covariates}, or the
+treatment is not fixed at time zero. It stops unless a response is given for
+a \code{stand_in} (a \code{reason} and a \code{sensitivity} analysis that leaves it out), an
+\code{observation} column (a \code{reason}, such as the approval), a negative control
+from the follow-up source (a \code{reason}), and a variable the plan restricts on
+that is fixed after time zero, whatever its role (a \code{reason}). The lock checks that each response is
+text; it cannot judge whether it is adequate, and it cannot check that the declared
+timings are true. The dictionary is stored in the lock and hashed with it.}
 }
 \value{
 A \code{cr_lock}.

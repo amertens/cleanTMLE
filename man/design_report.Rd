@@ -27,5 +27,9 @@ cells still unresolved after their final repetitions
 for the primary estimand (\code{decision$nc_verdict}, read on the estimand
 \code{decision$nc_estimand}; \code{NA} when no estimand is feasible or no controls
 are declared), and
-fingerprints the result.
+fingerprints the result. The dossier also carries \code{identification}, a table
+of what the plan and the variable dictionary declare about time zero, the
+start of follow-up, eligibility and the timing of every locked column, with
+each flag's declared response. It lists what was declared; it does not grade
+identification.
 }

@@ -6,14 +6,14 @@ ladder_for <- function(nc, ...) {
   d <- make_design(500, seed = 5)
   args <- utils::modifyList(list(reps = 6L), list(...))
   p <- do.call(fast_plan, c(list(negative_controls = nc), args))
-  lk <- create_analysis_lock(d$design, "A", covs, p)
+  lk <- lock_fx(d$design, "A", covs, p)
   ds <- assess_design(lk)
   negative_control_ladder(lk, ds, sim_of(lk, ds))
 }
 
 test_that("no declared controls gives an empty ladder with no verdict", {
   d <- make_design(300)
-  lk <- create_analysis_lock(d$design, "A", covs, fast_plan(reps = 6L))
+  lk <- lock_fx(d$design, "A", covs, fast_plan(reps = 6L))
   ds <- assess_design(lk)
   nc <- negative_control_ladder(lk, ds, sim_of(lk, ds))
   expect_false(nc$declared)
@@ -59,7 +59,7 @@ test_that("the verdict vector is the full-cohort rung of by_rung, named by estim
   })
   p <- fast_plan(negative_controls = c(nc_sub = "care use"),
                  nc_criteria = list(null_band = c(-0.1, 0.1), rule = "point"), reps = 6L)
-  lk <- create_analysis_lock(d$design, "A", covs, p)
+  lk <- lock_fx(d$design, "A", covs, p)
   ds <- assess_design(lk)
   nc <- negative_control_ladder(lk, ds, sim_of(lk, ds))
   expect_identical(nc$by_rung$estimand, p$estimands)
@@ -72,7 +72,7 @@ test_that("an inestimable control makes the domain insufficient", {
   d$design$nc_rare <- 0L
   d$design$nc_rare[1:2] <- 1L
   p <- fast_plan(negative_controls = c(nc_rare = "rare"), reps = 6L)
-  lk <- create_analysis_lock(d$design, "A", covs, p)
+  lk <- lock_fx(d$design, "A", covs, p)
   ds <- assess_design(lk)
   nc <- negative_control_ladder(lk, ds, sim_of(lk, ds))
   expect_match(nc$table$status, "inestimable")
@@ -85,7 +85,7 @@ test_that("a rung with one arm is recorded, not fatal", {
   d <- make_design(500, seed = 5)
   p <- fast_plan(negative_controls = c(nc_visit = "care use"),
                  restrictions = list(treated_only = ~ A == 1), reps = 6L)
-  lk <- create_analysis_lock(d$design, "A", covs, p)
+  lk <- lock_fx(d$design, "A", covs, p)
   ds <- assess_design(lk)
   nc <- negative_control_ladder(lk, ds, sim_of(lk, ds))
   expect_match(nc$table$status[nc$table$rung == "treated_only"], "inestimable|failed")
@@ -175,7 +175,7 @@ test_that("the verdict is the full cohort's for each estimand, whatever the rest
                  nc_criteria = list(null_band = c(-0.1, 0.1), rule = "point"),
                  restrictions = list(grp0 = ~ grp == 0, untreated_only = ~ A == 0),
                  tolerance = list(bias = 0.1, coverage = 0.5), reps = 10L)
-  lk <- create_analysis_lock(d$design, "A", covs, p)
+  lk <- lock_fx(d$design, "A", covs, p)
   ds <- assess_design(lk)
   sim <- sim_of(lk, ds)
   nc <- negative_control_ladder(lk, ds, sim)
@@ -197,8 +197,8 @@ test_that("the verdict is the full cohort's for each estimand, whatever the rest
 test_that("a design stamped by a different lock is rejected", {
   d <- make_design(300, seed = 5)
   p <- fast_plan(negative_controls = c(nc_visit = "care use"))
-  lk <- create_analysis_lock(d$design, "A", covs, p)
-  other <- create_analysis_lock(d$design, "A", covs,
+  lk <- lock_fx(d$design, "A", covs, p)
+  other <- lock_fx(d$design, "A", covs,
                                 fast_plan(negative_controls = c(nc_visit = "care use"),
                                           seed = 99L))
   expect_error(negative_control_ladder(lk, assess_design(other), sim_of(lk, assess_design(lk))),
@@ -372,7 +372,7 @@ test_that("fit_candidate receives the whole selected candidate, including a non-
   p2 <- fast_plan(negative_controls = c(nc_visit = "care use"), reps = 6L,
                   candidates = list(library = list(glm = "glm", alt = c("glm", "glmnet")),
                                     truncation = c(0.01, 0.05)))
-  lk2 <- create_analysis_lock(d$design, "A", covs, p2)
+  lk2 <- lock_fx(d$design, "A", covs, p2)
   ds2 <- assess_design(lk2)
   sim <- fx$sim
   sim$design_hash <- ds2$stamp$hash
@@ -426,7 +426,7 @@ test_that("fit_candidate receives the whole selected candidate, including a non-
 })
 
 test_that(".nc_candidates takes the learners from the selected or best library", {
-  p <- analysis_plan(outcome = "y", estimands = c("ATE", "ATT", "ATO"),
+  p <- plan_fx(outcome = "y", estimands = c("ATE", "ATT", "ATO"),
                      ps_library = "glm",
                      candidates = list(library = list(glm = "glm", pen = c("glmnet", "glm")),
                                        truncation = c(0.01, 0.05)),
@@ -473,7 +473,7 @@ test_that("a simulation from another design or lock is refused", {
   expect_error(negative_control_ladder(fx$lock, fx$design, other_design),
                "`simulation` was not run on this `design`.", fixed = TRUE)
   d <- make_design(400, seed = 2, strength = 0.8)
-  lk2 <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"),
+  lk2 <- lock_fx(d$design, "A", c("w1", "w2", "w3"),
                               fast_plan(negative_controls = c(nc_visit = "care use"),
                                         seed = 99L, reps = 6L))
   sim2 <- sim_of(lk2, assess_design(lk2))
@@ -532,7 +532,7 @@ nc_excl_fx <- function(exclude) {
   p <- fast_plan(negative_controls = c(nc_visit = "care use", nc_bad = "other"),
                  nc_criteria = list(null_band = c(-0.1, 0.1), rule = "point"),
                  nc_exclude = exclude, reps = 6L)
-  lk <- create_analysis_lock(d$design, "A", cv, p)
+  lk <- lock_fx(d$design, "A", cv, p)
   ds <- assess_design(lk)
   list(d = d, lock = lk, design = ds, sim = sim_of(lk, ds))
 }

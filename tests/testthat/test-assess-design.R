@@ -2,8 +2,8 @@ test_that("assess_design grades overlap and reports per-estimand weights", {
   good <- make_design(400, strength = 0.3)
   poor <- make_design(400, strength = 3)
   covs <- c("w1", "w2", "w3")
-  dg <- assess_design(create_analysis_lock(good$design, "A", covs, fast_plan()))
-  dp <- assess_design(create_analysis_lock(poor$design, "A", covs, fast_plan()))
+  dg <- assess_design(lock_fx(good$design, "A", covs, fast_plan()))
+  dp <- assess_design(lock_fx(poor$design, "A", covs, fast_plan()))
   expect_s3_class(dg, "cr_design")
   expect_length(dg$g, 400L)
   expect_true(all(dg$g > 0 & dg$g < 1))
@@ -22,7 +22,7 @@ test_that("the world propensity score is a function of the covariates alone", {
   folds <- .make_folds(300, p$K, p$seed)
   j <- which(folds != folds[1])[1]
   d$design[j, c("w1", "w2", "w3")] <- d$design[1, c("w1", "w2", "w3")]
-  ds <- assess_design(create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), p))
+  ds <- assess_design(lock_fx(d$design, "A", c("w1", "w2", "w3"), p))
   # The cross-fitted score depends on the fold, which is not a covariate ...
   expect_false(isTRUE(all.equal(ds$g[1], ds$g[j])))
   # ... but the single fit that drives the simulated world does not.
@@ -33,7 +33,7 @@ test_that("the world propensity score is a function of the covariates alone", {
 
 test_that("the design is stamped and refuses a modified lock", {
   d <- make_design(300)
-  lk <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), fast_plan())
+  lk <- lock_fx(d$design, "A", c("w1", "w2", "w3"), fast_plan())
   ds <- assess_design(lk)
   expect_true(.check_stamp(lk, ds, "design"))
   lk$plan$K <- 9L
@@ -42,7 +42,7 @@ test_that("the design is stamped and refuses a modified lock", {
 
 test_that("a balance failure warns and returns NA instead of passing silently", {
   d <- make_design(300)
-  lk <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), fast_plan())
+  lk <- lock_fx(d$design, "A", c("w1", "w2", "w3"), fast_plan())
   testthat::local_mocked_bindings(bal.tab = function(...) stop("boom"), .package = "cobalt")
   warns <- character()
   ds <- withCallingHandlers(assess_design(lk), warning = function(w) {
@@ -145,12 +145,12 @@ test_that("assess_design carries the population tables, with and without a trim 
   d <- make_design(300)
   d$design$site <- factor(rep(c("A", "B", "C"), 100))
   covs <- c("w1", "w2", "site")
-  ds <- assess_design(create_analysis_lock(d$design, "A", covs, fast_plan()))
+  ds <- assess_design(lock_fx(d$design, "A", covs, fast_plan()))
   expect_setequal(ds$populations$covariate, c("w1", "w2", "siteB", "siteC"))
   expect_equal(ds$populations$cohort[ds$populations$covariate == "siteB"], 1 / 3)
   expect_true(all(c("trimmed_ATE", "ATT", "ATO") %in% names(ds$populations)))
   expect_type(ds$trimmed_profile, "list")
-  nt <- assess_design(create_analysis_lock(d$design, "A", covs,
+  nt <- assess_design(lock_fx(d$design, "A", covs,
                                            fast_plan(estimands = c("ATE", "ATO"), trim_band = NULL)))
   expect_false("trimmed_ATE" %in% names(nt$populations))
   expect_null(nt$trimmed_profile)
@@ -171,7 +171,7 @@ test_that("the c-statistic matches a pairwise count", {
 
 test_that("the ESS table reports the largest and 99th-percentile weights", {
   d <- make_design(300, strength = 2)
-  lk <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), fast_plan())
+  lk <- lock_fx(d$design, "A", c("w1", "w2", "w3"), fast_plan())
   ds <- assess_design(lk)
   w <- .estimand_weights(ds$g, d$design$A, "ATE", ds$band)
   row <- ds$ess[ds$ess$estimand == "ATE", ]
@@ -184,7 +184,7 @@ test_that("the ESS table reports the largest and 99th-percentile weights", {
 
 test_that("plot(design) splits the propensity score by arm", {
   d <- make_design(200)
-  ds <- assess_design(create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), fast_plan()))
+  ds <- assess_design(lock_fx(d$design, "A", c("w1", "w2", "w3"), fast_plan()))
   p <- plot(ds)
   expect_s3_class(p, "ggplot")
   expect_setequal(levels(p$data$arm), c("Treated", "Control"))
