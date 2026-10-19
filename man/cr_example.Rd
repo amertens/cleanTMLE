@@ -5,12 +5,19 @@
 \alias{cr_example}
 \title{Example cohort for cleanTMLE}
 \format{
-A list with three data frames:
+A list with four data frames:
 \describe{
 \item{design}{\code{id}, treatment \code{A} (0/1), covariates \code{age}, \code{female},
 \code{severity}, \code{prior_visits}, restriction variable \code{transfer}, and the
 negative-control outcome \code{health_seeking}.}
 \item{outcomes}{\code{id} and the 0/1 outcome \code{death_30d}.}
+\item{dictionary}{The variable dictionary that \code{\link[=create_analysis_lock]{create_analysis_lock()}}
+requires, one row for each of \code{id}, \code{A}, \code{age}, \code{female}, \code{severity},
+\code{prior_visits}, \code{transfer} and \code{health_seeking}. Every column was recorded
+on the enrolment form before treatment was assigned and describes an
+attribute fixed before it, except the treatment, which is fixed at time
+zero. It declares \code{transfer} a restriction variable and \code{health_seeking}
+a negative control.}
 \item{truth}{\code{estimand}, \code{truth} (the true risk difference, computed
 from the generating model over this cohort's covariates) and
 \code{population} (whom it describes). The trimmed-ATE truth is over the

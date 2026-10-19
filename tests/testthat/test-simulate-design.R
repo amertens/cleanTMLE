@@ -153,7 +153,7 @@ test_that("a constant simulated outcome is a failed repetition, not an error", {
 test_that("good overlap does not make the ATE infeasible", {
   d <- make_design(600, seed = 3, strength = 0.3)
   p <- fast_plan(tolerance = list(bias = 0.05, coverage = 0.75), reps = 30L)
-  lk <- create_analysis_lock(d$design, "A", covs, p)
+  lk <- lock_fx(d$design, "A", covs, p)
   sim <- suppressMessages(simulate_design(lk, assess_design(lk)))
   expect_s3_class(sim, "cr_simulation")
   expect_identical(sim$verdict$status[sim$verdict$estimand == "ATE"], "feasible")
@@ -164,7 +164,7 @@ test_that("severe positivity makes the ATE infeasible while the ATO survives", {
   d <- make_design(600, seed = 4, strength = 4)
   p <- fast_plan(tolerance = list(bias = 0.02, coverage = 0.9), reps = 30L,
                  surfaces = list(heterogeneity = 2))
-  lk <- create_analysis_lock(d$design, "A", covs, p)
+  lk <- lock_fx(d$design, "A", covs, p)
   sim <- suppressMessages(simulate_design(lk, assess_design(lk)))
   st <- stats::setNames(sim$verdict$status, sim$verdict$estimand)
   expect_identical(unname(st["ATE"]), "infeasible")
@@ -224,7 +224,7 @@ test_that("unresolved cells at or above the primary get extra repetitions up to 
                  tolerance = list(bias = 0.5, coverage = 0.75),
                  surfaces = list(forms = "linear"),
                  candidates = list(library = list(glm = "glm"), truncation = 0.05))
-  lk <- create_analysis_lock(d$design, "A", covs, p)
+  lk <- lock_fx(d$design, "A", covs, p)
   msgs <- character()
   sim <- withCallingHandlers(simulate_design(lk, assess_design(lk)),
                              message = function(m) {
@@ -250,7 +250,7 @@ test_that("unresolved cells at or above the primary get extra repetitions up to 
                   tolerance = list(bias = 0.5, coverage = 0.75),
                   surfaces = list(forms = "linear"),
                   candidates = list(library = list(glm = "glm"), truncation = 0.05))
-  lk0 <- create_analysis_lock(d$design, "A", covs, p0)
+  lk0 <- lock_fx(d$design, "A", covs, p0)
   sim0 <- suppressMessages(simulate_design(lk0, assess_design(lk0)))
   expect_true(all(sim0$metrics$reps == 4L))
   expect_identical(nrow(sim0$extension), 0L)
@@ -272,7 +272,7 @@ run_mocked <- function(beh, reps, max_reps) {
                      tolerance = list(bias = 0.05, coverage = 0.9),
                      K = 2L, V = 2L, reps = reps, max_reps = max_reps, seed = 11L)
   d <- make_design(200)
-  lk <- create_analysis_lock(d$design, "A", covs, p)
+  lk <- lock_fx(d$design, "A", covs, p)
   ds <- assess_design(lk)
   seen <- new.env()
   local_mocked_bindings(
@@ -383,7 +383,7 @@ test_that("the decision note says when max_reps allowed no extra repetitions", {
 test_that("the simulation uses the plan's K for its folds", {
   d <- make_design(300)
   p <- fast_plan(K = 3L, reps = 2L, estimands = "ATE")
-  lk <- create_analysis_lock(d$design, "A", covs, p)
+  lk <- lock_fx(d$design, "A", covs, p)
   ds <- assess_design(lk)
   seen <- integer()
   orig <- .make_folds
@@ -398,7 +398,7 @@ test_that("the simulation uses the plan's K for its folds", {
 test_that("the simulated world uses the single-fit propensity score, not the cross-fitted one", {
   d <- make_design(300)
   p <- fast_plan(reps = 2L, estimands = "ATE")
-  lk <- create_analysis_lock(d$design, "A", covs, p)
+  lk <- lock_fx(d$design, "A", covs, p)
   ds <- assess_design(lk)
   seen <- list()
   orig_s <- .surfaces; orig_t <- .true_values; orig_r <- .one_rep

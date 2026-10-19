@@ -128,11 +128,14 @@ dossier" explains each choice.
 ```{r lock}
 lock <- create_analysis_lock(cr_example$design, treatment = "A",
                              covariates = c("age", "female", "severity", "prior_visits"),
-                             plan = plan)
+                             plan = plan, dictionary = cr_example$dictionary)
 ```
 
-The lock holds the plan and the design data, and refuses data that contain
-the outcome column. Its hash is a fingerprint of both:
+The lock holds the plan, the design data and the variable dictionary, which
+says for each column where and when it was recorded and when the attribute it
+describes was fixed, relative to time zero. It refuses data that contain the
+outcome column, a covariate fixed after time zero, and a treatment that is
+not fixed at time zero. Its hash is a fingerprint of all three:
 
 ```{r hash}
 substr(lock$lock_hash, 1, 16)

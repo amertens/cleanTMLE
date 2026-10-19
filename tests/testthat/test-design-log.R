@@ -20,7 +20,7 @@ test_that("a dossier alone exports the pre-outcome log", {
 })
 
 test_that("the example dataset keeps the outcome separate and carries the truth", {
-  expect_setequal(names(cr_example), c("design", "outcomes", "truth"))
+  expect_setequal(names(cr_example), c("design", "outcomes", "truth", "dictionary"))
   expect_false("death_30d" %in% names(cr_example$design))
   expect_identical(cr_example$design$id, cr_example$outcomes$id)
   expect_setequal(cr_example$truth$estimand, c("ATE", "trimmed_ATE", "ATT", "ATO"))
@@ -62,7 +62,7 @@ test_that("the Muntner export names roles and records an override", {
                  nc_criteria = list(null_band = c(-0.01, 0.01), rule = "point"),
                  tolerance = list(bias = 0.1, coverage = 0.5), reps = 10L,
                  roles = list(analyst = "A. Analyst"))
-  lk <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), p)
+  lk <- lock_fx(d$design, "A", c("w1", "w2", "w3"), p)
   ds <- assess_design(lk)
   sim <- suppressMessages(simulate_design(lk, ds))
   ncl <- negative_control_ladder(lk, ds, sim)

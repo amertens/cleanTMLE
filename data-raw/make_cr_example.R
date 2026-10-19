@@ -31,7 +31,21 @@ make_cr_example <- function(assign, modifier, seed = 20261005, n = 1500) {
                      "patients whose true propensity score lies in [0.05, 0.95]",
                      "patients weighted by their true propensity score",
                      "patients weighted by ps(1 - ps), ps the true propensity score"),
-      stringsAsFactors = FALSE))
+      stringsAsFactors = FALSE),
+    dictionary = cr_example_dictionary())
+}
+
+# One row per design column. Everything is recorded on the enrolment form before
+# treatment is assigned and describes an attribute fixed before it, except the
+# treatment, which is assigned at time zero.
+cr_example_dictionary <- function() {
+  cols <- c("id", "A", "age", "female", "severity", "prior_visits", "transfer",
+            "health_seeking")
+  data.frame(
+    column = cols, variable = cols, source = "enrolment form", follow_up = FALSE,
+    recorded = "before", fixed = ifelse(cols == "A", "at", "before"),
+    role = c("id", "treatment", rep("covariate", 4), "restriction", "negative_control"),
+    reason = "", sensitivity = "", stringsAsFactors = FALSE)
 }
 
 if (sys.nframe() == 0L) {

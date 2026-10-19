@@ -157,6 +157,27 @@ failure.
 They appear in the dossier and the design log, and the lock's hash covers
 them.
 
+### The variable dictionary
+
+The lock also takes a variable dictionary, with one row for each column it
+keeps. Each row says where the column was recorded, whether it was recorded
+only for patients reached at follow-up, when it was recorded and when the
+attribute it describes was fixed (both before, at or after time zero), and
+how the analysis uses it. Age is recorded after injury but fixed before it;
+a heart rate on arrival is fixed after treatment is assigned. The lock stops
+on a covariate fixed after time zero, on a treatment not fixed at time zero,
+and on a column from the follow-up source that is neither an
+outcome-observation indicator nor a negative control. A stand-in covariate,
+an outcome-observation indicator, a follow-up negative control and a
+restriction variable fixed after time zero each need a written `reason` in
+their row. The lock checks that the response is there, not that it is
+adequate, and it cannot check that the declared timings are true. The
+dictionary for the example cohort is:
+
+```{r dictionary}
+knitr::kable(cr_example$dictionary[, c("column", "source", "recorded", "fixed", "role")])
+```
+
 ## Reading the dossier
 
 The dossier is what the review team approves. Each of its sections answers

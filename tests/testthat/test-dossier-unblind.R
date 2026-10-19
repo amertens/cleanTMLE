@@ -179,7 +179,7 @@ test_that("the dossier renders to HTML", {
 test_that("a dossier for a plan with no trim band builds and renders", {
   d <- make_design(300, seed = 2)
   plan <- fast_plan(estimands = c("ATE", "ATO"), trim_band = NULL, reps = 10L)
-  lock <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), plan)
+  lock <- lock_fx(d$design, "A", c("w1", "w2", "w3"), plan)
   design <- assess_design(lock)
   sim <- suppressMessages(simulate_design(lock, design))
   dos <- design_report(lock, design, sim, NULL)
@@ -293,7 +293,7 @@ test_that("unblind checks the coding of a time-to-event outcome", {
                                                    `1` = list(Surv(t, s == 1) ~ .)),
                  candidates = list(library = list(glm = "glm"), truncation = 0.01),
                  surfaces = list(forms = "linear", heterogeneity = 0), reps = 2L)
-  lk <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), p)
+  lk <- lock_fx(d$design, "A", c("w1", "w2", "w3"), p)
   ds <- assess_design(lk)
   dr <- design_report(lk, ds, suppressMessages(simulate_design(lk, ds)))
   oc <- data.frame(id = d$design$id, t = seq(10, 400, length.out = 300),

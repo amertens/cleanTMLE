@@ -6,7 +6,7 @@ cr_vignette <- local({
     if (is.null(cache)) {
       lock <- create_analysis_lock(cr_example$design, "A",
                                    c("age", "female", "severity", "prior_visits"),
-                                   vignette_plan())
+                                   vignette_plan(), dictionary = cr_example$dictionary)
       design <- assess_design(lock)
       sim <- suppressMessages(simulate_design(lock, design))
       cache <<- list(lock = lock, design = design, sim = sim,
@@ -44,4 +44,13 @@ test_that("on cr_example the negative controls are read on the primary estimand 
   ub <- unblind(lock, dossier, cr_example$outcomes, approved_by = "Review team")
   expect_s3_class(ub, "cr_unblinded")
   expect_true(is.na(ub$approval$override))
+})
+
+test_that("cr_example locks with its shipped dictionary", {
+  lock <- create_analysis_lock(cr_example$design, "A",
+                               c("age", "female", "severity", "prior_visits"),
+                               vignette_plan(), dictionary = cr_example$dictionary)
+  expect_s3_class(lock, "cr_lock")
+  expect_setequal(cr_example$dictionary$column, names(cr_example$design))
+  expect_equal(cr_example$dictionary$fixed[cr_example$dictionary$column == "A"], "at")
 })

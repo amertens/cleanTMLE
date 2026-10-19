@@ -17,7 +17,7 @@ plan <- analysis_plan(
   restrictions = list(no_transfer = ~ transfer == 0))
 lock    <- create_analysis_lock(cr_example$design, treatment = "A",
                                 covariates = c("age", "female", "severity", "prior_visits"),
-                                plan = plan)
+                                plan = plan, dictionary = cr_example$dictionary)
 design  <- assess_design(lock)
 sim     <- simulate_design(lock, design)
 nc      <- negative_control_ladder(lock, design, sim)

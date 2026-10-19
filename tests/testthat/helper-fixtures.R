@@ -35,7 +35,7 @@ fixture_pipeline <- function(strength = 0.8, n = 400, nc = c(nc_visit = "care us
                     nc_criteria = if (is.null(nc)) NULL else list(null_band = c(-0.1, 0.1), rule = nc_rule),
                     tolerance = tolerance, reps = 10L, max_reps = max_reps, seed = seed,
                     nc_exclude = nc_exclude)
-  lock <- create_analysis_lock(d$design, "A", c("w1", "w2", "w3"), plan)
+  lock <- lock_fx(d$design, "A", c("w1", "w2", "w3"), plan)
   design <- assess_design(lock)
   sim <- suppressMessages(simulate_design(lock, design))
   ncl <- negative_control_ladder(lock, design, sim)
@@ -71,4 +71,36 @@ plan_fx <- function(...) {
   a <- list(...)
   if (is.null(a$time_zero)) a$time_zero <- "treatment assignment"
   do.call(analysis_plan, a)
+}
+
+# A dictionary for test fixtures: one row per kept column that exists in
+# design_data, recorded and fixed before time zero (the treatment at it), with
+# the role the column has in the call. Internal to the tests, because a
+# generated dictionary would defeat the check for a user.
+fx_dictionary <- function(design_data, treatment, covariates, plan, id = "id") {
+  if (!is.data.frame(design_data)) return(NULL)
+  nc <- names(plan$negative_controls)
+  rv <- unique(unlist(lapply(plan$restrictions, all.vars)))
+  cols <- intersect(unique(c(id, treatment, covariates, nc, rv)), names(design_data))
+  role <- vapply(cols, function(v) {
+    if (identical(v, id)) "id"
+    else if (identical(v, treatment)) "treatment"
+    else if (v %in% covariates) "covariate"
+    else if (v %in% nc) "negative_control"
+    else "restriction"
+  }, character(1))
+  data.frame(column = cols, variable = cols, source = "test fixture",
+             follow_up = FALSE, recorded = "before",
+             fixed = ifelse(cols == treatment, "at", "before"),
+             role = unname(role), reason = "", sensitivity = "",
+             stringsAsFactors = FALSE)
+}
+
+# create_analysis_lock() with the fixture dictionary unless one is given.
+lock_fx <- function(design_data, treatment, covariates, plan, id = "id",
+                    dictionary = NULL) {
+  if (is.null(dictionary))
+    dictionary <- fx_dictionary(design_data, treatment, covariates, plan, id)
+  create_analysis_lock(design_data, treatment, covariates, plan, id = id,
+                       dictionary = dictionary)
 }

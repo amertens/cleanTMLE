@@ -11,12 +11,19 @@
 #' and the overlap-weighted effect (ATO) are feasible. Under the default plan
 #' with 50 repetitions only the ATO is feasible.
 #'
-#' @format A list with three data frames:
+#' @format A list with four data frames:
 #' \describe{
 #'   \item{design}{`id`, treatment `A` (0/1), covariates `age`, `female`,
 #'     `severity`, `prior_visits`, restriction variable `transfer`, and the
 #'     negative-control outcome `health_seeking`.}
 #'   \item{outcomes}{`id` and the 0/1 outcome `death_30d`.}
+#'   \item{dictionary}{The variable dictionary that [create_analysis_lock()]
+#'     requires, one row for each of `id`, `A`, `age`, `female`, `severity`,
+#'     `prior_visits`, `transfer` and `health_seeking`. Every column was recorded
+#'     on the enrolment form before treatment was assigned and describes an
+#'     attribute fixed before it, except the treatment, which is fixed at time
+#'     zero. It declares `transfer` a restriction variable and `health_seeking`
+#'     a negative control.}
 #'   \item{truth}{`estimand`, `truth` (the true risk difference, computed
 #'     from the generating model over this cohort's covariates) and
 #'     `population` (whom it describes). The trimmed-ATE truth is over the
