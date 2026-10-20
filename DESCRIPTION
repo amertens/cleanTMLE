@@ -1,6 +1,6 @@
 Package: cleanTMLE
 Title: Outcome-Blind Design and Estimand Selection for Targeted Learning
-Version: 0.4.1.9000
+Version: 0.5.0
 Authors@R: c(
     person("Andrew", "Mertens", role = c("aut", "cre"),
            email = "amertens@berkeley.edu"),

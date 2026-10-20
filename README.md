@@ -6,6 +6,14 @@ learn from an outcome-free plasmode simulation which estimands the design
 can deliver and which TMLE candidate to use for each, record that decision
 in a hashed dossier, and only then admit the outcome.
 
+Install from GitHub:
+
+```r
+remotes::install_github("amertens/cleanTMLE")
+```
+
+A full pass on the example data:
+
 ```r
 library(cleanTMLE)
 plan <- analysis_plan(
@@ -37,5 +45,10 @@ quick look.
 The design is tamper-evident, not tamper-proof: the outcome never enters
 the lock or any design object, and any later change to the plan, the
 design data or the decision is detectable through the hashes.
+
+Two vignettes walk through the workflow: "Get started with cleanTMLE"
+(`vignette("cleanTMLE")`) and "Writing the plan and reading the dossier"
+(`vignette("plan-and-dossier")`). Additions planned for later versions are
+listed in [WISHLIST.md](WISHLIST.md).
 
 Version 0.3.0 remains installable from the `v0.3.0` tag.

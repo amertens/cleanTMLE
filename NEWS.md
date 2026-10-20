@@ -1,4 +1,4 @@
-# cleanTMLE 0.5.0 (development)
+# cleanTMLE 0.5.0
 
 * `analysis_plan()` takes `time_zero`, now required, and `eligibility`.
   `time_zero` names the event that defines time zero, how it was measured, and
@@ -18,9 +18,8 @@
   flag: a reason and a sensitivity analysis for a stand-in, and a reason for an
   outcome-observation indicator, for a negative control from the follow-up
   source and for a restriction variable fixed after time zero, whatever its
-  role. The lock cannot
-  check that the declared timings are true; it makes them part of the hashed
-  record, before the outcome is read.
+  role. The lock cannot check that the declared timings are true; it makes
+  them part of the hashed record, before the outcome is read.
 * Every verb now refuses a lock made by cleanTMLE 0.4.x, which has no
   dictionary, with a message to re-lock.
 * The dossier carries an identification table: time zero, the start of
@@ -38,6 +37,10 @@
   `identification` element.
 * `cr_example$dictionary` is the variable dictionary for the example data, and
   the examples and the vignettes use it.
+* The rendered dossier flattens line breaks in free text, such as a
+  response written over several lines, so they cannot split a table row.
+  Only the copy sent to Quarto changes; the dossier and its hash do not.
+* Planned additions are listed in `WISHLIST.md`.
 
 # cleanTMLE 0.4.1
 
